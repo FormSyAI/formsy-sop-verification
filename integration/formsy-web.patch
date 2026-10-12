@@ -1,3 +1,29 @@
+diff --git a/README.md b/README.md
+index 439d046..ef1162d 100644
+--- a/README.md
++++ b/README.md
+@@ -31,6 +31,21 @@ Entire 连接和数据均由 Server 提供；浏览器只使用会话 Cookie，
+ Server 使用已有绑定和持有者凭据恢复，默认关闭同步；确认连接设置后再启用。
+ 多用户加入已有项目和同步授权接管继续使用登录 Session 与平台权限校验。
+ 
++## Web 部署
++
++`Dockerfile` 使用 Node 22 构建 API 模式静态页面，再由 Nginx 在容器内的 `8080` 端口提供服务。
++运行时通过 `FORMSY_API_UPSTREAM` 指定 Server 上游；`/api/` 保留请求路径与代理头。
++直接构建静态产物时，应使用 `VITE_FORMSY_DATA_MODE=api npm run build`。
++Vite 的 `VITE_FORMSY_PROXY_TARGET` 仅配置开发及 preview 代理，静态站点需由部署反向代理转发 API。
++
++SOP 核查为同步请求：Server worker 时限为 120 秒，容器内 API 代理读取时限为 150 秒，
++Web 发起核查的客户端时限为 180 秒。外层反向代理或网关的读取时限也需至少 150 秒，
++避免合法核查被提前中断。超时后先刷新报告记录确认结果，不能据此断言未生成报告或自动重复请求。
++
++本仓库未定义生产主机目录、服务名称或服务管理器；发布时沿用管理员确认的启动、网络和端口映射，
++保留上一版本的镜像及配置用于回退。切换后需验证页面深链接、API 代理和授权任务的核查记录，
++根页面健康检查不代表核查服务已完成配置。
++
+ ## GitHub 部署设置（P1）
+ 
+ `/settings/github` 是独立部署设置页，不要求普通用户登录，也不会读取项目数据。
 diff --git a/app/formsy.css b/app/formsy.css
 index ea48f85..223ac6e 100644
 --- a/app/formsy.css
@@ -676,6 +702,19 @@ index dc1a32f..66c7e25 100644
              )}
              <div className="fs-task-next-step">
                <SearchField value={q} onChange={setQ} placeholder="搜索本阶段建议，必需项完整保留" />
+diff --git a/deploy/default.conf.template b/deploy/default.conf.template
+index 0841b5a..5948301 100644
+--- a/deploy/default.conf.template
++++ b/deploy/default.conf.template
+@@ -17,7 +17,7 @@ server {
+         proxy_set_header X-Forwarded-Host $http_host;
+         proxy_set_header X-Forwarded-Proto $scheme;
+         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+-        proxy_read_timeout 60s;
++        proxy_read_timeout 150s;
+     }
+ 
+     location /assets/ {
 diff --git a/e2e/sop-verification.spec.ts b/e2e/sop-verification.spec.ts
 new file mode 100644
 index 0000000..05f18c3

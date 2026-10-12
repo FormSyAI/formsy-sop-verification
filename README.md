@@ -4,9 +4,9 @@ FormSy 的任务级 SOP 核查工具：独立本地页面与 Python 内核读取
 
 本项目由三部分协作：本仓库负责核查内核；`formsy-server` 负责项目权限、取证和不可变报告；`formsy-web` 在任务的“验证”阶段提供核查入口。既有 TaskCheck 与 Finish Gate 承接人工检查，候选报告不会自动完成任务。
 
-当前可直接运行本仓库的独立页面。Server/Web 集成已提交草稿 PR，并保留[对应补丁与送审状态](integration/README.md)；尚未合并或部署到共享 FormSy 服务。
+当前可直接运行本仓库的独立页面。Server/Web 集成已合并到各自 `main`，并保留[对应补丁与合并版本](integration/README.md)；共享 FormSy 服务尚未部署。
 
-需要接入共享服务时，请把[管理员接入步骤](docs/server-connection.md)交给维护者，按说明部署补丁、配置模型并完成真实任务验收。
+管理员可按[接入步骤](docs/server-connection.md)部署已合并版本、配置模型并完成真实任务验收。当前缺少部署主机的发布通道；GitHub 合并已完成。
 
 ## 先看效果
 
@@ -22,7 +22,7 @@ python3 -I scripts/serve.py
 
 可另导入 worker 请求 JSON 并显式选择离线核查。离线模式验证输入中提供的测试候选，不产生语义模型判断；没有候选时保留未知。模型模式需要启动进程已有 `DEEPSEEK_API_KEY`，且点击前页面会说明材料发送至 DeepSeek。工具不读取任何 `.env` 文件。每轮新结果保存在被忽略的 `reports/local/`，请勿提交真实材料。
 
-本地上传材料由使用者提供；独立页面不证明其已经 FormSy 权限系统认证或由可信采集器冻结。完整平台取证需应用并部署对应集成。
+本地上传材料由使用者提供；独立页面不证明其已经 FormSy 权限系统认证或由可信采集器冻结。完整平台取证需部署已合并的集成。
 
 [查看工作台截图](docs/images/workbench.png)
 
@@ -55,6 +55,8 @@ python3 -I scripts/verify.py < examples/offline-request.json
 
 ## 模型与部署
 
+固定部署版本：Server `345d833a3933ba6193993f0913782989e51a1523`（[PR #25](https://github.com/FormSyAI/formsy-server/pull/25)），Web `ff020f76e32275b1d4bd7449e3cad286ae6d92d4`（[PR #6](https://github.com/FormSyAI/formsy-web/pull/6)），完整 worker 仓库 `2328953cd9eefec02c6c09df7fbb9f3aaf6395e8`。
+
 沿用 TraceAuditWeb 的 DeepSeek 适配，默认模型为 `deepseek-flash`。只有 `mode=model` 才尝试模型请求；`mode=offline` 仅验证显式提供的测试候选。API 格式参考 [DeepSeek 官方文档](https://api-docs.deepseek.com/api/create-chat-completion/)。
 
 worker 从进程环境读取 `DEEPSEEK_API_KEY` 和可选的 `DEEPSEEK_MODEL`。不要提交密钥、复制既有 `.env.local`、上传私人审计历史或把真实 Trace 放进测试样例。
@@ -71,6 +73,8 @@ FORMSY_SOP_VERIFICATION_MODEL=deepseek-flash
 密钥由部署环境提供。worker 不自动读取当前工作目录或其他仓库的配置。Server 使用固定解释器和脚本启动隔离子进程，不执行来源或模型返回的命令。
 
 当前首版采用有界的单次请求；模型失败保留明确失败状态，不推断业务通过。同步部署的反向代理应允许请求完成并返回结果。接入 FormSy 任务页时需同时部署匹配的 Server/Web 集成变更；独立本地页面可以单独运行。
+
+部署前备份数据库并核对 SQLx `0025` 无冲突，保留原 Compose project、配置文件、卷、OAuth 和密钥，不执行 `down -v`。迁移后不含 `0025` 的旧 Server 镜像会报 `VersionMissing(25)`，不能直接回滚；停用 worker 或恢复完整备份的步骤见[管理员说明](docs/server-connection.md#5-停用与回滚)。
 
 ## 证据和验证
 

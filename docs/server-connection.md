@@ -1,6 +1,6 @@
 # 服务端接入：管理员交接说明
 
-目前可运行的是本地核查工作台；共享 FormSy 尚未部署本次集成。Server/Web 集成已提交草稿 PR：[Server #25](https://github.com/FormSyAI/formsy-server/pull/25)、[Web #6](https://github.com/FormSyAI/formsy-web/pull/6)。管理员需要审阅、合入并部署两端改动及本仓库的核查程序。仅授予 GitHub 仓库权限、完成 Entire 上传或在本机配置模型 key，都不会自动完成服务端接入。
+目前可运行的是本地核查工作台；共享 FormSy 尚未部署本次集成。[Server #25](https://github.com/FormSyAI/formsy-server/pull/25) 和 [Web #6](https://github.com/FormSyAI/formsy-web/pull/6) 已合并到各自 `main`，管理员只需部署下列固定版本及完整 worker 并验收。当前尚未配置部署主机的发布通道，GitHub 合并已完成。Entire 上传或本机模型 key 不会自动发布服务端改动。
 
 接通后的流程：用户登录 FormSy → 打开任务的“验证”页 → 确认当前生效 SOP 版本及可选目标 Commit → 显式发起核查 → Server 按当前权限读取任务绑定的 Trace → 调用核查程序与 DeepSeek → 保存并展示候选报告。现有人工检查和任务完成流程不自动改变。
 
@@ -15,37 +15,27 @@
 
 ## 管理员需要准备
 
-- Server/Web 仓库的合入及部署权限，以及部署机器、现有配置和数据库的操作权限；申请人的旧仓库上传权限不是部署前提。
+- 部署机器的发布通道，以及现有部署配置和数据库的操作权限；Server/Web 合入已完成。
 - 一个测试项目、已发布且有效的 SOP 版本，以及具有明确 `source_bindings` 的任务。只有 `session_ids` 不代表选定了核查范围。
 - 用户能读取选定项目和 GitHub 来源，并能编辑该任务：项目 owner/maintainer，或仍具 developer 角色的任务创建者。项目应已同步可读的 Conversation/Trace 内容；只有 Commit 元数据不足以核查执行过程。
 - 部署环境通过既有 secret 渠道提供 DeepSeek key。本机工作台进程中的 key 不会自动同步到服务器，也不需要提交到 GitHub。
 
-## 1. 审阅并合入两个 PR
+## 1. 固定已合并的部署版本
 
-优先审阅上述 Server/Web PR，核对匹配版本后按团队流程合入。若需要用补丁交接，也可按下面步骤操作；PR 已合入后不再重复应用补丁。
+在原部署 checkout 或构建流水线中取下列正式合并提交，核对实际构建 SHA。两个 PR 已合入，不再重复应用补丁。
 
-补丁位于本仓库的 [`integration/`](../integration/README.md)，只包含本次改动，不包含旧仓库 Git 历史。
-
-| 仓库 | 补丁 | 已验证可应用的基线 |
+| 仓库 | 正式合并提交 | PR |
 | --- | --- | --- |
-| formsy-server | [formsy-server.patch](../integration/formsy-server.patch) | `479b80a8eba09ddfc26e7f258bfad4edab8f01aa` |
-| formsy-web | [formsy-web.patch](../integration/formsy-web.patch) | `032b05b63b5c71b178c69605adff9f3fb675b307` |
+| formsy-server | `345d833a3933ba6193993f0913782989e51a1523` | [Server #25](https://github.com/FormSyAI/formsy-server/pull/25) |
+| formsy-web | `ff020f76e32275b1d4bd7449e3cad286ae6d92d4` | [Web #6](https://github.com/FormSyAI/formsy-web/pull/6) |
 
-请在各仓库的集成分支上先检查，再应用。例如在 Server checkout 内：
-
-```sh
-git switch -c codex/sop-verification-integration
-git apply --check /opt/formsy-sop-verification/integration/formsy-server.patch
-git apply /opt/formsy-sop-verification/integration/formsy-server.patch
-```
-
-Web 同样执行，补丁文件换成 `formsy-web.patch`。若当前部署代码已偏离基线，先复核冲突及关联接口，不使用强制应用。维护者按团队流程审阅、提交并合入。
+完整 worker 固定为 `2328953cd9eefec02c6c09df7fbb9f3aaf6395e8`。本仓库的 [`integration/`](../integration/README.md) 仅保留对应补丁及基线用于交接存档，不包含旧仓库 Git 历史。
 
 补丁 SHA-256：
 
 ```text
 formsy-server.patch  1058d6ef4744a956732aad2d85bf1a034066d93c45f62dc9d7688cc3121f1922
-formsy-web.patch     e6b2be1905be12e19174d3fcb5aca9957821c91b33f2e135bc4e46ff31d82b21
+formsy-web.patch     5584a0a73eec22940c2e9b048e8277d67277fd8ac5a2345af510a9963817e79b
 ```
 
 ## 2. 部署完整核查仓库与模型配置
@@ -63,11 +53,20 @@ FORMSY_SOP_VERIFICATION_MODEL=deepseek-flash
 
 `DEEPSEEK_API_KEY` 由既有 secret 渠道注入 Server 进程。若部署环境已有用于 DeepSeek 的 `FORMSY_KNOWLEDGE_MODEL_API_KEY`，可以显式改用 `env://FORMSY_KNOWLEDGE_MODEL_API_KEY`。服务端只向隔离 worker 传递模型所需配置，不复制 `.env.local`。
 
-若沿用 Server 仓库的 Compose，另设 `FORMSY_SOP_VERIFICATION_REPO` 为宿主机完整 worker checkout 的绝对路径。补丁提供的 `compose.sop-verification.yaml` 会只读挂载该目录，并设置容器内的 Python/worker 路径；基础 Compose 会传入模型配置和 key。保留现有数据库、OAuth、卷、Compose project 名及其他生产配置。
+若沿用 Server 仓库的 Compose，另设 `FORMSY_SOP_VERIFICATION_REPO` 为宿主机完整 worker checkout 的绝对路径。已合并的 `compose.sop-verification.yaml` 会只读挂载该目录，并设置容器内的 Python/worker 路径；基础 Compose 会传入模型配置和 key。保留原 Compose project 名、配置文件及顺序、卷、数据库、OAuth、key 和其他生产配置；不执行 `docker compose down -v`。
 
 ## 3. 在测试环境构建、迁移并发布
 
-先备份数据库。Server 启动会执行新增的 `0025_sop_verification_reports.sql`，无需手工创建报告表。
+先记录当前 Server/Web 镜像和 SHA，按现有备份流程取得数据库与关联对象存储的一致性备份，明确恢复点。升级前查询部署数据库的 SQLx 迁移记录（以下为 PostgreSQL）：
+
+```sql
+SELECT version, description, success, encode(checksum, 'hex') AS checksum
+FROM _sqlx_migrations
+WHERE version >= 25
+ORDER BY version;
+```
+
+首次升级应无 `0025`。若已存在，确认它确为本次 `sop_verification_reports` 迁移且 checksum 一致；发现同号其他迁移、失败记录或不一致时先停止发布并排查。Server 启动会执行新增的 `0025_sop_verification_reports.sql`，无需手工创建报告表。该迁移会影响旧镜像回滚，见第 5 节。
 
 沿用仓库 Compose 时，在原部署上下文加入 override；下面命令还需保留原部署使用的 project 名和其他配置文件：
 
@@ -76,9 +75,9 @@ docker compose -f compose.yaml -f compose.sop-verification.yaml config --quiet
 docker compose -f compose.yaml -f compose.sop-verification.yaml up -d --build api
 ```
 
-`config --quiet` 仅检查配置，不打印展开后的 secret。同时按现有流程构建并发布匹配的 Web 补丁。补丁中的 API 镜像已加入 Python；其他自建镜像需确认解释器版本和 worker 路径。
+`config --quiet` 仅检查配置，不打印展开后的 secret。同时按现有流程构建并发布上述 Web 合并版本。API 镜像已加入 Python；其他自建镜像需确认解释器版本和 worker 路径。
 
-现有同源 `/api` 代理应继续转发到更新后的 Server，并保留登录 Cookie、CSRF 和 GitHub 来源权限。反向代理响应超时建议至少 150 秒；worker 上限为 120 秒，Web 为 180 秒。无需开放本机的 `8769` 端口，也无需关闭认证。
+现有同源 `/api` 代理应继续转发到更新后的 Server，并保留登录 Cookie、CSRF 和 GitHub 来源权限。Web 合并版本已将 Nginx 代理超时设为 150 秒；使用其他代理时也应允许至少 150 秒。worker 上限为 120 秒，Web 请求为 180 秒。无需开放本机的 `8769` 端口，也无需关闭认证。
 
 报告接口为：
 
@@ -101,8 +100,15 @@ POST 成功追加报告返回 `201`；其中也可能保存 `status: failed` 的
 
 请回传实际 Server/Web/worker SHA、部署 URL、测试项目与任务 ID，以及上述验收结果。无需回传 key、Cookie 或私人 Trace 正文。
 
+## 5. 停用与回滚
+
+执行 `0025` 后，直接运行不含该迁移的旧 Server 镜像会触发 SQLx `VersionMissing(25)`，不能把换回旧镜像当作可用回滚。
+
+- 最小停用：保留本次新版 Server 和数据库，将 `FORMSY_SOP_VERIFICATION_PYTHON`、`FORMSY_SOP_VERIFICATION_WORKER` 置空并按原发布流程重启 API。若使用核查专用 Compose override，需从发布命令中移除 `compose.sop-verification.yaml`，避免它重新设置这两项路径；原有其他 Compose 文件、project、卷、OAuth 和 key 均保留。核查触发返回明确的 `503`，现有人工检查和任务流程继续可用；需要时可单独回退 Web。
+- 全量回滚：先停写，再恢复升级前数据库及关联对象存储的一致性备份，并发布与备份匹配的旧 Server/Web。升级后产生的写入可能丢失，需管理员评估恢复范围。不要手工删除迁移记录或报告表来绕过版本检查，也不要执行 `down -v`。
+
 ## 已验证与待验证
 
-已执行本地 worker 42 项离线测试；Server 82 项 lib 测试通过、8 项忽略，`cargo check --tests` 及实际 worker 离线联调通过，Knowledge 约束合同 8 项通过、1 项 PostgreSQL 忽略；Web 21 项单元测试、8 个不同的聚焦 Chrome 场景、typecheck、lint、tokens/design、构建及 route-entrypoints 通过。Web 当前 e2e 共 11 项，本轮未全量重跑。两个补丁已核对可应用到表中基线。
+已执行本地 worker 42 项离线测试；Server 82 项 lib 测试通过、8 项忽略，`cargo check --tests` 及实际 worker 离线联调通过，Knowledge 约束合同 8 项通过、1 项 PostgreSQL 忽略；Web 21 项单元测试、8 个不同的聚焦 Chrome 场景、typecheck、lint、tokens/design、构建及 route-entrypoints 通过。Web 当前 e2e 共 11 项，本轮未全量重跑。两个补丁已核对可应用到 [integration/README.md](../integration/README.md) 所列原基线。
 
 PostgreSQL 迁移、容器构建、共享环境部署和真实 FormSy Trace 的端到端核查尚未验证。四个参考条件仍是局部映射；完整读取已选来源不代表所有现实过程均被记录。部署前的检查和部署后的真实验收不能互相替代。
