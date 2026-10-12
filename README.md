@@ -26,7 +26,7 @@ python3 -m unittest discover -s tests -v
 源码 worker 通过标准输入接收一个 JSON 请求，通过标准输出返回一个 JSON 报告：
 
 ```sh
-python3 -I scripts/verify.py < examples/offline-input.json
+python3 -I scripts/verify.py < examples/offline-request.json
 ```
 
 精确输入输出、引用格式和模式见[worker 契约](docs/worker-contract.md)。输入最多 2 MiB、400 份证据、32 万字符；超限明确拒绝。

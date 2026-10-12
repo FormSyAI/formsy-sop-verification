@@ -1,0 +1,836 @@
+{
+  "schema_version": 1,
+  "engine_version": "0.1.0",
+  "context": {
+    "project_id": "fixture-project",
+    "task_id": "fixture-task",
+    "title": "合成零值修复",
+    "description": "仅用于离线契约验证。",
+    "target_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "evidence_completeness": "complete"
+  },
+  "sop_pin": {
+    "project_id": "fixture-project",
+    "sop_id": "development",
+    "version": 1,
+    "digest": "sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+  },
+  "sop_pin_validation": "structural_only; exact RFC8785 digest and authorization belong to calling Server",
+  "scope": "candidate",
+  "formal_closed": false,
+  "review_state": "model_candidate",
+  "human_review": "not_reviewed",
+  "analysis_complete": true,
+  "analysis_errors": [],
+  "model": {
+    "provider": "DeepSeek",
+    "model": null,
+    "invoked": false,
+    "request_count": 0,
+    "status": "offline"
+  },
+  "coverage": {
+    "profile_id": "sixchapters-codefix-mvp-v1",
+    "mapping_revision": "1",
+    "profile_digest": "sha256:66d8d2f55a70a3ff1da9ca71a815a9679d4465bd627d83029a218d40fd50ca13",
+    "profile_digest_algorithm": "sha256_of_raw_profile_file_bytes",
+    "mapping_status": "draft_reference_subset",
+    "mapped_conditions": 4,
+    "total_sections": 6,
+    "mapped_sections": [
+      "goal",
+      "behavior",
+      "acceptance"
+    ],
+    "unmapped_sections": [
+      "constraints",
+      "impact",
+      "preparation"
+    ],
+    "complete_sop": false,
+    "evidence_completeness": "complete",
+    "execution_verification_supported": false
+  },
+  "checks": [
+    {
+      "condition_id": "FIX01.C02",
+      "rule_id": "FIX01",
+      "source_section_id": "goal",
+      "title": "有效要求、规则及对象版本是否明确？",
+      "criterion": "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份",
+      "candidate_result": "satisfied",
+      "result": "satisfied",
+      "reason": "合成候选，非模型评测或业务通过。",
+      "gaps": [],
+      "evidence_refs": [
+        {
+          "source_id": "user",
+          "start_line": 1,
+          "end_line": 1,
+          "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+          "locator": {
+            "kind": "turn",
+            "session_id": "fixture-session",
+            "turn_id": "fixture-turn",
+            "message_ids": [
+              "user"
+            ],
+            "call_ids": []
+          },
+          "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/0/items/0/1",
+          "quote": "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX01.C02.I01",
+          "criterion": "用户原话/有效决定引用",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "user",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "user"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I02",
+          "criterion": "任务与验收清单",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "user",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "user"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I03",
+          "criterion": "规则版本摘要",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "context"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:8e1d2f47edb9db06ab18ca9db71de72a3d9a3a37b7e339f61deb399113565463",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I04",
+          "criterion": "目标源码身份明确并绑定审计目标版本",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "diff",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "--- a/limit.py",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "diff"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:b5b42bdd1a27cc5fca223e408d77f2e9daa56d1845bd46520123092e9756da0e",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I05",
+          "criterion": "目标环境身份明确；源码SHA只能定位源码版本，不能证明平台、解释器、依赖或运行前提",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "context"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:8e1d2f47edb9db06ab18ca9db71de72a3d9a3a37b7e339f61deb399113565463",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "environment"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 6,
+          "end_line": 11,
+          "quote": "    \"required_evidence\": [\n      \"用户原话/有效决定引用\",\n      \"任务与验收清单\",\n      \"规则版本摘要\",\n      \"目标源码与环境身份\"\n    ],"
+        }
+      }
+    },
+    {
+      "condition_id": "FIX02.C01",
+      "rule_id": "FIX02",
+      "source_section_id": "behavior",
+      "title": "要求与实质改动是否双向对应？",
+      "criterion": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据",
+      "candidate_result": "satisfied",
+      "result": "satisfied",
+      "reason": "合成候选，非模型评测或业务通过。",
+      "gaps": [],
+      "evidence_refs": [
+        {
+          "source_id": "user",
+          "start_line": 1,
+          "end_line": 1,
+          "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+          "locator": {
+            "kind": "turn",
+            "session_id": "fixture-session",
+            "turn_id": "fixture-turn",
+            "message_ids": [
+              "user"
+            ],
+            "call_ids": []
+          },
+          "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/1/items/0/1",
+          "quote": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX02.C01.I01",
+          "criterion": "每个必要验收点有语义成立的改动或有效无需改动依据",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "diff",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "--- a/limit.py",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "diff"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:b5b42bdd1a27cc5fca223e408d77f2e9daa56d1845bd46520123092e9756da0e",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX02.C01.I02",
+          "criterion": "每段实质变更有有效任务依据",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "user",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "user"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 23,
+          "end_line": 23,
+          "quote": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+        }
+      }
+    },
+    {
+      "condition_id": "FIX04.C02",
+      "rule_id": "FIX04",
+      "source_section_id": "acceptance",
+      "title": "测试断言是否验证要求及必要负面/回归？",
+      "criterion": "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明",
+      "candidate_result": "satisfied",
+      "result": "satisfied",
+      "reason": "合成候选，非模型评测或业务通过。",
+      "gaps": [],
+      "evidence_refs": [
+        {
+          "source_id": "user",
+          "start_line": 1,
+          "end_line": 1,
+          "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+          "locator": {
+            "kind": "turn",
+            "session_id": "fixture-session",
+            "turn_id": "fixture-turn",
+            "message_ids": [
+              "user"
+            ],
+            "call_ids": []
+          },
+          "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/5/items/0/1",
+          "quote": "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX04.C02.I01",
+          "criterion": "目标版本测试源码可定位",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "test",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "def test_limit():",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "test"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:acadd6004db623573bf899fe6ea6bb8ff85ace81e9f06046780b7c3e3a4a0c1c",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX04.C02.I02",
+          "criterion": "适用测试配置明确；可由配置、明确运行计划或明确采用默认配置的有效依据证明；不强制独立配置文件，证据不足记未核查",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "context"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:8e1d2f47edb9db06ab18ca9db71de72a3d9a3a37b7e339f61deb399113565463",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "evidence_plan"
+        },
+        {
+          "item_id": "FIX04.C02.I03",
+          "criterion": "验收点到断言映射",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "test",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "def test_limit():",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "test"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:acadd6004db623573bf899fe6ea6bb8ff85ace81e9f06046780b7c3e3a4a0c1c",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX04.C02.I04",
+          "criterion": "前置/负例/回归设计",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "test",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "def test_limit():",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "test"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:acadd6004db623573bf899fe6ea6bb8ff85ace81e9f06046780b7c3e3a4a0c1c",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX04.C02.I05",
+          "criterion": "mock与skip说明",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "context"
+                ],
+                "call_ids": []
+              },
+              "source_sha256": "sha256:8e1d2f47edb9db06ab18ca9db71de72a3d9a3a37b7e339f61deb399113565463",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 63,
+          "end_line": 68,
+          "quote": "    \"required_evidence\": [\n      \"测试源码及配置\",\n      \"验收点到断言映射\",\n      \"前置/负例/回归设计\",\n      \"mock与skip说明\"\n    ],"
+        }
+      }
+    },
+    {
+      "condition_id": "FIX05.C04",
+      "rule_id": "FIX05",
+      "source_section_id": "acceptance",
+      "title": "必需运行是否在对应版本和环境成立？",
+      "criterion": "实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份",
+      "candidate_result": "satisfied",
+      "result": "unverified",
+      "reason": "合成候选，非模型评测或业务通过。",
+      "gaps": [
+        "本MVP未接受信runner及逐断言/产物绑定；普通工具结果只能作为运行线索。",
+        "受信执行身份与专属验证绑定未支持。"
+      ],
+      "evidence_refs": [
+        {
+          "source_id": "user",
+          "start_line": 1,
+          "end_line": 1,
+          "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+          "locator": {
+            "kind": "turn",
+            "session_id": "fixture-session",
+            "turn_id": "fixture-turn",
+            "message_ids": [
+              "user"
+            ],
+            "call_ids": []
+          },
+          "source_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/5/items/0/1",
+          "quote": "实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX05.C04.I01",
+          "criterion": "实际命令和完整输出",
+          "candidate_result": "satisfied",
+          "result": "unverified",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "run",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "pytest tests/test_limit.py",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "run"
+                ],
+                "call_ids": [
+                  "fixture-call"
+                ]
+              },
+              "source_sha256": "sha256:759d0cb665a7f61d8e2fe9133cf61d9e8acb9827b6cc62a9a548da2530a0db4f",
+              "redacted": false
+            }
+          ],
+          "gaps": [
+            "受信执行身份与专属验证绑定未支持。"
+          ],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX05.C04.I02",
+          "criterion": "受测版本/补丁/测试设计",
+          "candidate_result": "satisfied",
+          "result": "unverified",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "run",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "pytest tests/test_limit.py",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "run"
+                ],
+                "call_ids": [
+                  "fixture-call"
+                ]
+              },
+              "source_sha256": "sha256:759d0cb665a7f61d8e2fe9133cf61d9e8acb9827b6cc62a9a548da2530a0db4f",
+              "redacted": false
+            }
+          ],
+          "gaps": [
+            "受信执行身份与专属验证绑定未支持。"
+          ],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX05.C04.I03",
+          "criterion": "环境和真实/mock分类",
+          "candidate_result": "satisfied",
+          "result": "unverified",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "run",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "pytest tests/test_limit.py",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "run"
+                ],
+                "call_ids": [
+                  "fixture-call"
+                ]
+              },
+              "source_sha256": "sha256:759d0cb665a7f61d8e2fe9133cf61d9e8acb9827b6cc62a9a548da2530a0db4f",
+              "redacted": false
+            }
+          ],
+          "gaps": [
+            "受信执行身份与专属验证绑定未支持。"
+          ],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX05.C04.I04",
+          "criterion": "必要产物与最终实例身份",
+          "candidate_result": "satisfied",
+          "result": "unverified",
+          "reason": "合成候选，仅验证程序证据门槛。",
+          "evidence_refs": [
+            {
+              "source_id": "run",
+              "start_line": 1,
+              "end_line": 1,
+              "quote": "pytest tests/test_limit.py",
+              "locator": {
+                "kind": "turn",
+                "session_id": "fixture-session",
+                "turn_id": "fixture-turn",
+                "message_ids": [
+                  "run"
+                ],
+                "call_ids": [
+                  "fixture-call"
+                ]
+              },
+              "source_sha256": "sha256:759d0cb665a7f61d8e2fe9133cf61d9e8acb9827b6cc62a9a548da2530a0db4f",
+              "redacted": false
+            }
+          ],
+          "gaps": [
+            "受信执行身份与专属验证绑定未支持。"
+          ],
+          "proof_policy": "semantic"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 81,
+          "end_line": 86,
+          "quote": "    \"required_evidence\": [\n      \"实际命令和完整输出\",\n      \"受测版本/补丁/测试设计\",\n      \"环境和真实/mock分类\",\n      \"必要产物与最终实例身份\"\n    ],"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "result": "unverified",
+    "counts": {
+      "not_applicable": 0,
+      "satisfied": 3,
+      "unsatisfied": 0,
+      "unverified": 1
+    },
+    "review_state": "model_candidate"
+  },
+  "source_index": {
+    "user": {
+      "input_kind": "user_message",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "user"
+        ],
+        "call_ids": []
+      },
+      "sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+      "original_sha256": "sha256:1a66c33c7845e6e4cd9ea9d530c4f34af1092c79e5ae87005f2569e3213c40ef",
+      "redacted": false,
+      "version_id": ""
+    },
+    "diff": {
+      "input_kind": "commit_diff",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "diff"
+        ],
+        "call_ids": []
+      },
+      "sha256": "sha256:b5b42bdd1a27cc5fca223e408d77f2e9daa56d1845bd46520123092e9756da0e",
+      "original_sha256": "sha256:b5b42bdd1a27cc5fca223e408d77f2e9daa56d1845bd46520123092e9756da0e",
+      "redacted": false,
+      "version_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "test": {
+      "input_kind": "source",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "test"
+        ],
+        "call_ids": []
+      },
+      "sha256": "sha256:acadd6004db623573bf899fe6ea6bb8ff85ace81e9f06046780b7c3e3a4a0c1c",
+      "original_sha256": "sha256:acadd6004db623573bf899fe6ea6bb8ff85ace81e9f06046780b7c3e3a4a0c1c",
+      "redacted": false,
+      "version_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "context": {
+      "input_kind": "context",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "context"
+        ],
+        "call_ids": []
+      },
+      "sha256": "sha256:8e1d2f47edb9db06ab18ca9db71de72a3d9a3a37b7e339f61deb399113565463",
+      "original_sha256": "sha256:8e1d2f47edb9db06ab18ca9db71de72a3d9a3a37b7e339f61deb399113565463",
+      "redacted": false,
+      "version_id": ""
+    },
+    "run": {
+      "input_kind": "tool_result",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "run"
+        ],
+        "call_ids": [
+          "fixture-call"
+        ]
+      },
+      "sha256": "sha256:759d0cb665a7f61d8e2fe9133cf61d9e8acb9827b6cc62a9a548da2530a0db4f",
+      "original_sha256": "sha256:759d0cb665a7f61d8e2fe9133cf61d9e8acb9827b6cc62a9a548da2530a0db4f",
+      "redacted": false,
+      "version_id": ""
+    }
+  },
+  "provenance": {
+    "project": "TraceAuditWeb",
+    "contract_file": "sop_contracts.py",
+    "contract_sha256": "7ce339595571237a4239b05dc431aa504ae08393668277002bba7aa635616815",
+    "catalog_sha256": "60a1df8d76874a0ceba41586a962223d547078cc3f63d231bce5f128008e3d91",
+    "note": "Frozen selected existing conditions and derived atomic evidence contracts. Mapping to FormSy chapters is a draft reference subset; no whole-SOP compliance claim.",
+    "source_document": {
+      "id": "code-fix-0.1",
+      "version": "0.1",
+      "sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "file": "code-fix-0.1.source.json"
+    }
+  },
+  "limitations": [
+    "仅核查4个参考条件，不代表六章全文或33规则/144条件均已核查。",
+    "语义结果是模型候选；原文和字段校验不能证明模型语义正确。",
+    "未执行上传代码、测试、部署或修复；普通Trace工具输出不等于受信CI回执。",
+    "草案映射不会提升为人工批准、正式关闭或历史SOP生效证明。"
+  ]
+}

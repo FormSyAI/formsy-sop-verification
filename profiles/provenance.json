@@ -1,0 +1,33 @@
+{
+  "origin": "local TraceAuditWeb frozen source snapshot",
+  "files": {
+    "audit_engine.py": {
+      "sha256": "ea94de5fb234836d74381961c6c7c8c91535cdadd882da24d47361ce62701f0b"
+    },
+    "sop_audit.py": {
+      "sha256": "14bd874e6b26db534dcd28593efd749a7b67d6817031547694f84fb46b38e64f"
+    },
+    "sop_contracts.py": {
+      "sha256": "7ce339595571237a4239b05dc431aa504ae08393668277002bba7aa635616815"
+    },
+    "model_client.py": {
+      "sha256": "4f083a8ac505b4d91d32fc2b7165c63246847f85978edbc65fe953897eb19f51"
+    },
+    "rules/sop-library/catalog.json": {
+      "sha256": "60a1df8d76874a0ceba41586a962223d547078cc3f63d231bce5f128008e3d91"
+    }
+  },
+  "adaptations": [
+    "audit_engine.check_refs exact source/line/quote checks; source_id translated to evidence_id internally",
+    "sop_audit._aggregate failure-first four-state aggregation",
+    "sop_contracts.ensure_contracts generated fixed 4-condition/16-item profile with source excerpts preserved",
+    "model_client.DeepSeekClient JSON request/complete-output/error boundaries adapted to environment-only, one request, no file writes",
+    "model_client.redact secret formats adapted with source line numbering preserved"
+  ],
+  "frozen_profiles": "src/formsy_sop_verification/profiles",
+  "limitations": [
+    "Reference subset mapping is draft, not project SOP authority",
+    "No trusted runner or human approval adapter",
+    "No whole-SOP coverage claim"
+  ]
+}

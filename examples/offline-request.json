@@ -1,0 +1,520 @@
+{
+  "schema_version": 1,
+  "mode": "offline",
+  "context": {
+    "project_id": "fixture-project",
+    "task_id": "fixture-task",
+    "title": "合成零值修复",
+    "description": "仅用于离线契约验证。",
+    "target_commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "evidence_completeness": "complete"
+  },
+  "sop": {
+    "schema_version": 1,
+    "project_id": "fixture-project",
+    "sop_id": "development",
+    "version": 1,
+    "published_at": "2026-10-12T00:00:00Z",
+    "template_revision": "synthetic-fixture-v1",
+    "workflow": {
+      "profile": "development-v1",
+      "stages": [
+        "requirements",
+        "plan",
+        "implementation",
+        "verification"
+      ]
+    },
+    "sections": [
+      {
+        "id": "goal",
+        "title": "目标与范围",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "behavior",
+        "title": "行为与边界",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "constraints",
+        "title": "规则与约束",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "本章未映射，保留未核查。"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "impact",
+        "title": "技术影响",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "本章未映射，保留未核查。"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "preparation",
+        "title": "实现准备",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "本章未映射，保留未核查。"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "acceptance",
+        "title": "完成条件",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明；实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      }
+    ],
+    "notes": {
+      "business": "",
+      "engineering": "",
+      "acceptance": ""
+    },
+    "instructions": {},
+    "rules": [],
+    "sources": [],
+    "digest": "sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+  },
+  "sources": [
+    {
+      "id": "user",
+      "kind": "user_message",
+      "content": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "user"
+        ],
+        "call_ids": []
+      }
+    },
+    {
+      "id": "diff",
+      "kind": "commit_diff",
+      "content": "--- a/limit.py\n+++ b/limit.py\n-return value or 25\n+return 25 if value is None else value\n",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "diff"
+        ],
+        "call_ids": []
+      },
+      "version_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "test",
+      "kind": "source",
+      "content": "def test_limit():\n    assert limit(None) == 25\n    assert limit(0) == 0\n    assert rejects_negative(-1)\n",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "test"
+        ],
+        "call_ids": []
+      },
+      "version_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "id": "context",
+      "kind": "context",
+      "content": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "context"
+        ],
+        "call_ids": []
+      }
+    },
+    {
+      "id": "run",
+      "kind": "tool_result",
+      "content": "pytest tests/test_limit.py\n3 passed\n",
+      "locator": {
+        "kind": "turn",
+        "session_id": "fixture-session",
+        "turn_id": "fixture-turn",
+        "message_ids": [
+          "run"
+        ],
+        "call_ids": [
+          "fixture-call"
+        ]
+      }
+    }
+  ],
+  "candidate": {
+    "checks": [
+      {
+        "condition_id": "FIX01.C02",
+        "result": "satisfied",
+        "reason": "合成候选，非模型评测或业务通过。",
+        "sop_refs": [
+          {
+            "pointer": "/sections/0/items/0/1",
+            "quote": "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "source_id": "user",
+            "start_line": 1,
+            "end_line": 1,
+            "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+          }
+        ],
+        "items": [
+          {
+            "item_id": "FIX01.C02.I01",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "user",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX01.C02.I02",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "user",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX01.C02.I03",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "context",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX01.C02.I04",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "diff",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "--- a/limit.py"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX01.C02.I05",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "context",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "condition_id": "FIX02.C01",
+        "result": "satisfied",
+        "reason": "合成候选，非模型评测或业务通过。",
+        "sop_refs": [
+          {
+            "pointer": "/sections/1/items/0/1",
+            "quote": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "source_id": "user",
+            "start_line": 1,
+            "end_line": 1,
+            "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+          }
+        ],
+        "items": [
+          {
+            "item_id": "FIX02.C01.I01",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "diff",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "--- a/limit.py"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX02.C01.I02",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "user",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "condition_id": "FIX04.C02",
+        "result": "satisfied",
+        "reason": "合成候选，非模型评测或业务通过。",
+        "sop_refs": [
+          {
+            "pointer": "/sections/5/items/0/1",
+            "quote": "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "source_id": "user",
+            "start_line": 1,
+            "end_line": 1,
+            "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+          }
+        ],
+        "items": [
+          {
+            "item_id": "FIX04.C02.I01",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "test",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "def test_limit():"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX04.C02.I02",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "context",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX04.C02.I03",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "test",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "def test_limit():"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX04.C02.I04",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "test",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "def test_limit():"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX04.C02.I05",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "context",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "本轮Python3.12；默认pytest配置；无mock、无skip；SOP sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "condition_id": "FIX05.C04",
+        "result": "satisfied",
+        "reason": "合成候选，非模型评测或业务通过。",
+        "sop_refs": [
+          {
+            "pointer": "/sections/5/items/0/1",
+            "quote": "实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份"
+          }
+        ],
+        "evidence_refs": [
+          {
+            "source_id": "user",
+            "start_line": 1,
+            "end_line": 1,
+            "quote": "修复limit：None返回25，0保留0。补充None/0/负数断言并保留原负数拒绝行为。"
+          }
+        ],
+        "items": [
+          {
+            "item_id": "FIX05.C04.I01",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "run",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "pytest tests/test_limit.py"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX05.C04.I02",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "run",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "pytest tests/test_limit.py"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX05.C04.I03",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "run",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "pytest tests/test_limit.py"
+              }
+            ]
+          },
+          {
+            "item_id": "FIX05.C04.I04",
+            "result": "satisfied",
+            "reason": "合成候选，仅验证程序证据门槛。",
+            "evidence_refs": [
+              {
+                "source_id": "run",
+                "start_line": 1,
+                "end_line": 1,
+                "quote": "pytest tests/test_limit.py"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

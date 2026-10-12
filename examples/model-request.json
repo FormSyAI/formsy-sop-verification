@@ -1,0 +1,198 @@
+{
+  "schema_version": 1,
+  "mode": "model",
+  "context": {
+    "project_id": "fixture-project",
+    "task_id": "fixture-task",
+    "title": "合成语义样例：修复分页 limit 的零值丢失",
+    "description": "仅合成材料；未执行代码或测试。检查 None 默认值、合法零值和负数拒绝的边界。",
+    "target_commit": "9058a322770a3cbf4cffd3993e2242e907de3360",
+    "evidence_completeness": "complete"
+  },
+  "sop": {
+    "schema_version": 1,
+    "project_id": "fixture-project",
+    "sop_id": "development",
+    "version": 1,
+    "published_at": "2026-10-12T00:00:00Z",
+    "template_revision": "synthetic-fixture-v1",
+    "workflow": {
+      "profile": "development-v1",
+      "stages": [
+        "requirements",
+        "plan",
+        "implementation",
+        "verification"
+      ]
+    },
+    "sections": [
+      {
+        "id": "goal",
+        "title": "目标与范围",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "behavior",
+        "title": "行为与边界",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "constraints",
+        "title": "规则与约束",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "本章未映射，保留未核查。"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "impact",
+        "title": "技术影响",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "本章未映射，保留未核查。"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "preparation",
+        "title": "实现准备",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "本章未映射，保留未核查。"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      },
+      {
+        "id": "acceptance",
+        "title": "完成条件",
+        "domain": "synthetic-fixture",
+        "description": "合成契约测试，不代表真实项目规范。",
+        "items": [
+          [
+            "参考检查",
+            "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明；实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份"
+          ]
+        ],
+        "applicability": "本合成代码修复任务",
+        "ready_criteria": "逐项保留证据与未知",
+        "sources": "fixture",
+        "gap_handling": "缺证据保留未知",
+        "example": "synthetic fixture",
+        "project_requirement": ""
+      }
+    ],
+    "notes": {
+      "business": "",
+      "engineering": "",
+      "acceptance": ""
+    },
+    "instructions": {},
+    "rules": [],
+    "sources": [],
+    "digest": "sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+  },
+  "sources": [
+    {
+      "id": "user",
+      "kind": "user_message",
+      "content": "修复 pagination.py 的 normalize_limit(value)：现有 value or 25 把合法 0 错误变成 25。\n验收 A1：None 返回默认分页数量 25。\n验收 A2：0 必须原样返回 0，表示调用方明确请求空页。\n验收 A3：正整数 1 和 30 原样返回。\n验收 A4：负数 -1 继续抛 ValueError('limit must be non-negative')，不得改变现有拒绝行为。\n仅改这个函数的 None 默认值判断，并在 tests/test_pagination.py 添加以上断言；不要修改其他 API 或增加依赖。\n测试设计必须覆盖修复前的 0 反例和 None/正数/负数回归；显式说明默认 pytest 配置及 mock/skip 使用。\n本次材料为合成示例，未实际执行测试；请把运行核验保留未核查。",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: user"
+      }
+    },
+    {
+      "id": "diff",
+      "kind": "commit_diff",
+      "content": "Synthetic complete target diff; two text files only, no omitted or binary patches.\ndiff --git a/pagination.py b/pagination.py\n--- a/pagination.py\n+++ b/pagination.py\n@@ -1,4 +1,6 @@\n def normalize_limit(value):\n+    if value is None:\n+        return 25\n     if value < 0:\n         raise ValueError(\"limit must be non-negative\")\n-    return value or 25\n+    return value\ndiff --git a/tests/test_pagination.py b/tests/test_pagination.py\nnew file mode 100644\n--- /dev/null\n+++ b/tests/test_pagination.py\n@@ -0,0 +1,16 @@\n+import pytest\n+from pagination import normalize_limit\n+\n+def test_none_defaults_to_25():\n+    assert normalize_limit(None) == 25  # A1\n+\n+def test_zero_stays_zero():\n+    assert normalize_limit(0) == 0  # A2; old implementation returned 25\n+\n+@pytest.mark.parametrize(\"value\", [1, 30])\n+def test_positive_limit_preserved(value):\n+    assert normalize_limit(value) == value  # A3\n+\n+def test_negative_limit_rejected():\n+    with pytest.raises(ValueError, match=\"^limit must be non-negative$\"):\n+        normalize_limit(-1)  # A4\n",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: diff"
+      },
+      "version_id": "9058a322770a3cbf4cffd3993e2242e907de3360"
+    },
+    {
+      "id": "code",
+      "kind": "source",
+      "content": "File: pagination.py\ndef normalize_limit(value):\n    if value is None:\n        return 25\n    if value < 0:\n        raise ValueError(\"limit must be non-negative\")\n    return value\n",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: code"
+      },
+      "version_id": "9058a322770a3cbf4cffd3993e2242e907de3360"
+    },
+    {
+      "id": "test",
+      "kind": "source",
+      "content": "File: tests/test_pagination.py\nimport pytest\nfrom pagination import normalize_limit\n\ndef test_none_defaults_to_25():\n    assert normalize_limit(None) == 25  # A1\n\ndef test_zero_stays_zero():\n    assert normalize_limit(0) == 0  # A2; old implementation returned 25\n\n@pytest.mark.parametrize(\"value\", [1, 30])\ndef test_positive_limit_preserved(value):\n    assert normalize_limit(value) == value  # A3\n\ndef test_negative_limit_rejected():\n    with pytest.raises(ValueError, match=\"^limit must be non-negative$\"):\n        normalize_limit(-1)  # A4\n",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: test"
+      },
+      "version_id": "9058a322770a3cbf4cffd3993e2242e907de3360"
+    },
+    {
+      "id": "context",
+      "kind": "context",
+      "content": "合成材料清单，不是执行证明。\n源代码和完整 diff 的合成目标版本：9058a322770a3cbf4cffd3993e2242e907de3360；这个 SHA 仅用于版本绑定测试，不声称真实 Git 提交。\n目标环境计划：CPython 3.12、Linux x86_64、pytest 8.3；源码使用标准库，测试仅依赖 pytest。\n测试配置计划：使用 pytest 默认配置，没有 pytest.ini/pyproject pytest 配置覆盖。\n测试范围计划：python -m pytest -q tests/test_pagination.py；本次没有运行此命令。\n验收到断言映射：A1->test_none_defaults_to_25；A2->test_zero_stays_zero；A3->test_positive_limit_preserved[1/30]；A4->test_negative_limit_rejected。\n前置：从包含 pagination.py 的项目根目录导入；0 是明确负例/修复回归，None 和正数是正常回归，负数验证保留拒绝契约。\nmock/skip 说明：测试源码无 mock、无 skip、无 xfail，也不依赖网络或外部服务。\n当前合成项目 SOP development v1，digest=sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8；六章文本完整附于 sop 字段。\n没有运行输出、构建产物、人工复核或最终实例证据。",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: context"
+      }
+    }
+  ]
+}
