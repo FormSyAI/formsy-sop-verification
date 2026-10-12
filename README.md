@@ -6,6 +6,8 @@ FormSy 的任务级 SOP 核查工具：独立本地页面与 Python 内核读取
 
 当前可直接运行本仓库的独立页面。现有 Server/Web 仓库没有推送权限，集成改动保存为[可选补丁](integration/README.md)，未部署到共享 FormSy 服务。
 
+需要接入共享服务时，请把[管理员接入步骤](docs/server-connection.md)交给维护者，按说明部署补丁、配置模型并完成真实任务验收。
+
 ## 先看效果
 
 需要 Python 3.10 或更高版本，无需安装前端依赖：
