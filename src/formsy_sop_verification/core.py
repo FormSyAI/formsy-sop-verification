@@ -206,7 +206,14 @@ def _sop_refs(value, sop, section_id):
         try:
             for part in pointer[1:].split("/"):
                 part = part.replace("~1", "/").replace("~0", "~")
-                current = current[int(part)] if isinstance(current, list) else current[part]
+                if isinstance(current, list):
+                    # Match serde_json::Value::pointer: array indices are ASCII
+                    # decimals with no sign, whitespace or leading zeroes.
+                    if not re.fullmatch(r"0|[1-9][0-9]*", part):
+                        raise ValueError("noncanonical_array_index")
+                    current = current[int(part)]
+                else:
+                    current = current[part]
         except (KeyError, IndexError, ValueError, TypeError):
             raise ValueError("invalid_sop_pointer") from None
         if not isinstance(current, str) or quote not in current:

@@ -54,6 +54,17 @@ class CoreTests(unittest.TestCase):
         self.assertIn("atomic_item_set_mismatch", report["checks"][0]["validation_errors"])
         self.assertEqual(report["checks"][0]["result"], "unverified")
 
+    def test_sop_array_pointers_match_server_canonical_index_rules(self):
+        for index in ("-1", "-0", "+0", "00", " 0", "٠"):
+            with self.subTest(index=index):
+                payload = ready_request()
+                payload["candidate"]["checks"][0]["sop_refs"][0]["pointer"] = f"/sections/0/items/{index}/1"
+                report = verify(payload)
+                self.assertFalse(report["analysis_complete"])
+                self.assertEqual(report["checks"][0]["result"], "unverified")
+                self.assertIn("invalid_sop_pointer", report["checks"][0]["validation_errors"])
+                self.assertEqual(report["checks"][1]["result"], "satisfied")
+
     def test_malformed_condition_identity_returns_failed_unknown_report(self):
         for malformed in ([], {}, None, True, 7):
             with self.subTest(identity=malformed):
