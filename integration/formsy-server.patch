@@ -63,7 +63,7 @@ index c8db3c2..70ceab8 100644
    postgres:
 diff --git a/docs/sop-verification-mvp.md b/docs/sop-verification-mvp.md
 new file mode 100644
-index 0000000..20a4d29
+index 0000000..0495b57
 --- /dev/null
 +++ b/docs/sop-verification-mvp.md
 @@ -0,0 +1,40 @@
@@ -77,7 +77,7 @@ index 0000000..20a4d29
 +- `GET` the same path with `limit=25&offset=0`: project read permission, returns `{items,total,next_offset}`. Items contain only IDs, author/time, status, exact SOP pin, input digest and result/count metadata. A withdrawn SOP or revoked source can still have metadata in this history; its frozen body remains access-controlled.
 +- `GET /.../sop-verifications/{id}`: checks current project/source access and that the pinned SOP remains active. Returns metadata plus `input_snapshot`, `scope_snapshot`, `source_refs_by_id` and the original worker `report`.
 +
-+`POST` returns 201 after appending a report. Status `candidate` means the candidate analysis completed; `failed` preserves a provider/analysis failure with four unknown conditions. Neither means formal approval. Missing configuration returns 503, malformed worker output 502, worker timeout 504, input overflow 413, and incomplete target diff 409. Worker crashes/timeouts do not produce a successful report. No report-update/delete API exists.
++`POST` returns 201 after appending a report. Status `candidate` means the candidate analysis completed; `failed` preserves an incomplete analysis. Provider failures leave all four conditions unknown; individual candidate-validation failures may preserve other valid conditions. A completed provider request can still produce a failed analysis. Neither status means formal approval. Missing configuration returns 503, malformed worker output 502, worker timeout 504, input overflow 413, and incomplete target diff 409. Worker crashes/timeouts do not append a report. No report-update/delete API exists.
 +
 +## Frozen evidence
 +

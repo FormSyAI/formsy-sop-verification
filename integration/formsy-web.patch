@@ -229,10 +229,10 @@ index 14d3dd5..6d49216 100644
                    </Button>
 diff --git a/components/formsy/sop-verification-panel.tsx b/components/formsy/sop-verification-panel.tsx
 new file mode 100644
-index 0000000..d14b3c7
+index 0000000..8439018
 --- /dev/null
 +++ b/components/formsy/sop-verification-panel.tsx
-@@ -0,0 +1,403 @@
+@@ -0,0 +1,409 @@
 +import { useState } from "react";
 +import { Select } from "antd";
 +import { useQuery } from "@tanstack/react-query";
@@ -279,10 +279,16 @@ index 0000000..d14b3c7
 +function failureMessage(error: unknown) {
 +  if (error instanceof ApiError) {
 +    const messages: Record<string, string> = {
-+      sop_verification_unavailable: "SOP 核查服务尚未配置，未生成报告。",
++      sop_verification_unavailable: "SOP 核查服务暂不可用，未生成本轮报告。",
 +      sop_verification_model_unconfigured: "核查模型尚未配置，未生成报告。",
 +      sop_verification_source_incomplete:
 +        "绑定来源尚不完整，无法生成完整核查报告。请先检查来源同步与可读状态。",
++      sop_verification_diff_incomplete:
++        "目标 Commit 的差异含二进制文件、缺失补丁或截断内容，本轮未生成报告。请先检查差异可读性。",
++      sop_verification_scope_empty:
++        "所选任务范围没有可核查的来源正文，未生成报告。请检查来源绑定与同步状态。",
++      sop_verification_output_invalid:
++        "核查服务返回的报告未通过契约校验，本轮未保存有效报告。请先检查核查服务。",
 +      sop_verification_busy: "核查服务正在处理其他请求，请稍后再发起。",
 +      sop_verification_timeout:
 +        "本次核查超时，未确认生成结果。请刷新报告记录后再决定是否重新核查。",
@@ -672,10 +678,10 @@ index dc1a32f..66c7e25 100644
                <SearchField value={q} onChange={setQ} placeholder="搜索本阶段建议，必需项完整保留" />
 diff --git a/e2e/sop-verification.spec.ts b/e2e/sop-verification.spec.ts
 new file mode 100644
-index 0000000..7efd1c4
+index 0000000..05f18c3
 --- /dev/null
 +++ b/e2e/sop-verification.spec.ts
-@@ -0,0 +1,396 @@
+@@ -0,0 +1,420 @@
 +import { expect, test, type Page } from "@playwright/test";
 +
 +// Disposable UI fixtures verify the interface contract, not a deployed audit or model quality.
@@ -767,6 +773,7 @@ index 0000000..7efd1c4
 +  options: {
 +    reader?: boolean;
 +    fail?: boolean;
++    failure?: { status: number; code: string };
 +    noSop?: boolean;
 +    failedReport?: boolean;
 +    locateLimit?: boolean;
@@ -858,6 +865,11 @@ index 0000000..7efd1c4
 +      );
 +    if (path === verificationPath && request.method() === "POST") {
 +      expect(request.postDataJSON()).toMatchObject({ sop_version: 2 });
++      if (options.failure)
++        return route.fulfill({
++          status: options.failure.status,
++          json: { detail: { code: options.failure.code } },
++        });
 +      if (options.fail)
 +        return route.fulfill({
 +          status: 503,
@@ -990,7 +1002,7 @@ index 0000000..7efd1c4
 +  const panel = page.locator(".fs-sop-verification");
 +  await panel.getByRole("button", { name: "按 SOP 核查", exact: true }).click();
 +  await expect(
-+    panel.getByText("SOP 核查服务尚未配置，未生成报告。", { exact: true }),
++    panel.getByText("SOP 核查服务暂不可用，未生成本轮报告。", { exact: true }),
 +  ).toBeVisible();
 +  await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
 +  await panel.getByRole("button", { name: "刷新报告记录", exact: true }).click();
@@ -1005,6 +1017,24 @@ index 0000000..7efd1c4
 +  await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
 +  expect(writes).toEqual([]);
 +});
++
++for (const failure of [
++  { status: 409, code: "sop_verification_diff_incomplete", text: /目标 Commit 的差异含二进制文件/ },
++  { status: 409, code: "sop_verification_scope_empty", text: /所选任务范围没有可核查的来源正文/ },
++  { status: 502, code: "sop_verification_output_invalid", text: /报告未通过契约校验/ },
++]) {
++  test(`${failure.code} 明确失败原因且保留旧报告，不自动重试`, async ({ page }) => {
++    const { writes } = await fixture(page, { failure });
++    const panel = page.locator(".fs-sop-verification");
++    await panel.getByLabel("目标 Commit（可选）", { exact: true }).fill("b".repeat(40));
++    await panel.getByRole("button", { name: "按 SOP 核查", exact: true }).click();
++    await expect(panel.getByText(failure.text)).toBeVisible();
++    await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
++    await expect(panel.getByText(/当前内容已变化/)).toHaveCount(0);
++    await panel.getByRole("button", { name: "刷新报告记录", exact: true }).click();
++    expect(writes).toEqual([verificationPath]);
++  });
++}
 +
 +test("保存失败轮不显示核查完成，并保留失败原因供复核", async ({ page }) => {
 +  const { writes } = await fixture(page, { failedReport: true });

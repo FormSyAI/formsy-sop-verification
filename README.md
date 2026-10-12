@@ -4,7 +4,7 @@ FormSy 的任务级 SOP 核查工具：独立本地页面与 Python 内核读取
 
 本项目由三部分协作：本仓库负责核查内核；`formsy-server` 负责项目权限、取证和不可变报告；`formsy-web` 在任务的“验证”阶段提供核查入口。既有 TaskCheck 与 Finish Gate 承接人工检查，候选报告不会自动完成任务。
 
-当前可直接运行本仓库的独立页面。现有 Server/Web 仓库没有推送权限，集成改动保存为[可选补丁](integration/README.md)，未部署到共享 FormSy 服务。
+当前可直接运行本仓库的独立页面。Server/Web 集成已提交草稿 PR，并保留[对应补丁与送审状态](integration/README.md)；尚未合并或部署到共享 FormSy 服务。
 
 需要接入共享服务时，请把[管理员接入步骤](docs/server-connection.md)交给维护者，按说明部署补丁、配置模型并完成真实任务验收。
 

@@ -1,6 +1,6 @@
 # 服务端接入：管理员交接说明
 
-目前可运行的是本地核查工作台；共享 FormSy 尚未部署本次集成。管理员需要部署 Server/Web 两个补丁及本仓库的核查程序。仅授予 GitHub 仓库权限、完成 Entire 上传或在本机配置模型 key，都不会自动完成服务端接入。
+目前可运行的是本地核查工作台；共享 FormSy 尚未部署本次集成。Server/Web 集成已提交草稿 PR：[Server #25](https://github.com/FormSyAI/formsy-server/pull/25)、[Web #6](https://github.com/FormSyAI/formsy-web/pull/6)。管理员需要审阅、合入并部署两端改动及本仓库的核查程序。仅授予 GitHub 仓库权限、完成 Entire 上传或在本机配置模型 key，都不会自动完成服务端接入。
 
 接通后的流程：用户登录 FormSy → 打开任务的“验证”页 → 确认当前生效 SOP 版本及可选目标 Commit → 显式发起核查 → Server 按当前权限读取任务绑定的 Trace → 调用核查程序与 DeepSeek → 保存并展示候选报告。现有人工检查和任务完成流程不自动改变。
 
@@ -20,7 +20,9 @@
 - 用户能读取选定项目和 GitHub 来源，并能编辑该任务：项目 owner/maintainer，或仍具 developer 角色的任务创建者。项目应已同步可读的 Conversation/Trace 内容；只有 Commit 元数据不足以核查执行过程。
 - 部署环境通过既有 secret 渠道提供 DeepSeek key。本机工作台进程中的 key 不会自动同步到服务器，也不需要提交到 GitHub。
 
-## 1. 审阅并应用两个补丁
+## 1. 审阅并合入两个 PR
+
+优先审阅上述 Server/Web PR，核对匹配版本后按团队流程合入。若需要用补丁交接，也可按下面步骤操作；PR 已合入后不再重复应用补丁。
 
 补丁位于本仓库的 [`integration/`](../integration/README.md)，只包含本次改动，不包含旧仓库 Git 历史。
 
@@ -42,8 +44,8 @@ Web 同样执行，补丁文件换成 `formsy-web.patch`。若当前部署代码
 补丁 SHA-256：
 
 ```text
-formsy-server.patch  7d7030530a7f2dff68fff3e1b4673c83b84651a6ecf089422fa4dfabe84eca52
-formsy-web.patch     2dc6b47eae4d7c22ed80ffd7b71b3d30eb7e62b71d99c4bf003cc8ddf55a5b1d
+formsy-server.patch  1058d6ef4744a956732aad2d85bf1a034066d93c45f62dc9d7688cc3121f1922
+formsy-web.patch     e6b2be1905be12e19174d3fcb5aca9957821c91b33f2e135bc4e46ff31d82b21
 ```
 
 ## 2. 部署完整核查仓库与模型配置
@@ -101,6 +103,6 @@ POST 成功追加报告返回 `201`；其中也可能保存 `status: failed` 的
 
 ## 已验证与待验证
 
-已执行本地 worker 42 项离线测试；Server 82 项 lib 测试通过、8 项忽略，`cargo check --tests` 及实际 worker 离线联调通过；Web 21 项单元测试、8 项 Chrome fixtures、typecheck、lint、design check 和构建通过。两个补丁已核对可应用到表中基线。
+已执行本地 worker 42 项离线测试；Server 82 项 lib 测试通过、8 项忽略，`cargo check --tests` 及实际 worker 离线联调通过，Knowledge 约束合同 8 项通过、1 项 PostgreSQL 忽略；Web 21 项单元测试、8 个不同的聚焦 Chrome 场景、typecheck、lint、tokens/design、构建及 route-entrypoints 通过。Web 当前 e2e 共 11 项，本轮未全量重跑。两个补丁已核对可应用到表中基线。
 
 PostgreSQL 迁移、容器构建、共享环境部署和真实 FormSy Trace 的端到端核查尚未验证。四个参考条件仍是局部映射；完整读取已选来源不代表所有现实过程均被记录。部署前的检查和部署后的真实验收不能互相替代。
