@@ -1,0 +1,1287 @@
+diff --git a/app/formsy.css b/app/formsy.css
+index ea48f85..223ac6e 100644
+--- a/app/formsy.css
++++ b/app/formsy.css
+@@ -4217,6 +4217,24 @@ button.fs-row-action {
+   display: grid;
+   gap: var(--space-4);
+ }
++.fs-sop-verification .fs-gate-content {
++  margin-block-start: var(--space-4);
++}
++.fs-sop-verification code {
++  overflow-wrap: anywhere;
++}
++.fs-sop-verification-action {
++  display: grid;
++  justify-items: start;
++  gap: var(--space-3);
++}
++.fs-sop-verification-action > .fs-field {
++  width: 100%;
++}
++.fs-sop-verification-history {
++  flex: 1;
++  min-width: var(--size-select);
++}
+ .fs-gate-content .fs-card {
+   margin: 0;
+ }
+diff --git a/components/formsy/knowledge-source-refs.tsx b/components/formsy/knowledge-source-refs.tsx
+index 14d3dd5..6d49216 100644
+--- a/components/formsy/knowledge-source-refs.tsx
++++ b/components/formsy/knowledge-source-refs.tsx
+@@ -1,24 +1,95 @@
+-import { useState } from "react";
++import { useEffect, useState } from "react";
+ import { Select } from "antd";
+-import type { SourceRef } from "@/lib/formsy/api/knowledge";
++import type { SourcePage, SourceRef } from "@/lib/formsy/api/knowledge";
+ import { safeKnowledgeUrl } from "@/lib/formsy/knowledge-permissions";
+ import { useTurnSource } from "@/lib/formsy/queries/knowledge";
+ import { Button, Modal, Notice, Segmented, SkeletonRows, TextLink } from "./shared";
+ import { KnowledgeError } from "./knowledge-ui";
+ import { formatTimestamp } from "@/lib/formsy/timestamp";
+ 
+-export function KnowledgeSourceRefs({ projectId, refs }: { projectId: string; refs: SourceRef[] }) {
++const MAX_LOCATE_PAGES = 20;
++type LocatedPages = {
++  pages: string[];
++  items: SourcePage["items"];
++  found: string[];
++  stopped: "end" | "limit" | "cursor" | null;
++};
++const emptyLocated = (): LocatedPages => ({ pages: [], items: [], found: [], stopped: null });
++
++export function KnowledgeSourceRefs({
++  projectId,
++  refs,
++  locateReferences = false,
++}: {
++  projectId: string;
++  refs: SourceRef[];
++  locateReferences?: boolean;
++}) {
+   const [open, setOpen] = useState(false);
+   const [index, setIndex] = useState(0);
+   const [cursor, setCursor] = useState<string>();
+   const [section, setSection] = useState<"conversation" | "trace">("conversation");
++  const [wholeTurn, setWholeTurn] = useState(false);
++  const [located, setLocated] = useState<LocatedPages>(emptyLocated);
+   const selected = refs[index];
+   const turn = open && selected?.kind === "turn" ? selected : null;
+   const source = useTurnSource(projectId, turn, section, cursor);
++  const locating =
++    locateReferences &&
++    !wholeTurn &&
++    selected?.kind === "turn" &&
++    Boolean(selected.message_ids?.length || selected.call_ids?.length);
++  const requested =
++    selected?.kind === "turn"
++      ? [
++          ...(selected.message_ids ?? []).map((id) => `message:${id}`),
++          ...(selected.call_ids ?? []).map((id) => `call:${id}`),
++        ]
++      : [];
++  useEffect(() => {
++    if (
++      !open ||
++      !locating ||
++      !source.data ||
++      source.isError ||
++      source.isFetching ||
++      located.stopped ||
++      selected?.kind !== "turn"
++    )
++      return;
++    const page = cursor ?? "";
++    if (located.pages.includes(page)) return;
++    const found = new Set(located.found);
++    const items = source.data.items.filter((item) => {
++      let matched = false;
++      if (selected.message_ids?.includes(item.id)) {
++        found.add(`message:${item.id}`);
++        matched = true;
++      }
++      if (item.call_id && selected.call_ids?.includes(item.call_id)) {
++        found.add(`call:${item.call_id}`);
++        matched = true;
++      }
++      return matched;
++    });
++    const pages = [...located.pages, page];
++    const next = source.data.next_cursor;
++    const stopped = !next
++      ? "end"
++      : pages.includes(next)
++        ? "cursor"
++        : pages.length >= MAX_LOCATE_PAGES
++          ? "limit"
++          : null;
++    setLocated({ pages, items: [...located.items, ...items], found: [...found], stopped });
++    if (!stopped && next) setCursor(next);
++  }, [open, locating, source.data, source.isError, source.isFetching, cursor, located, selected]);
+   if (!refs.length) return <span className="fs-entry-classification">未附来源</span>;
+   function choose(next: number) {
+     setIndex(next);
+     setCursor(undefined);
++    setWholeTurn(false);
++    setLocated(emptyLocated());
+     setSection(
+       refs[next]?.kind === "turn" && refs[next].call_ids?.length ? "trace" : "conversation",
+     );
+@@ -50,18 +121,35 @@ export function KnowledgeSourceRefs({ projectId, refs }: { projectId: string; re
+         {selected?.kind === "turn" ? (
+           <>
+             <div className="fs-source-toolbar">
+-              <Segmented
+-                label="原始来源类型"
+-                value={section}
+-                options={[
+-                  { value: "conversation", label: "需求与对话" },
+-                  { value: "trace", label: "工具与验证记录" },
+-                ]}
+-                onChange={(value) => {
+-                  setSection(value);
+-                  setCursor(undefined);
+-                }}
+-              />
++              {!locating && (
++                <Segmented
++                  label="原始来源类型"
++                  value={section}
++                  options={[
++                    { value: "conversation", label: "需求与对话" },
++                    { value: "trace", label: "工具与验证记录" },
++                  ]}
++                  onChange={(value) => {
++                    setSection(value);
++                    setCursor(undefined);
++                  }}
++                />
++              )}
++              {locating && <span>引用定位 · 已读取 {located.pages.length} 页</span>}
++              {locateReferences &&
++              selected?.kind === "turn" &&
++              (selected.message_ids?.length || selected.call_ids?.length) ? (
++                <Button
++                  onClick={() => {
++                    if (locating) {
++                      setWholeTurn(true);
++                      setCursor(undefined);
++                    } else choose(index);
++                  }}
++                >
++                  {locating ? "阅读原轮次" : "重新定位引用"}
++                </Button>
++              ) : null}
+               {source.data && !source.isError && (
+                 <span className="fs-entry-classification">
+                   {source.data.status === "available"
+@@ -101,13 +189,35 @@ export function KnowledgeSourceRefs({ projectId, refs }: { projectId: string; re
+             {source.isError && (
+               <KnowledgeError error={source.error} retry={() => void source.refetch()} />
+             )}
+-            {source.data && !source.isError && (
++            {(locating ? located.pages.length > 0 : source.data) && !source.isError && (
+               <>
+-                {!source.data.items.length && (
++                {locating && !located.stopped && !source.isError && (
++                  <Notice>正在逐页定位引用；只显示命中的消息与同一调用的工具记录。</Notice>
++                )}
++                {locating && located.stopped === "end" && (
++                  <Notice
++                    tone={
++                      requested.every((id) => located.found.includes(id)) ? "success" : "warning"
++                    }
++                  >
++                    {requested.every((id) => located.found.includes(id))
++                      ? `已定位全部引用，共 ${located.items.length} 条相关记录。`
++                      : `已读完原轮次，仍有 ${requested.filter((id) => !located.found.includes(id)).length} 项引用未找到。可阅读原轮次核对。`}
++                  </Notice>
++                )}
++                {locating && (located.stopped === "limit" || located.stopped === "cursor") && (
++                  <Notice tone="warning">
++                    {located.stopped === "limit"
++                      ? `已达到 ${MAX_LOCATE_PAGES} 页定位边界，引用定位尚未完整。`
++                      : "来源游标没有继续推进，引用定位尚未完整。"}{" "}
++                    可阅读原轮次继续核对。
++                  </Notice>
++                )}
++                {!locating && !source.data!.items.length && (
+                   <Notice>该来源当前没有可读取的片段。可切换对话或工具记录查看。</Notice>
+                 )}
+-                {source.data.items.map((item) => (
+-                  <article className="fs-knowledge-job" key={item.id}>
++                {(locating ? located.items : source.data!.items).map((item, itemIndex) => (
++                  <article className="fs-knowledge-job" key={`${item.id}:${itemIndex}`}>
+                     <small>
+                       {(
+                         {
+@@ -133,7 +243,7 @@ export function KnowledgeSourceRefs({ projectId, refs }: { projectId: string; re
+                     )}
+                   </article>
+                 ))}
+-                {source.data.next_cursor && (
++                {!locating && source.data!.next_cursor && (
+                   <Button onClick={() => setCursor(source.data!.next_cursor!)}>
+                     继续读取下一页
+                   </Button>
+diff --git a/components/formsy/sop-verification-panel.tsx b/components/formsy/sop-verification-panel.tsx
+new file mode 100644
+index 0000000..d14b3c7
+--- /dev/null
++++ b/components/formsy/sop-verification-panel.tsx
+@@ -0,0 +1,403 @@
++import { useState } from "react";
++import { Select } from "antd";
++import { useQuery } from "@tanstack/react-query";
++import { ApiError } from "@/lib/formsy/api/client";
++import { sopApi } from "@/lib/formsy/api/sop";
++import type { Task } from "@/lib/formsy/api/tasks";
++import type { SopVerificationResult } from "@/lib/formsy/api/sop-verification";
++import { useCurrentUser } from "@/lib/formsy/queries/onboarding";
++import {
++  useCreateSopVerification,
++  useSopVerification,
++  useSopVerifications,
++} from "@/lib/formsy/queries/sop-verification";
++import { formatTimestamp } from "@/lib/formsy/timestamp";
++import {
++  Badge,
++  Button,
++  EmptyState,
++  Field,
++  Input,
++  Notice,
++  SkeletonRows,
++  StatStrip,
++  SurfaceCard,
++  TextLink,
++} from "./shared";
++import { KnowledgeError, knowledgeError } from "./knowledge-ui";
++import { KnowledgeSourceRefs } from "./knowledge-source-refs";
++
++const resultLabels: Record<SopVerificationResult, string> = {
++  satisfied: "满足",
++  unsatisfied: "不满足",
++  unverified: "未核实",
++  not_applicable: "不适用",
++};
++const sectionLabels: Record<string, string> = {
++  goal: "目标与范围",
++  constraints: "规则与约束",
++  behavior: "行为与边界",
++  impact: "技术影响",
++  preparation: "实现准备",
++  acceptance: "完成条件",
++};
++function failureMessage(error: unknown) {
++  if (error instanceof ApiError) {
++    const messages: Record<string, string> = {
++      sop_verification_unavailable: "SOP 核查服务尚未配置，未生成报告。",
++      sop_verification_model_unconfigured: "核查模型尚未配置，未生成报告。",
++      sop_verification_source_incomplete:
++        "绑定来源尚不完整，无法生成完整核查报告。请先检查来源同步与可读状态。",
++      sop_verification_busy: "核查服务正在处理其他请求，请稍后再发起。",
++      sop_verification_timeout:
++        "本次核查超时，未确认生成结果。请刷新报告记录后再决定是否重新核查。",
++      sop_verification_input_too_large: "任务来源超出本次核查容量。请先缩小任务来源范围。",
++      sop_withdrawn: "这版 SOP 已撤回，不能用于新核查或读取冻结正文。请重新核对项目 SOP。",
++    };
++    if (error.code && messages[error.code]) return messages[error.code];
++  }
++  return `${knowledgeError(error)} 请刷新报告记录确认结果；请求失败不代表核查完成。`;
++}
++
++export function SopVerificationPanel({
++  projectId,
++  task,
++  canEdit,
++}: {
++  projectId: string;
++  task: Task;
++  canEdit: boolean;
++}) {
++  const user = useCurrentUser();
++  const actor = JSON.stringify([user.data?.id, user.data?.active_provider, user.data?.providers]);
++  const effective = useQuery({
++    queryKey: ["sop", actor, projectId, "effective"],
++    queryFn: () => sopApi.effective(projectId),
++    enabled: user.isSuccess,
++    retry: false,
++    refetchOnMount: "always",
++  });
++  const history = useSopVerifications(projectId, task.id, actor, user.isSuccess);
++  const create = useCreateSopVerification(projectId, task.id, actor);
++  const [selectedId, setSelectedId] = useState<string>();
++  const [targetCommit, setTargetCommit] = useState("");
++  const normalizedCommit = targetCommit.trim().toLowerCase();
++  const commitValid = !normalizedCommit || /^[0-9a-f]{40}$/.test(normalizedCommit);
++  const reports = history.data?.pages.flatMap((page) => page.items) ?? [];
++  const activeId = selectedId ?? reports[0]?.id;
++  const detail = useSopVerification(projectId, task.id, actor, activeId, user.isSuccess);
++  const bundle = effective.isError ? null : effective.data?.bundle;
++  const report = detail.isError ? undefined : detail.data;
++  const canGenerate =
++    canEdit &&
++    task.status !== "done" &&
++    Boolean(bundle) &&
++    task.source_bindings.length > 0 &&
++    commitValid;
++  return (
++    <SurfaceCard className="fs-sop-verification">
++      <div className="fs-gate-heading">
++        <h2>SOP 核查 · 候选报告</h2>
++        <Badge tone={report?.status === "failed" ? "danger" : "info"}>
++          {report?.status === "failed" ? "分析失败" : "人工待复核"}
++        </Badge>
++      </div>
++      <div className="fs-gate-content">
++        <Notice>
++          AI 按本次固定的 SOP 和来源生成候选结论，仍需人工复核。报告不会自动记录检查结果或完成任务。
++        </Notice>
++        {effective.isPending && <SkeletonRows count={1} />}
++        {effective.isError && (
++          <KnowledgeError error={effective.error} retry={() => void effective.refetch()} />
++        )}
++        {bundle && (
++          <div>
++            <p>
++              新核查使用项目 SOP v{bundle.version}；来源为本任务绑定的 {task.source_bindings.length}{" "}
++              项范围。
++            </p>
++            <details className="fs-source-identity">
++              <summary>本次规范标识</summary>
++              <p>
++                {bundle.sop_id} · v{bundle.version}
++              </p>
++              <code>{bundle.digest}</code>
++            </details>
++          </div>
++        )}
++        {effective.isSuccess && !bundle && (
++          <Notice tone="warning">
++            项目尚未启用 SOP，暂不能发起核查。
++            <TextLink href={`/projects/${encodeURIComponent(projectId)}/sop`}>
++              查看项目 SOP
++            </TextLink>
++          </Notice>
++        )}
++        {!task.source_bindings.length && (
++          <Notice tone="warning">请先在任务设置中绑定需要核查的会话与轮次范围。</Notice>
++        )}
++        {canEdit && task.status !== "done" && (
++          <div className="fs-sop-verification-action">
++            <Field label="目标 Commit（可选）">
++              <Input
++                aria-label="目标 Commit（可选）"
++                value={targetCommit}
++                onChange={(event) => setTargetCommit(event.target.value)}
++                disabled={create.isPending}
++                maxLength={40}
++                placeholder="填写本项目的 40 位完整 Commit SHA"
++              />
++            </Field>
++            {!commitValid && (
++              <Notice tone="warning">请填写 40 位十六进制完整 Commit SHA，或留空。</Notice>
++            )}
++            {!normalizedCommit && (
++              <p className="fs-task-phase-description">
++                未指定目标 Commit；涉及实际改动覆盖的条件将保留未核实。
++              </p>
++            )}
++            <p className="fs-task-phase-description">
++              点击后，所选任务范围的对话、工具记录及关联证据将发送至 DeepSeek
++              核查，并保存为新一轮候选报告。已有报告保留。
++            </p>
++            <Button
++              disabled={!canGenerate || create.isPending || !effective.isFetchedAfterMount}
++              loading={create.isPending}
++              onClick={() => {
++                if (!bundle) return;
++                create.mutate(
++                  { version: bundle.version, targetCommit: normalizedCommit || undefined },
++                  { onSuccess: (next) => setSelectedId(next.id) },
++                );
++              }}
++            >
++              按 SOP 核查
++            </Button>
++          </div>
++        )}
++        {create.isPending && <Notice>正在读取绑定来源并核查，请等待本次结果。</Notice>}
++        {create.isError && <Notice tone="danger">{failureMessage(create.error)}</Notice>}
++        <div className="fs-source-toolbar">
++          {reports.length > 0 && (
++            <Select
++              className="fs-sop-verification-history"
++              aria-label="选择 SOP 核查报告"
++              value={activeId}
++              onChange={setSelectedId}
++              options={reports.map((item) => ({
++                value: item.id,
++                label: `${formatTimestamp(item.created_at)} · SOP v${item.sop.version} · ${item.status === "failed" ? "分析失败" : "候选报告"}`,
++              }))}
++            />
++          )}
++          <Button disabled={history.isFetching} onClick={() => void history.refetch()}>
++            刷新报告记录
++          </Button>
++          {history.hasNextPage && (
++            <Button
++              loading={history.isFetchingNextPage}
++              onClick={() => void history.fetchNextPage()}
++            >
++              加载更早报告
++            </Button>
++          )}
++        </div>
++        {history.isPending && <SkeletonRows count={2} />}
++        {history.isError && (
++          <KnowledgeError error={history.error} retry={() => void history.refetch()} />
++        )}
++        {history.isSuccess && !reports.length && !create.isPending && !report && (
++          <EmptyState
++            title="尚无 SOP 核查报告"
++            detail="绑定任务来源并发起核查后，在这里查看逐项候选结论和证据。"
++          />
++        )}
++        {activeId && detail.isPending && <SkeletonRows count={3} />}
++        {detail.isError && (
++          <KnowledgeError error={detail.error} retry={() => void detail.refetch()} />
++        )}
++        {report && (
++          <>
++            <p>
++              报告时间：{formatTimestamp(report.created_at)} · 固定 SOP v{report.sop.version} ·
++              {report.status === "failed" ? "分析失败，已保留本轮记录" : "人工未复核"}
++            </p>
++            {report.report.context.target_commit &&
++              /^[0-9a-f]{40}$/i.test(report.report.context.target_commit) && (
++                <p>
++                  固定目标 Commit：
++                  <TextLink
++                    href={`/projects/${encodeURIComponent(projectId)}/commits/${encodeURIComponent(report.report.context.target_commit)}`}
++                  >
++                    {report.report.context.target_commit}
++                  </TextLink>
++                </p>
++              )}
++            {report.status === "failed" && (
++              <Notice tone="danger">
++                本轮分析失败，未得出完整核查结论。修复后可重新核查，失败记录会保留。
++              </Notice>
++            )}
++            <Notice tone="warning">
++              核查范围：{report.report.coverage.mapped_conditions} 个条件，涉及{" "}
++              {report.report.coverage.mapped_sections.length}/
++              {report.report.coverage.total_sections} 章。 未覆盖：
++              {report.report.coverage.unmapped_sections
++                .map((id) => sectionLabels[id] ?? id)
++                .join("、")}
++              。不代表完整 SOP 已满足。
++            </Notice>
++            {report.report.coverage.evidence_completeness !== "complete" && (
++              <Notice tone="warning">
++                本轮来源采集
++                {report.report.coverage.evidence_completeness === "partial"
++                  ? "不完整"
++                  : "完整性未知"}
++                。局部正面证据不能证明完整要求已满足。
++              </Notice>
++            )}
++            {!report.report.analysis_complete && (
++              <Notice tone="warning">本轮分析未完整完成；请结合下方缺口与原始证据复核。</Notice>
++            )}
++            <details className="fs-source-identity">
++              <summary>冻结依据与报告标识</summary>
++              <dl>
++                <div>
++                  <dt>报告</dt>
++                  <dd>{report.id}</dd>
++                </div>
++                <div>
++                  <dt>SOP 摘要</dt>
++                  <dd>
++                    <code>{report.sop.digest}</code>
++                  </dd>
++                </div>
++                <div>
++                  <dt>输入摘要</dt>
++                  <dd>
++                    <code>{report.input_digest}</code>
++                  </dd>
++                </div>
++                <div>
++                  <dt>核查条件映射</dt>
++                  <dd>
++                    {report.report.coverage.profile_id} · {report.report.coverage.mapping_revision}
++                  </dd>
++                </div>
++              </dl>
++              <p>修改来源或 SOP 后重新核查会产生新报告，历史结论保留本轮依据。</p>
++              {report.report.analysis_errors.length > 0 && (
++                <p>本轮分析错误：{report.report.analysis_errors.join("、")}</p>
++              )}
++            </details>
++            <StatStrip
++              items={Object.entries(report.summary.counts).map(([key, value]) => ({
++                label: resultLabels[key as SopVerificationResult],
++                value,
++              }))}
++            />
++            {report.report.checks.map((check) => {
++              const sourceIds = new Set(
++                [...check.evidence_refs, ...check.items.flatMap((item) => item.evidence_refs)].map(
++                  (evidence) => evidence.source_id,
++                ),
++              );
++              const refs = [...sourceIds].flatMap((sourceId) => {
++                const ref = report.source_refs_by_id[sourceId];
++                return ref ? [ref] : [];
++              });
++              return (
++                <SurfaceCard className="fs-gate-item" key={check.condition_id}>
++                  <div className="fs-section-header">
++                    <h3>{check.title}</h3>
++                    <Badge
++                      tone={
++                        check.result === "unsatisfied"
++                          ? "danger"
++                          : check.result === "unverified"
++                            ? "warning"
++                            : check.result === "not_applicable"
++                              ? "neutral"
++                              : "info"
++                      }
++                    >
++                      候选 · {resultLabels[check.result]}
++                    </Badge>
++                  </div>
++                  <p className="fs-entry-classification">
++                    {check.condition_id} ·{" "}
++                    {sectionLabels[check.source_section_id] ?? check.source_section_id}
++                  </p>
++                  <p className="fs-knowledge-content">参考核查条件：{check.criterion}</p>
++                  <p>判断依据：{check.reason}</p>
++                  {check.sop_refs.length > 0 && (
++                    <details className="fs-source-identity">
++                      <summary>本版 SOP 原文依据</summary>
++                      {check.sop_refs.map((ref, index) => (
++                        <div key={index}>
++                          <small>{ref.pointer}</small>
++                          <pre className="fs-knowledge-source-text">{ref.quote}</pre>
++                        </div>
++                      ))}
++                    </details>
++                  )}
++                  {check.gaps.length > 0 && (
++                    <div>
++                      <strong>缺口与补充建议</strong>
++                      <ul>
++                        {check.gaps.map((gap, index) => (
++                          <li key={index}>{gap}</li>
++                        ))}
++                      </ul>
++                    </div>
++                  )}
++                  {check.validation_errors.length > 0 && (
++                    <Notice tone="warning">
++                      证据校验问题：{check.validation_errors.join("；")}
++                    </Notice>
++                  )}
++                  {check.evidence_refs.map((evidence, index) => (
++                    <details className="fs-source-identity" key={`${evidence.source_id}:${index}`}>
++                      <summary>
++                        引用 {index + 1} · {evidence.source_id} · 第 {evidence.start_line}–
++                        {evidence.end_line} 行
++                      </summary>
++                      <pre className="fs-knowledge-source-text">{evidence.quote}</pre>
++                    </details>
++                  ))}
++                  {check.items.length > 0 && (
++                    <details className="fs-source-identity">
++                      <summary>展开子项判定（{check.items.length}）</summary>
++                      {check.items.map((item) => (
++                        <article className="fs-knowledge-job" key={item.item_id}>
++                          <p>
++                            {item.item_id} · 候选{resultLabels[item.result]}
++                          </p>
++                          <p>{item.criterion}</p>
++                          <p>{item.reason}</p>
++                          {item.evidence_refs.map((evidence, index) => (
++                            <div key={`${evidence.source_id}:${index}`}>
++                              <small>
++                                {evidence.source_id} · 第 {evidence.start_line}–{evidence.end_line}{" "}
++                                行
++                              </small>
++                              <pre className="fs-knowledge-source-text">{evidence.quote}</pre>
++                            </div>
++                          ))}
++                        </article>
++                      ))}
++                    </details>
++                  )}
++                  <div className="fs-gate-item-footer">
++                    <KnowledgeSourceRefs projectId={projectId} refs={refs} locateReferences />
++                    <span className="fs-entry-classification">人工未复核</span>
++                  </div>
++                </SurfaceCard>
++              );
++            })}
++          </>
++        )}
++      </div>
++    </SurfaceCard>
++  );
++}
+diff --git a/components/formsy/task-detail-page.tsx b/components/formsy/task-detail-page.tsx
+index dc1a32f..66c7e25 100644
+--- a/components/formsy/task-detail-page.tsx
++++ b/components/formsy/task-detail-page.tsx
+@@ -24,6 +24,7 @@ import { TaskContextPanel } from "./task-context";
+ import { FinishGatePanel } from "./finish-gate-panel";
+ import { KnowledgeEntryForm } from "./knowledge-entry-form";
+ import { KnowledgeExtractPanel } from "./knowledge-extract-panel";
++import { SopVerificationPanel } from "./sop-verification-panel";
+ 
+ export function LiveTaskDetailPage({
+   projectId,
+@@ -182,12 +183,15 @@ export function LiveTaskDetailPage({
+               切换阶段只改变这里取用的知识；任务状态在上方显示。
+             </p>
+             {phase === "verify" && (
+-              <FinishGatePanel
+-                projectId={projectId}
+-                taskId={taskId}
+-                canEdit={editable}
+-                done={task.data.status === "done"}
+-              />
++              <>
++                <SopVerificationPanel projectId={projectId} task={task.data} canEdit={editable} />
++                <FinishGatePanel
++                  projectId={projectId}
++                  taskId={taskId}
++                  canEdit={editable}
++                  done={task.data.status === "done"}
++                />
++              </>
+             )}
+             <div className="fs-task-next-step">
+               <SearchField value={q} onChange={setQ} placeholder="搜索本阶段建议，必需项完整保留" />
+diff --git a/e2e/sop-verification.spec.ts b/e2e/sop-verification.spec.ts
+new file mode 100644
+index 0000000..7efd1c4
+--- /dev/null
++++ b/e2e/sop-verification.spec.ts
+@@ -0,0 +1,396 @@
++import { expect, test, type Page } from "@playwright/test";
++
++// Disposable UI fixtures verify the interface contract, not a deployed audit or model quality.
++const taskPath = "/projects/demo/tasks/task-1";
++const verificationPath = `${taskPath}/sop-verifications`;
++const digest = `sha256:${"a".repeat(64)}`;
++function candidate(id: string, version: number) {
++  const results = ["satisfied", "unsatisfied", "unverified", "not_applicable"];
++  return {
++    id,
++    project_id: "demo",
++    task_id: "task-1",
++    created_by: "author",
++    created_at: version === 1 ? "2026-10-11T08:00:00Z" : "2026-10-12T08:00:00Z",
++    status: "candidate",
++    sop: { sop_id: "development", version, digest },
++    input_digest: `sha256:${String(version).repeat(64)}`,
++    summary: {
++      result: "unsatisfied",
++      counts: { satisfied: 1, unsatisfied: 1, unverified: 1, not_applicable: 1 },
++    },
++    input_snapshot: {},
++    source_refs_by_id: {
++      "source-tool": {
++        kind: "turn",
++        session_id: "session-1",
++        turn_id: "turn-1",
++        call_ids: ["call-test"],
++      },
++    },
++    report: {
++      context: { project_id: "demo", task_id: "task-1", target_commit: "" },
++      analysis_complete: true,
++      analysis_errors: [],
++      formal_closed: false,
++      coverage: {
++        profile_id: "code-fix-mvp",
++        mapping_revision: "1",
++        mapped_conditions: 4,
++        total_sections: 6,
++        mapped_sections: ["goal", "behavior", "acceptance"],
++        unmapped_sections: ["constraints", "impact", "preparation"],
++        complete_sop: false,
++        evidence_completeness: "complete",
++      },
++      checks: results.map((result, index) => ({
++        condition_id: `FIX0${index + 1}.C01`,
++        rule_id: `FIX0${index + 1}`,
++        source_section_id: "acceptance",
++        title: `本轮条件 ${index + 1}`,
++        criterion: `规范条件 ${index + 1}`,
++        candidate_result: result,
++        result,
++        reason: `${id} 的固定依据 ${index + 1}`,
++        gaps: index === 1 ? ["请补充本版本的测试执行结果"] : [],
++        sop_refs: [{ pointer: "/sections/5/ready_criteria", quote: "测试覆盖本次需求" }],
++        items:
++          index === 0
++            ? [
++                {
++                  item_id: "FIX01.C01.I01",
++                  criterion: "子项要求",
++                  result,
++                  reason: "子项原文依据",
++                  gaps: [],
++                  evidence_refs: [
++                    {
++                      source_id: "source-tool",
++                      start_line: 2,
++                      end_line: 3,
++                      quote: "原始测试输出",
++                      locator: { tool_call_id: "call-test" },
++                    },
++                  ],
++                },
++              ]
++            : [],
++        evidence_refs: [],
++        validation_errors: [],
++        review_state: "model_candidate",
++        human_review: "not_reviewed",
++      })),
++    },
++  };
++}
++
++async function fixture(
++  page: Page,
++  options: {
++    reader?: boolean;
++    fail?: boolean;
++    noSop?: boolean;
++    failedReport?: boolean;
++    locateLimit?: boolean;
++    locateMissing?: boolean;
++    partial?: boolean;
++  } = {},
++) {
++  const writes: string[] = [];
++  const sourceQueries: URL[] = [];
++  let reports = [candidate("report-old", 1)];
++  if (options.partial) reports[0].report.coverage.evidence_completeness = "partial";
++  await page.route("**/api/v1/**", async (route) => {
++    const request = route.request();
++    const url = new URL(request.url());
++    const path = url.pathname.replace("/api/v1", "");
++    if (request.method() !== "GET") writes.push(path);
++    if (path === "/auth/me")
++      return route.fulfill({
++        json: {
++          id: "author",
++          csrf_token: "fixture",
++          active_provider: "github",
++          providers: [{ provider: "github", login: "author" }],
++        },
++      });
++    if (path === "/projects")
++      return route.fulfill({
++        json: {
++          items: [
++            {
++              id: "demo",
++              name: "核查测试项目",
++              repository_full_name: "org/demo",
++              role: options.reader ? "reader" : "maintainer",
++            },
++          ],
++        },
++      });
++    if (path === "/projects/demo")
++      return route.fulfill({
++        json: {
++          project_id: "demo",
++          role: options.reader ? "reader" : "maintainer",
++          membership_status: "active",
++          capabilities: { can_read: true, can_manage_connection: !options.reader },
++        },
++      });
++    if (path === taskPath)
++      return route.fulfill({
++        json: {
++          id: "task-1",
++          project_id: "demo",
++          created_by: "author",
++          title: "SOP 核查测试任务",
++          description: "只验证核查候选展示",
++          status: "active",
++          session_ids: ["session-1"],
++          source_bindings: [{ kind: "turns", session_id: "session-1", turn_ids: ["turn-1"] }],
++          created_at: "2026-10-12T00:00:00Z",
++          updated_at: "2026-10-12T00:00:00Z",
++        },
++      });
++    if (path === `${taskPath}/finish-gate`)
++      return route.fulfill({
++        json: {
++          task_id: "task-1",
++          can_complete: false,
++          reason: "requirements_missing",
++          summary: { required: 0, pass: 0, fail: 0, unknown: 0, not_applicable: 0 },
++          items: [],
++        },
++      });
++    if (path === `${taskPath}/context`)
++      return route.fulfill({
++        json: {
++          required_items: [],
++          required_total: 0,
++          pending_items: [],
++          pending_total: 0,
++          next_offset: null,
++          advisory_items: [],
++        },
++      });
++    if (path === "/projects/demo/sop/effective")
++      return route.fulfill(
++        options.noSop
++          ? { status: 404, json: { detail: { code: "sop_not_enabled" } } }
++          : { json: { sop_id: "development", version: 2, digest }, headers: { ETag: '"sop-v2"' } },
++      );
++    if (path === verificationPath && request.method() === "POST") {
++      expect(request.postDataJSON()).toMatchObject({ sop_version: 2 });
++      if (options.fail)
++        return route.fulfill({
++          status: 503,
++          json: { detail: { code: "sop_verification_unavailable" } },
++        });
++      const report = candidate("report-new", 2);
++      report.report.context.target_commit = request.postDataJSON().target_commit ?? "";
++      if (options.failedReport) {
++        report.status = "failed";
++        report.report.analysis_complete = false;
++        report.report.analysis_errors = ["provider_request_failed"];
++        report.report.checks = report.report.checks.map((check) => ({
++          ...check,
++          result: "unverified",
++          candidate_result: "unverified",
++          evidence_refs: [],
++          items: [],
++          sop_refs: [],
++        }));
++        report.summary = {
++          result: "unverified",
++          counts: { satisfied: 0, unsatisfied: 0, unverified: 4, not_applicable: 0 },
++        };
++      }
++      reports = [report, ...reports];
++      return route.fulfill({ status: 201, json: report });
++    }
++    if (path === verificationPath)
++      return route.fulfill({
++        json: {
++          items: reports.map(
++            ({ report: _report, input_snapshot: _input, source_refs_by_id: _refs, ...meta }) =>
++              meta,
++          ),
++          total: reports.length,
++          next_offset: null,
++        },
++      });
++    if (path.startsWith(`${verificationPath}/`))
++      return route.fulfill({ json: reports.find((report) => path.endsWith(report.id)) });
++    if (path === "/projects/demo/knowledge/sources/turn") {
++      sourceQueries.push(url);
++      const pageNumber = Number(url.searchParams.get("cursor") ?? 0);
++      const unrelated = {
++        id: `unrelated-${pageNumber}`,
++        role: "tool",
++        tool_name: "shell",
++        call_id: "call-other",
++        text: "无关工具输出",
++      };
++      return route.fulfill({
++        json: {
++          source_ref: {
++            kind: "turn",
++            session_id: "session-1",
++            turn_id: "turn-1",
++            call_ids: ["call-test"],
++          },
++          status: "available",
++          items:
++            options.locateLimit || options.locateMissing || pageNumber === 0
++              ? [unrelated]
++              : [
++                  unrelated,
++                  {
++                    id: "call-test-input",
++                    role: "assistant",
++                    tool_name: "shell",
++                    call_id: "call-test",
++                    text: "精确来源工具调用",
++                  },
++                  {
++                    id: "call-test-output",
++                    role: "tool",
++                    tool_name: "shell",
++                    call_id: "call-test",
++                    text: "精确来源工具输出",
++                  },
++                ],
++          next_cursor: options.locateLimit || pageNumber === 0 ? String(pageNumber + 1) : null,
++        },
++      });
++    }
++    return route.fulfill({ status: 404, json: { detail: { code: "unexpected_fixture_request" } } });
++  });
++  await page.goto(taskPath);
++  await page.getByRole("button", { name: "检查并完成", exact: true }).click();
++  return { writes, sourceQueries };
++}
++
++test("候选核查保留历史与证据定位，所有候选结果不写检查或完成任务", async ({ page }) => {
++  const { writes, sourceQueries } = await fixture(page);
++  const panel = page.locator(".fs-sop-verification");
++  await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
++  expect(writes).toEqual([]);
++  await expect(panel.getByText(/将发送至 DeepSeek/)).toBeVisible();
++  await panel.getByRole("button", { name: "按 SOP 核查", exact: true }).click();
++  await expect(panel.getByText("report-new 的固定依据 1", { exact: false })).toBeVisible();
++  for (const label of ["满足", "不满足", "未核实", "不适用"])
++    await expect(panel.getByText(`候选 · ${label}`, { exact: true })).toBeVisible();
++  await expect(panel.getByText(/不代表完整 SOP 已满足/)).toBeVisible();
++  await page.evaluate(() => window.scrollTo(0, 0));
++  await page.screenshot({ path: "test-results/sop-verification-candidate.png", fullPage: true });
++  await panel.getByRole("button", { name: "查看来源（1）", exact: true }).click();
++  const modal = page.getByRole("dialog", { name: "原始来源片段", exact: true });
++  await expect(modal.getByText("精确来源工具输出", { exact: true })).toBeVisible();
++  await expect(modal.getByText("精确来源工具调用", { exact: true })).toBeVisible();
++  await expect(modal.getByText("无关工具输出", { exact: true })).toHaveCount(0);
++  await expect(modal.getByText("已定位全部引用，共 2 条相关记录。", { exact: true })).toBeVisible();
++  expect(sourceQueries.map((url) => url.searchParams.get("cursor"))).toEqual([null, "1"]);
++  expect(sourceQueries[0].searchParams.get("session_id")).toBe("session-1");
++  expect(sourceQueries[0].searchParams.get("turn_id")).toBe("turn-1");
++  expect(sourceQueries[0].searchParams.get("section")).toBe("trace");
++  await modal.getByRole("button", { name: "关闭", exact: true }).click();
++  await panel.getByLabel("选择 SOP 核查报告", { exact: true }).click();
++  await page
++    .locator(".ant-select-dropdown:visible")
++    .getByText(/SOP v1/)
++    .click();
++  await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
++  await expect(panel.getByText(/固定 SOP v1/)).toBeVisible();
++  await expect(
++    page.locator(".fs-task-gate-inline").getByRole("button", { name: "完成任务", exact: true }),
++  ).toBeDisabled();
++  expect(writes).toEqual([verificationPath]);
++});
++
++test("核查服务失败保留历史并明确未生成，刷新不会自动重新发送", async ({ page }) => {
++  const { writes } = await fixture(page, { fail: true });
++  const panel = page.locator(".fs-sop-verification");
++  await panel.getByRole("button", { name: "按 SOP 核查", exact: true }).click();
++  await expect(
++    panel.getByText("SOP 核查服务尚未配置，未生成报告。", { exact: true }),
++  ).toBeVisible();
++  await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
++  await panel.getByRole("button", { name: "刷新报告记录", exact: true }).click();
++  expect(writes).toEqual([verificationPath]);
++});
++
++test("只读成员和未启用 SOP 不发起核查，已有报告仍可读", async ({ page }) => {
++  const { writes } = await fixture(page, { reader: true, noSop: true });
++  const panel = page.locator(".fs-sop-verification");
++  await expect(panel.getByText(/项目尚未启用 SOP/)).toBeVisible();
++  await expect(panel.getByRole("button", { name: "按 SOP 核查", exact: true })).toHaveCount(0);
++  await expect(panel.getByText("report-old 的固定依据 1", { exact: false })).toBeVisible();
++  expect(writes).toEqual([]);
++});
++
++test("保存失败轮不显示核查完成，并保留失败原因供复核", async ({ page }) => {
++  const { writes } = await fixture(page, { failedReport: true });
++  const panel = page.locator(".fs-sop-verification");
++  await panel.getByRole("button", { name: "按 SOP 核查", exact: true }).click();
++  await expect(panel.getByText("分析失败", { exact: true })).toBeVisible();
++  await expect(panel.getByText(/本轮分析失败，未得出完整核查结论/)).toBeVisible();
++  await expect(panel.getByText("候选 · 未核实", { exact: true })).toHaveCount(4);
++  await expect(
++    page.locator(".fs-task-gate-inline").getByRole("button", { name: "完成任务", exact: true }),
++  ).toBeDisabled();
++  expect(writes).toEqual([verificationPath]);
++});
++
++test("显式目标 Commit 校验后提交并保留在本轮报告", async ({ page }) => {
++  const { writes } = await fixture(page);
++  const panel = page.locator(".fs-sop-verification");
++  await panel.getByLabel("目标 Commit（可选）", { exact: true }).fill("not-a-commit");
++  await expect(panel.getByRole("button", { name: "按 SOP 核查", exact: true })).toBeDisabled();
++  expect(writes).toEqual([]);
++  const commit = "b".repeat(40);
++  await panel.getByLabel("目标 Commit（可选）", { exact: true }).fill(commit);
++  const request = page.waitForRequest(
++    (request) =>
++      request.method() === "POST" && new URL(request.url()).pathname.endsWith(verificationPath),
++  );
++  await panel.getByRole("button", { name: "按 SOP 核查", exact: true }).click();
++  expect((await request).postDataJSON()).toEqual({ sop_version: 2, target_commit: commit });
++  await expect(panel.getByRole("link", { name: commit, exact: true })).toHaveAttribute(
++    "href",
++    `/projects/demo/commits/${commit}`,
++  );
++  expect(writes).toEqual([verificationPath]);
++});
++
++test("引用定位在20页边界停止并允许阅读原轮次，不把其他调用当证据", async ({ page }) => {
++  const { sourceQueries } = await fixture(page, { locateLimit: true });
++  await page
++    .locator(".fs-sop-verification")
++    .getByRole("button", { name: "查看来源（1）", exact: true })
++    .click();
++  const modal = page.getByRole("dialog", { name: "原始来源片段", exact: true });
++  await expect(modal.getByText(/已达到 20 页定位边界/)).toBeVisible();
++  expect(sourceQueries).toHaveLength(20);
++  await expect(modal.getByText("无关工具输出", { exact: true })).toHaveCount(0);
++  await modal.getByRole("button", { name: "阅读原轮次", exact: true }).click();
++  await expect(modal.getByText("无关工具输出", { exact: true })).toBeVisible();
++  await expect(modal.getByRole("button", { name: "继续读取下一页", exact: true })).toBeVisible();
++});
++
++test("部分来源报告明确展示采集边界", async ({ page }) => {
++  await fixture(page, { partial: true });
++  await expect(page.locator(".fs-sop-verification").getByText(/本轮来源采集不完整/)).toBeVisible();
++});
++
++test("读完仍找不到引用时明确提示，不替代成其他记录", async ({ page }) => {
++  await fixture(page, { locateMissing: true });
++  await page
++    .locator(".fs-sop-verification")
++    .getByRole("button", { name: "查看来源（1）", exact: true })
++    .click();
++  const modal = page.getByRole("dialog", { name: "原始来源片段", exact: true });
++  await expect(modal.getByText(/已读完原轮次，仍有 1 项引用未找到/)).toBeVisible();
++  await expect(modal.getByText("无关工具输出", { exact: true })).toHaveCount(0);
++  await expect(modal.getByText(/已定位全部引用/)).toHaveCount(0);
++  await expect(modal.getByRole("button", { name: "阅读原轮次", exact: true })).toBeVisible();
++});
+diff --git a/lib/formsy/api/sop-verification.ts b/lib/formsy/api/sop-verification.ts
+new file mode 100644
+index 0000000..c91dc66
+--- /dev/null
++++ b/lib/formsy/api/sop-verification.ts
+@@ -0,0 +1,93 @@
++import { apiRequest } from "./client";
++import type { Page, SourceRef } from "./knowledge";
++
++export type SopVerificationResult = "satisfied" | "unsatisfied" | "unverified" | "not_applicable";
++export type SopVerificationSummary = {
++  result: SopVerificationResult;
++  counts: Record<SopVerificationResult, number>;
++};
++export type SopVerificationEvidence = {
++  source_id: string;
++  start_line: number;
++  end_line: number;
++  quote: string;
++  locator: Record<string, unknown>;
++};
++export type SopVerificationCheck = {
++  condition_id: string;
++  rule_id: string;
++  source_section_id: string;
++  title: string;
++  criterion: string;
++  candidate_result: SopVerificationResult;
++  result: SopVerificationResult;
++  reason: string;
++  gaps: string[];
++  evidence_refs: SopVerificationEvidence[];
++  sop_refs: { pointer: string; quote: string }[];
++  items: {
++    item_id: string;
++    criterion: string;
++    result: SopVerificationResult;
++    reason: string;
++    gaps: string[];
++    evidence_refs: SopVerificationEvidence[];
++  }[];
++  validation_errors: string[];
++  review_state: "model_candidate";
++  human_review: "not_reviewed";
++};
++export type SopVerificationReport = {
++  context: { project_id: string; task_id: string; target_commit?: string };
++  checks: SopVerificationCheck[];
++  summary: SopVerificationSummary;
++  coverage: {
++    profile_id: string;
++    mapping_revision: string;
++    mapped_conditions: number;
++    total_sections: number;
++    mapped_sections: string[];
++    unmapped_sections: string[];
++    complete_sop: false;
++    evidence_completeness: "complete" | "partial" | "unknown";
++  };
++  analysis_complete: boolean;
++  analysis_errors: string[];
++  formal_closed: false;
++};
++export type SopVerification = {
++  id: string;
++  project_id: string;
++  task_id: string;
++  created_by: string;
++  created_at: string;
++  status: "candidate" | "failed";
++  sop: { sop_id: string; version: number; digest: string };
++  input_digest: string;
++  summary: SopVerificationSummary;
++};
++export type SopVerificationDetail = SopVerification & {
++  input_snapshot: unknown;
++  report: SopVerificationReport;
++  source_refs_by_id: Record<string, SourceRef>;
++};
++
++const root = (project: string, task: string) =>
++  `/projects/${encodeURIComponent(project)}/tasks/${encodeURIComponent(task)}/sop-verifications`;
++export const sopVerificationApi = {
++  list: (project: string, task: string, offset: number, signal?: AbortSignal) =>
++    apiRequest<Page<SopVerification>>(root(project, task), {
++      query: { limit: 25, offset },
++      signal,
++    }),
++  get: (project: string, task: string, id: string, signal?: AbortSignal) =>
++    apiRequest<SopVerificationDetail>(`${root(project, task)}/${encodeURIComponent(id)}`, {
++      signal,
++    }),
++  create: (project: string, task: string, sopVersion: number, targetCommit?: string) =>
++    apiRequest<SopVerificationDetail>(root(project, task), {
++      method: "POST",
++      body: { sop_version: sopVersion, ...(targetCommit ? { target_commit: targetCommit } : {}) },
++      timeoutMs: 180_000,
++    }),
++};
+diff --git a/lib/formsy/queries/sop-verification.ts b/lib/formsy/queries/sop-verification.ts
+new file mode 100644
+index 0000000..8ca65f8
+--- /dev/null
++++ b/lib/formsy/queries/sop-verification.ts
+@@ -0,0 +1,53 @@
++import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
++import { sopVerificationApi } from "../api/sop-verification";
++
++export const sopVerificationKeys = {
++  history: (project: string, task: string, actor: string) =>
++    ["sop-verifications", actor, project, task] as const,
++  detail: (project: string, task: string, actor: string, id: string) =>
++    ["sop-verifications", actor, project, task, id] as const,
++};
++export function useSopVerifications(
++  project: string,
++  task: string,
++  actor: string,
++  enabled: boolean,
++) {
++  return useInfiniteQuery({
++    queryKey: sopVerificationKeys.history(project, task, actor),
++    queryFn: ({ pageParam, signal }) => sopVerificationApi.list(project, task, pageParam, signal),
++    initialPageParam: 0,
++    getNextPageParam: (page) => page.next_offset ?? undefined,
++    enabled,
++    retry: false,
++  });
++}
++export function useSopVerification(
++  project: string,
++  task: string,
++  actor: string,
++  id: string | undefined,
++  enabled: boolean,
++) {
++  return useQuery({
++    queryKey: sopVerificationKeys.detail(project, task, actor, id ?? ""),
++    queryFn: ({ signal }) => sopVerificationApi.get(project, task, id!, signal),
++    enabled: enabled && Boolean(id),
++    retry: false,
++    refetchOnMount: "always",
++  });
++}
++export function useCreateSopVerification(project: string, task: string, actor: string) {
++  const client = useQueryClient();
++  return useMutation({
++    mutationFn: ({ version, targetCommit }: { version: number; targetCommit?: string }) =>
++      sopVerificationApi.create(project, task, version, targetCommit),
++    retry: false,
++    onSuccess: async (detail) => {
++      client.setQueryData(sopVerificationKeys.detail(project, task, actor, detail.id), detail);
++      await client.invalidateQueries({
++        queryKey: sopVerificationKeys.history(project, task, actor),
++      });
++    },
++  });
++}
+diff --git a/test/sop-verification.test.mjs b/test/sop-verification.test.mjs
+new file mode 100644
+index 0000000..fed347e
+--- /dev/null
++++ b/test/sop-verification.test.mjs
+@@ -0,0 +1,49 @@
++import assert from "node:assert/strict";
++import test from "node:test";
++import { sopVerificationApi } from "../lib/formsy/api/sop-verification.ts";
++import { setCsrfToken } from "../lib/formsy/api/client.ts";
++
++test("SOP verification writes only a pinned candidate request and keeps history addresses separate", async () => {
++  const beforeFetch = globalThis.fetch;
++  const beforeWindow = globalThis.window;
++  const calls = [];
++  globalThis.window = { location: { origin: "https://formsy.test" }, setTimeout, clearTimeout };
++  setCsrfToken("verification-csrf");
++  globalThis.fetch = async (url, options) => {
++    calls.push({
++      url,
++      method: options.method ?? "GET",
++      body: options.body ? JSON.parse(options.body) : undefined,
++      csrf: options.headers.get("X-CSRF-Token"),
++      credentials: options.credentials,
++    });
++    return new Response(JSON.stringify({}), { headers: { "Content-Type": "application/json" } });
++  };
++  try {
++    await sopVerificationApi.list("project/a", "task/a", 25);
++    await sopVerificationApi.get("project/a", "task/a", "old/report");
++    await sopVerificationApi.create("project/a", "task/a", 7);
++    await sopVerificationApi.create("project/a", "task/a", 7, "b".repeat(40));
++    assert.equal(
++      calls[0].url,
++      "/api/v1/projects/project%2Fa/tasks/task%2Fa/sop-verifications?limit=25&offset=25",
++    );
++    assert.equal(
++      calls[1].url,
++      "/api/v1/projects/project%2Fa/tasks/task%2Fa/sop-verifications/old%2Freport",
++    );
++    assert.deepEqual(calls[2].body, { sop_version: 7 });
++    assert.equal(calls[2].method, "POST");
++    assert.equal(calls[2].csrf, "verification-csrf");
++    assert.equal(calls[2].credentials, "include");
++    assert.deepEqual(calls[3].body, { sop_version: 7, target_commit: "b".repeat(40) });
++    assert.equal(
++      calls.some((call) => /\/checks\/|\/complete$/.test(call.url)),
++      false,
++    );
++  } finally {
++    globalThis.fetch = beforeFetch;
++    globalThis.window = beforeWindow;
++    setCsrfToken(null);
++  }
++});

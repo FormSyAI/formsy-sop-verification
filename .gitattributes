@@ -1,0 +1,2 @@
+# Unified patches preserve a space prefix on unchanged blank context lines.
+integration/*.patch -whitespace

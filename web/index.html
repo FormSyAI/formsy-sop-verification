@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>FormSy · SOP 核查</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">FORM<span>SY</span><i></i></a>
+      <span class="product-name">SOP 核查工作台</span>
+      <span class="local-tag">本地运行</span>
+    </header>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="核查流程">
+        <div class="sidebar-label">VERIFICATION</div>
+        <a class="nav-active" href="#report">◉ <span>候选报告</span></a>
+        <a href="#input">＋ <span>核查材料</span></a>
+        <div class="workflow-label">一轮核查的流程</div>
+        <ol class="workflow">
+          <li>
+            <b>01</b><span>固定规范与来源<small>SOP 版本、摘要、原文</small></span>
+          </li>
+          <li>
+            <b>02</b><span>生成语义候选<small>显式发起模型请求</small></span>
+          </li>
+          <li>
+            <b>03</b><span>校验引用与边界<small>保留缺口与分析错误</small></span>
+          </li>
+          <li>
+            <b>04</b><span>交给人工复核<small>候选不会自动关闭任务</small></span>
+          </li>
+        </ol>
+        <p class="sidebar-note">首版局部验证<br />4 个参考条件 · 6 章 SOP</p>
+      </aside>
+      <main>
+        <div class="breadcrumb">
+          FormSy <span>/</span> SOP Verification <span>/</span> 本地工作台
+        </div>
+        <section class="heading">
+          <div>
+            <div class="eyebrow">EVIDENCE BEFORE CONCLUSIONS</div>
+            <h1>把结论，落回证据。</h1>
+            <p>固定本轮规范和材料，逐项查看候选、缺口与原文。</p>
+          </div>
+          <button id="reset-demo" class="button secondary" type="button" disabled>
+            查看合成示例
+          </button>
+        </section>
+        <div id="error" class="notice error" role="alert" hidden></div>
+        <section id="input" class="card input-card" aria-labelledby="input-heading">
+          <div class="section-title">
+            <div>
+              <span class="step-label">START A CHECK</span>
+              <h2 id="input-heading">核查材料</h2>
+            </div>
+            <span id="config-label" class="muted">正在读取本地配置…</span>
+          </div>
+          <div class="input-controls">
+            <label class="file-control"
+              ><input id="request-file" type="file" accept="application/json,.json" disabled /><span
+                class="file-icon"
+                >↑</span
+              ><span
+                ><strong>选择 worker request JSON</strong
+                ><small id="file-label">正在载入合成示例…</small></span
+              ></label
+            >
+            <label class="mode-control"
+              >本轮模式<select id="mode" disabled>
+                <option value="offline">离线验证 · 不调用模型</option>
+                <option value="model" disabled>DeepSeek 语义核查</option>
+              </select></label
+            >
+            <button id="verify" class="button primary" type="button" disabled>
+              运行离线核查 <span>↗</span>
+            </button>
+          </div>
+          <p id="mode-help" class="help">
+            离线模式只校验 request 内已有的
+            candidate，不会生成新的模型结论。上传材料里的命令不会被执行。
+          </p>
+          <p class="help local-boundary">
+            这是新仓库内的本地工具，尚未接入 FormSy
+            任务权限或正式报告库。仅显式选择模型模式并点击运行时，才会向已配置的 DeepSeek
+            发送所选材料。
+          </p>
+        </section>
+        <section id="report" aria-label="核查报告" aria-live="polite">
+          <div class="loading card">正在读取示例报告…</div>
+        </section>
+        <footer>候选 ≠ 人工认可 ≠ 任务完成 <span>FormSy SOP Verification · MVP</span></footer>
+      </main>
+    </div>
+    <dialog id="source-dialog" aria-labelledby="source-title">
+      <div class="dialog-heading">
+        <div>
+          <span class="step-label">ORIGINAL EVIDENCE</span>
+          <h2 id="source-title">原文证据</h2>
+        </div>
+        <button id="close-dialog" class="icon-button" type="button" aria-label="关闭原文">×</button>
+      </div>
+      <div id="source-body"></div>
+    </dialog>
+  </body>
+</html>

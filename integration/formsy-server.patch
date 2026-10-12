@@ -1,0 +1,2082 @@
+diff --git a/.env.example b/.env.example
+index 1ccd92e..803d5c7 100644
+--- a/.env.example
++++ b/.env.example
+@@ -49,3 +49,12 @@ FORMSY_KNOWLEDGE_MODEL_API_KEY=
+ FORMSY_KNOWLEDGE_MODEL_REASONING_EFFORT=
+ # Worker concurrency: 1-8, default 2.
+ FORMSY_KNOWLEDGE_EXTRACTION_CONCURRENCY=2
++# Explicit Task SOP verification only; leave paths empty to disable triggering.
++# Absolute paths on the API host (for Compose, see compose.sop-verification.yaml).
++FORMSY_SOP_VERIFICATION_PYTHON=
++FORMSY_SOP_VERIFICATION_WORKER=
++# Reuse a deployed secret by reference, e.g. env://FORMSY_KNOWLEDGE_MODEL_API_KEY.
++# This does not copy a key from another checkout's .env.
++FORMSY_SOP_VERIFICATION_API_KEY_REF=env://DEEPSEEK_API_KEY
++FORMSY_SOP_VERIFICATION_MODEL=deepseek-flash
++DEEPSEEK_API_KEY=
+diff --git a/Dockerfile b/Dockerfile
+index 39e121b..e6dcd62 100644
+--- a/Dockerfile
++++ b/Dockerfile
+@@ -10,7 +10,7 @@ RUN cargo build --locked --release --package formsy-server
+ FROM debian:bookworm-slim
+ 
+ RUN apt-get update \
+-    && apt-get install --no-install-recommends -y git openssh-client ca-certificates curl \
++    && apt-get install --no-install-recommends -y git openssh-client ca-certificates curl python3 \
+     && rm -rf /var/lib/apt/lists/*
+ 
+ COPY --from=builder /app/target/release/formsy-server /usr/local/bin/formsy-server
+diff --git a/compose.sop-verification.yaml b/compose.sop-verification.yaml
+new file mode 100644
+index 0000000..19b8227
+--- /dev/null
++++ b/compose.sop-verification.yaml
+@@ -0,0 +1,11 @@
++# Opt-in runtime mount. The standalone worker repository contains no deployment secrets.
++services:
++  api:
++    environment:
++      FORMSY_SOP_VERIFICATION_PYTHON: /usr/bin/python3
++      FORMSY_SOP_VERIFICATION_WORKER: /opt/formsy-sop-verification/scripts/verify.py
++    volumes:
++      - type: bind
++        source: ${FORMSY_SOP_VERIFICATION_REPO:?Set the absolute deployed worker repository path}
++        target: /opt/formsy-sop-verification
++        read_only: true
+diff --git a/compose.yaml b/compose.yaml
+index c8db3c2..70ceab8 100644
+--- a/compose.yaml
++++ b/compose.yaml
+@@ -27,6 +27,11 @@ x-formsy-environment: &formsy-environment
+   FORMSY_KNOWLEDGE_MODEL_API_KEY: ${FORMSY_KNOWLEDGE_MODEL_API_KEY:-}
+   FORMSY_KNOWLEDGE_MODEL_REASONING_EFFORT: ${FORMSY_KNOWLEDGE_MODEL_REASONING_EFFORT:-}
+   FORMSY_KNOWLEDGE_EXTRACTION_CONCURRENCY: ${FORMSY_KNOWLEDGE_EXTRACTION_CONCURRENCY:-2}
++  FORMSY_SOP_VERIFICATION_PYTHON: ${FORMSY_SOP_VERIFICATION_PYTHON:-}
++  FORMSY_SOP_VERIFICATION_WORKER: ${FORMSY_SOP_VERIFICATION_WORKER:-}
++  FORMSY_SOP_VERIFICATION_API_KEY_REF: ${FORMSY_SOP_VERIFICATION_API_KEY_REF:-env://DEEPSEEK_API_KEY}
++  FORMSY_SOP_VERIFICATION_MODEL: ${FORMSY_SOP_VERIFICATION_MODEL:-deepseek-flash}
++  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+ 
+ services:
+   postgres:
+diff --git a/docs/sop-verification-mvp.md b/docs/sop-verification-mvp.md
+new file mode 100644
+index 0000000..20a4d29
+--- /dev/null
++++ b/docs/sop-verification-mvp.md
+@@ -0,0 +1,40 @@
++# Task SOP verification MVP
++
++This adds explicitly requested candidate reports, independently of TaskCheck and Finish Gate. It does not activate knowledge, record a human check, complete a task or change a project SOP.
++
++## API contract
++
++- `POST /api/v1/projects/{project}/tasks/{task}/sop-verifications`: browser cookie and CSRF, existing Task edit permission. Body: `{"sop_version":1,"target_commit":"optional full 40-character SHA"}`. No uploaded candidate, source text, model settings or token scope is accepted. The user must be told that selected materials are sent to DeepSeek.
++- `GET` the same path with `limit=25&offset=0`: project read permission, returns `{items,total,next_offset}`. Items contain only IDs, author/time, status, exact SOP pin, input digest and result/count metadata. A withdrawn SOP or revoked source can still have metadata in this history; its frozen body remains access-controlled.
++- `GET /.../sop-verifications/{id}`: checks current project/source access and that the pinned SOP remains active. Returns metadata plus `input_snapshot`, `scope_snapshot`, `source_refs_by_id` and the original worker `report`.
++
++`POST` returns 201 after appending a report. Status `candidate` means the candidate analysis completed; `failed` preserves a provider/analysis failure with four unknown conditions. Neither means formal approval. Missing configuration returns 503, malformed worker output 502, worker timeout 504, input overflow 413, and incomplete target diff 409. Worker crashes/timeouts do not produce a successful report. No report-update/delete API exists.
++
++## Frozen evidence
++
++Only the Task's explicit `source_bindings` are read; `session_ids` alone are not a selection. Open `session_from` bindings resolve to a fixed turn list for that report. All pages of normalized visible events are read, including the middle of long tool results. A selected unreadable source fails the request; it is never skipped. The limit is 400 sources, 320,000 source characters and 2 MiB stdin; larger scopes are rejected without truncation.
++
++The scope keeps physical source locations, original Task fields, capture status and time. The existing visible-event adapter excludes system/meta/sidechain/compact-summary records. Reading every selected page does not prove every real-world action was captured. Partial/unknown capture is sent as `evidence_completeness: partial`; the worker must downgrade positive conclusions while retaining supported failures and gaps. Current permissions and source locations are fenced again before insertion. A Task or source that changes during analysis requires a new request.
++
++An optional target SHA must already belong to this project. The existing Git diff reader is used only after authorizing its exact selected connection. Whole/file truncation, binary data and missing patches are rejected. The complete diff is frozen with `version_id` and a Server-created manual locator. Without a target, change-coverage conditions remain unknown.
++
++The exact SOP bundle is checked with the existing RFC 8785 digest implementation. Reports keep the original worker output. Model evidence IDs/line ranges/quotes are checked against the frozen input; UI source links must use Server-created `source_refs_by_id`, not model-supplied locators.
++
++## Runtime
++
++Configure absolute `FORMSY_SOP_VERIFICATION_PYTHON` and `FORMSY_SOP_VERIFICATION_WORKER` paths. Leave them empty to disable triggering. The standalone worker entry is `scripts/verify.py` in the separate `formsy-sop-verification` repository. It uses Python standard-library dependencies and is invoked directly as `python -I /absolute/scripts/verify.py`, without a shell, arbitrary executable arguments, inherited process environment or stderr capture. It has 120 seconds, 1 MiB stdout and two concurrent slots per Server process.
++
++`FORMSY_SOP_VERIFICATION_MODEL` defaults to `deepseek-flash`. `FORMSY_SOP_VERIFICATION_API_KEY_REF` defaults to `env://DEEPSEEK_API_KEY`; it may explicitly reference an already deployed secret such as `env://FORMSY_KNOWLEDGE_MODEL_API_KEY`. The Server resolves that reference and passes only `DEEPSEEK_API_KEY` and the chosen model to the child. No `.env` file, credentials or private report history is copied into the worker repository.
++
++The API image includes Python. To mount a deployed worker checkout read-only, set the absolute `FORMSY_SOP_VERIFICATION_REPO` and use `docker compose -f compose.yaml -f compose.sop-verification.yaml ...`. Provision the key using the existing deployment secret process. Reverse proxies must allow a response timeout above 120 seconds (150 seconds recommended); the Web request timeout is 180 seconds. This synchronous small-scope MVP does not add a background queue.
++
++## Verification
++
++Focused Server tests cover Task permissions/CSRF, exact/withdrawn SOPs, immutable rounds, history paging, complete long-tool pagination, capture gaps, overflow, failed model rounds, quote boundaries, complete target diffs and absence of TaskCheck/completion writes. An optional cross-repository smoke uses the actual worker entrypoint with synthetic offline material, never a real model:
++
++```
++FORMSY_TEST_SOP_WORKER=/absolute/formsy-sop-verification/scripts/verify.py \
++cargo test -p formsy-server --lib deployed_worker_contract_smoke -- --ignored --test-threads=1
++```
++
++The worker's four-condition draft mapping is partial coverage of the six SOP chapters. Tests, a model candidate, human review and production deployment are separate evidence states.
+diff --git a/rust/formsy-server/migrations/0025_sop_verification_reports.sql b/rust/formsy-server/migrations/0025_sop_verification_reports.sql
+new file mode 100644
+index 0000000..b1c43e9
+--- /dev/null
++++ b/rust/formsy-server/migrations/0025_sop_verification_reports.sql
+@@ -0,0 +1,19 @@
++CREATE TABLE sop_verification_reports (
++    id TEXT PRIMARY KEY,
++    project_id TEXT NOT NULL REFERENCES projects(id),
++    task_id TEXT NOT NULL,
++    created_by TEXT NOT NULL REFERENCES users(id),
++    created_at TEXT NOT NULL,
++    status TEXT NOT NULL CHECK (status IN ('candidate','failed')),
++    sop_id TEXT NOT NULL,
++    sop_version BIGINT NOT NULL,
++    sop_digest TEXT NOT NULL,
++    input_digest TEXT NOT NULL,
++    input_snapshot TEXT NOT NULL,
++    scope_snapshot TEXT NOT NULL,
++    summary TEXT NOT NULL,
++    report TEXT NOT NULL,
++    FOREIGN KEY (project_id,task_id) REFERENCES tasks(project_id,id),
++    FOREIGN KEY (project_id,sop_id,sop_version) REFERENCES sop_versions(project_id,sop_id,version)
++);
++CREATE INDEX ix_sop_verification_task_created ON sop_verification_reports(project_id,task_id,created_at,id);
+diff --git a/rust/formsy-server/src/config.rs b/rust/formsy-server/src/config.rs
+index 00b2097..5a12245 100644
+--- a/rust/formsy-server/src/config.rs
++++ b/rust/formsy-server/src/config.rs
+@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
+ #[derive(Clone, Debug)]
+ pub struct Settings {
+     pub knowledge_model: KnowledgeModelSettings,
++    pub sop_verification: SopVerificationSettings,
+     pub session_lineage_enabled: bool,
+     pub bind_address: SocketAddr,
+     pub database_url: String,
+@@ -37,6 +38,65 @@ pub struct Settings {
+     pub poll_interval_seconds: i64,
+ }
+ 
++#[derive(Clone, Debug)]
++pub struct SopVerificationSettings {
++    pub python: Option<PathBuf>,
++    pub worker: Option<PathBuf>,
++    pub api_key_ref: String,
++    pub model: String,
++}
++
++impl Default for SopVerificationSettings {
++    fn default() -> Self {
++        Self {
++            python: None,
++            worker: None,
++            api_key_ref: "env://DEEPSEEK_API_KEY".into(),
++            model: "deepseek-flash".into(),
++        }
++    }
++}
++
++impl SopVerificationSettings {
++    fn from_env() -> Result<Self> {
++        let path = |name: &str| -> Result<Option<PathBuf>> {
++            let value = env::var_os(name)
++                .filter(|v| !v.is_empty())
++                .map(PathBuf::from);
++            anyhow::ensure!(
++                value.as_ref().is_none_or(|v| v.is_absolute()),
++                "{name} must be an absolute path"
++            );
++            Ok(value)
++        };
++        let mut settings = Self::default();
++        settings.python = path("FORMSY_SOP_VERIFICATION_PYTHON")?;
++        settings.worker = path("FORMSY_SOP_VERIFICATION_WORKER")?;
++        if let Ok(reference) = env::var("FORMSY_SOP_VERIFICATION_API_KEY_REF") {
++            if !reference.is_empty() {
++                anyhow::ensure!(
++                    reference
++                        .strip_prefix("env://")
++                        .is_some_and(|name| !name.is_empty()
++                            && name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')),
++                    "FORMSY_SOP_VERIFICATION_API_KEY_REF must use env://NAME"
++                );
++                settings.api_key_ref = reference;
++            }
++        }
++        if let Ok(model) = env::var("FORMSY_SOP_VERIFICATION_MODEL") {
++            if !model.trim().is_empty() {
++                anyhow::ensure!(
++                    model.len() <= 200,
++                    "FORMSY_SOP_VERIFICATION_MODEL is too long"
++                );
++                settings.model = model;
++            }
++        }
++        Ok(settings)
++    }
++}
++
+ #[derive(Clone, Debug)]
+ pub struct KnowledgeModelSettings {
+     pub base_url: Option<String>,
+@@ -137,6 +197,7 @@ impl Settings {
+         );
+         Ok(Self {
+             knowledge_model: KnowledgeModelSettings::from_env()?,
++            sop_verification: SopVerificationSettings::from_env()?,
+             session_lineage_enabled: env_bool("FORMSY_SESSION_LINEAGE_ENABLED", true)?,
+             bind_address,
+             database_url,
+diff --git a/rust/formsy-server/src/credential.rs b/rust/formsy-server/src/credential.rs
+index 9fc30de..db4bdf7 100644
+--- a/rust/formsy-server/src/credential.rs
++++ b/rust/formsy-server/src/credential.rs
+@@ -99,6 +99,7 @@ mod tests {
+             gitlab_read_access_ttl_seconds: 60,
+             poll_interval_seconds: 120,
+             knowledge_model: Default::default(),
++            sop_verification: Default::default(),
+         };
+         let result = verify_file(&settings, &path);
+         let _ = fs::remove_file(path);
+diff --git a/rust/formsy-server/src/knowledge/sources.rs b/rust/formsy-server/src/knowledge/sources.rs
+index 4eba6be..8155893 100644
+--- a/rust/formsy-server/src/knowledge/sources.rs
++++ b/rust/formsy-server/src/knowledge/sources.rs
+@@ -21,7 +21,7 @@ mod access;
+ mod api;
+ mod paging;
+ mod tasks;
+-use access::recheck_connection;
++pub(crate) use access::recheck_connection;
+ pub(crate) use access::recheck_source_refs;
+ pub(crate) use paging::{read_birdview, read_turn};
+ pub(crate) use tasks::{last_visible_turns, recheck_task_sources, validate_task_sources};
+@@ -36,7 +36,7 @@ pub struct SourceLocation {
+     pub range_start: Option<i64>,
+     pub range_end: Option<i64>,
+ }
+-#[derive(Clone, Debug, Serialize)]
++#[derive(Clone, Debug, Serialize, Deserialize)]
+ pub struct TurnSource {
+     pub project_id: String,
+     pub session_id: String,
+diff --git a/rust/formsy-server/src/knowledge/sources/access.rs b/rust/formsy-server/src/knowledge/sources/access.rs
+index acd6688..8a2ba25 100644
+--- a/rust/formsy-server/src/knowledge/sources/access.rs
++++ b/rust/formsy-server/src/knowledge/sources/access.rs
+@@ -132,7 +132,7 @@ impl SourceReader {
+     }
+ }
+ 
+-pub(super) async fn recheck_connection(
++pub(crate) async fn recheck_connection(
+     conn: &mut sqlx::AnyConnection,
+     actor: &PlatformActor,
+     project: &str,
+diff --git a/rust/formsy-server/src/knowledge/sources/paging.rs b/rust/formsy-server/src/knowledge/sources/paging.rs
+index ec49096..0bad3cc 100644
+--- a/rust/formsy-server/src/knowledge/sources/paging.rs
++++ b/rust/formsy-server/src/knowledge/sources/paging.rs
+@@ -86,6 +86,24 @@ impl SourceReader {
+         source: &TurnSource,
+         cursor: SourceCursor,
+         max_chars: usize,
++    ) -> Result<VisibleEventPage, KnowledgeError> {
++        self.read_event_page(source, cursor, max_chars, true).await
++    }
++    /// Audits must either read complete evidence or reject the scope; a browser
++    /// preview's omitted middle cannot become evidence of success or failure.
++    pub(crate) async fn read_complete_page(
++        &self,
++        source: &TurnSource,
++        cursor: SourceCursor,
++    ) -> Result<VisibleEventPage, KnowledgeError> {
++        self.read_event_page(source, cursor, 32_000, false).await
++    }
++    async fn read_event_page(
++        &self,
++        source: &TurnSource,
++        cursor: SourceCursor,
++        max_chars: usize,
++        preview: bool,
+     ) -> Result<VisibleEventPage, KnowledgeError> {
+         if max_chars == 0 || max_chars > 32_000 {
+             return Err(KnowledgeError::invalid("max_chars"));
+@@ -157,7 +175,7 @@ impl SourceReader {
+                             }),
+                         });
+                     }
+-                    if length - offset > available && event.kind == "tool_result" {
++                    if preview && length - offset > available && event.kind == "tool_result" {
+                         let note = "\n[omitted middle; open the original source for the complete result]\n";
+                         let budget = available.saturating_sub(note.chars().count());
+                         let head = budget / 2;
+diff --git a/rust/formsy-server/src/lib.rs b/rust/formsy-server/src/lib.rs
+index 76fd580..6d3acbf 100644
+--- a/rust/formsy-server/src/lib.rs
++++ b/rust/formsy-server/src/lib.rs
+@@ -44,6 +44,7 @@ mod session_title;
+ mod sop;
+ mod sop_contract;
+ mod sop_store;
++mod sop_verification;
+ pub mod sync_api;
+ pub mod sync_authorization;
+ pub mod sync_engine;
+diff --git a/rust/formsy-server/src/server.rs b/rust/formsy-server/src/server.rs
+index 86955dd..e1985b1 100644
+--- a/rust/formsy-server/src/server.rs
++++ b/rust/formsy-server/src/server.rs
+@@ -377,6 +377,7 @@ fn build_router_with_setup_clock(
+         .merge(crate::knowledge::instructions::router())
+         .merge(crate::knowledge::mcp::router())
+         .merge(crate::tasks::api::router())
++        .merge(crate::sop_verification::router())
+         .merge(read_api::router())
+         .merge(identity_api::router())
+         .merge(crate::github_setup_api::router())
+@@ -503,6 +504,7 @@ mod tests {
+                 gitlab_read_access_ttl_seconds: 60,
+                 poll_interval_seconds: 120,
+                 knowledge_model: Default::default(),
++                sop_verification: Default::default(),
+             },
+         );
+         for path in ["/healthz", "/readyz"] {
+diff --git a/rust/formsy-server/src/sop_verification/contract.rs b/rust/formsy-server/src/sop_verification/contract.rs
+new file mode 100644
+index 0000000..5aeea9d
+--- /dev/null
++++ b/rust/formsy-server/src/sop_verification/contract.rs
+@@ -0,0 +1,261 @@
++//! The renderer's required fields are validated before an immutable report is
++//! saved. Additional worker provenance fields are preserved in the raw report.
++use super::*;
++use sha2::{Digest, Sha256};
++
++pub(super) const CONDITIONS: [(&str, &str, &str, usize); 4] = [
++    ("FIX01.C02", "FIX01", "goal", 5),
++    ("FIX02.C01", "FIX02", "behavior", 2),
++    ("FIX04.C02", "FIX04", "acceptance", 5),
++    ("FIX05.C04", "FIX05", "acceptance", 4),
++];
++fn text(value: &Value) -> bool {
++    value
++        .as_str()
++        .is_some_and(|s| !s.trim().is_empty() && s.len() <= 32_000)
++}
++fn texts(value: &Value) -> bool {
++    value
++        .as_array()
++        .is_some_and(|a| a.len() <= 100 && a.iter().all(|v| v.is_string()))
++}
++fn result(value: &Value) -> bool {
++    value.as_str().is_some_and(|s| {
++        matches!(
++            s,
++            "satisfied" | "unsatisfied" | "unverified" | "not_applicable"
++        )
++    })
++}
++fn digest(value: &Value) -> bool {
++    value
++        .as_str()
++        .and_then(|s| s.strip_prefix("sha256:"))
++        .is_some_and(|s| {
++            s.len() == 64
++                && s.bytes()
++                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
++        })
++}
++fn require(ok: bool) -> Result<(), KnowledgeError> {
++    if ok { Ok(()) } else { Err(invalid_worker()) }
++}
++
++pub(super) fn validate(report: &Value, input: &Value) -> Result<(), KnowledgeError> {
++    require(
++        report["schema_version"] == 1
++            && report["analysis_complete"].is_boolean()
++            && report["summary"]["review_state"] == "model_candidate",
++    )?;
++    for key in ["project_id", "sop_id", "version", "digest"] {
++        require(report["sop_pin"][key] == input["sop"][key])?;
++    }
++    require(
++        report["scope"] == "candidate"
++            && report["review_state"] == "model_candidate"
++            && report["human_review"] == "not_reviewed"
++            && report["formal_closed"] == false,
++    )?;
++    require(
++        text(&report["engine_version"])
++            && texts(&report["analysis_errors"])
++            && texts(&report["limitations"])
++            && report["provenance"].is_object(),
++    )?;
++    for key in [
++        "project_id",
++        "task_id",
++        "target_commit",
++        "evidence_completeness",
++    ] {
++        require(report["context"][key] == input["context"][key])?;
++    }
++    let coverage = &report["coverage"];
++    require(
++        coverage["profile_id"] == "sixchapters-codefix-mvp-v1"
++            && coverage["mapping_revision"] == "1"
++            && coverage["mapping_status"] == "draft_reference_subset"
++            && digest(&coverage["profile_digest"]),
++    )?;
++    require(
++        coverage["mapped_conditions"] == 4
++            && coverage["total_sections"] == 6
++            && coverage["mapped_sections"] == json!(["goal", "behavior", "acceptance"])
++            && coverage["unmapped_sections"] == json!(["constraints", "impact", "preparation"])
++            && coverage["complete_sop"] == false
++            && coverage["execution_verification_supported"] == false
++            && coverage["evidence_completeness"] == input["context"]["evidence_completeness"],
++    )?;
++    let model = &report["model"];
++    require(
++        model["provider"] == "DeepSeek"
++            && (model["model"].is_null() || text(&model["model"]))
++            && model["invoked"].is_boolean()
++            && model["request_count"].as_u64().is_some_and(|n| n <= 2)
++            && model["status"]
++                .as_str()
++                .is_some_and(|s| matches!(s, "completed" | "failed" | "offline")),
++    )?;
++    if report["analysis_complete"] == true {
++        require(
++            report["analysis_errors"]
++                .as_array()
++                .is_some_and(|a| a.is_empty())
++                && model["status"] == "completed"
++                && model["invoked"] == true
++                && model["request_count"].as_u64().is_some_and(|n| n > 0),
++        )?;
++    }
++    let checks = report["checks"]
++        .as_array()
++        .filter(|a| a.len() == 4)
++        .ok_or_else(invalid_worker)?;
++    if model["status"] == "failed" {
++        require(
++            report["analysis_complete"] == false
++                && checks.iter().all(|c| c["result"] == "unverified"),
++        )?;
++    }
++    let mut seen = HashSet::new();
++    for check in checks {
++        let id = check["condition_id"].as_str().ok_or_else(invalid_worker)?;
++        let (_, rule, section, count) = CONDITIONS
++            .iter()
++            .find(|(known, _, _, _)| *known == id)
++            .ok_or_else(invalid_worker)?;
++        require(
++            seen.insert(id)
++                && check["rule_id"] == *rule
++                && check["source_section_id"] == *section
++                && check["review_state"] == "model_candidate"
++                && check["human_review"] == "not_reviewed",
++        )?;
++        for key in ["title", "criterion", "reason"] {
++            require(text(&check[key]))?;
++        }
++        require(
++            result(&check["candidate_result"])
++                && result(&check["result"])
++                && texts(&check["gaps"])
++                && texts(&check["validation_errors"])
++                && check["reference_rule"].is_object(),
++        )?;
++        let references = check["sop_refs"]
++            .as_array()
++            .filter(|a| a.len() <= 8)
++            .ok_or_else(invalid_worker)?;
++        let section_index = match *section {
++            "goal" => 0,
++            "behavior" => 1,
++            "acceptance" => 5,
++            _ => return Err(invalid_worker()),
++        };
++        for reference in references {
++            let pointer = reference["pointer"].as_str().ok_or_else(invalid_worker)?;
++            let quote = reference["quote"]
++                .as_str()
++                .filter(|s| !s.is_empty())
++                .ok_or_else(invalid_worker)?;
++            require(
++                pointer.starts_with(&format!("/sections/{section_index}/"))
++                    && input["sop"]
++                        .pointer(pointer)
++                        .and_then(Value::as_str)
++                        .is_some_and(|s| s.contains(quote)),
++            )?;
++        }
++        let items = check["items"].as_array().ok_or_else(invalid_worker)?;
++        if items.is_empty() {
++            require(
++                report["analysis_complete"] == false
++                    && check["result"] == "unverified"
++                    && check["validation_errors"]
++                        .as_array()
++                        .is_some_and(|a| !a.is_empty()),
++            )?;
++        } else {
++            require(items.len() == *count)?;
++            let mut item_ids = HashSet::new();
++            for item in items {
++                let item_id = item["item_id"].as_str().ok_or_else(invalid_worker)?;
++                require(
++                    item_ids.insert(item_id)
++                        && (1..=*count).any(|n| item_id == format!("{id}.I{n:02}")),
++                )?;
++                for key in ["criterion", "reason", "proof_policy"] {
++                    require(text(&item[key]))?;
++                }
++                require(
++                    result(&item["result"])
++                        && result(&item["candidate_result"])
++                        && texts(&item["gaps"]),
++                )?;
++                if item["result"] != "unverified" {
++                    require(
++                        !references.is_empty()
++                            && item["evidence_refs"]
++                                .as_array()
++                                .is_some_and(|a| !a.is_empty()),
++                    )?;
++                }
++                if input["context"]["evidence_completeness"] != "complete" {
++                    require(item["result"] != "satisfied")?;
++                }
++            }
++        }
++        if report["analysis_complete"] == true {
++            require(
++                check["validation_errors"]
++                    .as_array()
++                    .is_some_and(|a| a.is_empty()),
++            )?;
++        }
++        if input["context"]["evidence_completeness"] != "complete" {
++            require(check["result"] != "satisfied")?;
++        }
++    }
++    let counts = report["summary"]["counts"]
++        .as_object()
++        .filter(|o| o.len() == 4)
++        .ok_or_else(invalid_worker)?;
++    for state in ["satisfied", "unsatisfied", "unverified", "not_applicable"] {
++        require(
++            counts.get(state).and_then(Value::as_u64)
++                == Some(checks.iter().filter(|c| c["result"] == state).count() as u64),
++        )?;
++    }
++    let expected = if checks.iter().any(|c| c["result"] == "unsatisfied") {
++        "unsatisfied"
++    } else if checks.iter().all(|c| c["result"] == "not_applicable") {
++        "not_applicable"
++    } else if checks
++        .iter()
++        .all(|c| c["result"] == "satisfied" || c["result"] == "not_applicable")
++    {
++        "satisfied"
++    } else {
++        "unverified"
++    };
++    require(report["summary"]["result"] == expected)?;
++    let index = report["source_index"]
++        .as_object()
++        .ok_or_else(invalid_worker)?;
++    let sources = input["sources"].as_array().ok_or_else(invalid_worker)?;
++    require(index.len() == sources.len())?;
++    for source in sources {
++        let id = source["id"].as_str().ok_or_else(invalid_worker)?;
++        let record = index.get(id).ok_or_else(invalid_worker)?;
++        let content = source["content"].as_str().ok_or_else(invalid_worker)?;
++        require(
++            record["locator"] == source["locator"]
++                && record["input_kind"] == source["kind"]
++                && record["original_sha256"]
++                    == format!("sha256:{:x}", Sha256::digest(content.as_bytes()))
++                && digest(&record["sha256"])
++                && record["redacted"].is_boolean()
++                && record["version_id"].as_str()
++                    == Some(source["version_id"].as_str().unwrap_or("")),
++        )?;
++    }
++    Ok(())
++}
+diff --git a/rust/formsy-server/src/sop_verification/mod.rs b/rust/formsy-server/src/sop_verification/mod.rs
+new file mode 100644
+index 0000000..02da0e3
+--- /dev/null
++++ b/rust/formsy-server/src/sop_verification/mod.rs
+@@ -0,0 +1,402 @@
++//! Append-only, explicitly requested SOP candidates. This module never writes
++//! knowledge entries, task checks or task completion state.
++mod contract;
++mod snapshot;
++#[cfg(test)]
++mod tests;
++mod worker;
++
++use crate::{
++    knowledge::{
++        api::{browser_actor, decode, query},
++        model::{KnowledgeError, PageQuery},
++        sources::{SourceReader, TurnSource},
++    },
++    server::AppState,
++    task_knowledge,
++    tasks::store as tasks,
++};
++use axum::{
++    Json, Router,
++    body::Bytes,
++    extract::{DefaultBodyLimit, Path, Query, State, rejection::QueryRejection},
++    http::{HeaderMap, StatusCode, header},
++    middleware,
++    response::Response,
++    routing::get,
++};
++use serde::Deserialize;
++use serde_json::{Value, json};
++use sqlx::{AnyConnection, Row};
++use std::{collections::HashSet, sync::OnceLock};
++use tokio::sync::Semaphore;
++
++static SLOTS: OnceLock<Semaphore> = OnceLock::new();
++const SOP_ID: &str = "development";
++
++pub(crate) fn router() -> Router<AppState> {
++    Router::new()
++        .route(
++            "/api/v1/projects/{project_id}/tasks/{task_id}/sop-verifications",
++            get(list).post(create),
++        )
++        .route(
++            "/api/v1/projects/{project_id}/tasks/{task_id}/sop-verifications/{id}",
++            get(detail),
++        )
++        .layer(DefaultBodyLimit::max(4096))
++        .layer(middleware::map_response(|mut response: Response| async {
++            response.headers_mut().insert(
++                header::CACHE_CONTROL,
++                header::HeaderValue::from_static("no-store"),
++            );
++            response
++        }))
++}
++
++fn invalid_worker() -> KnowledgeError {
++    KnowledgeError::new(StatusCode::BAD_GATEWAY, "sop_verification_output_invalid")
++}
++fn unavailable() -> KnowledgeError {
++    KnowledgeError::new(
++        StatusCode::SERVICE_UNAVAILABLE,
++        "sop_verification_unavailable",
++    )
++}
++
++#[derive(Deserialize)]
++#[serde(deny_unknown_fields)]
++struct CreateInput {
++    sop_version: i64,
++    #[serde(default)]
++    target_commit: Option<String>,
++}
++
++async fn exact_sop(
++    conn: &mut AnyConnection,
++    project: &str,
++    version: i64,
++) -> Result<Value, KnowledgeError> {
++    let row = sqlx::query("SELECT bundle,digest,status FROM sop_versions WHERE project_id=$1 AND sop_id=$2 AND version=$3")
++        .bind(project).bind(SOP_ID).bind(version).fetch_optional(conn).await.map_err(KnowledgeError::database)?
++        .ok_or_else(|| KnowledgeError::new(StatusCode::NOT_FOUND, "sop_not_found"))?;
++    if row
++        .try_get::<String, _>("status")
++        .map_err(KnowledgeError::database)?
++        != "active"
++    {
++        return Err(KnowledgeError::new(StatusCode::GONE, "sop_withdrawn"));
++    }
++    let bundle: Value = serde_json::from_str(
++        &row.try_get::<String, _>("bundle")
++            .map_err(KnowledgeError::database)?,
++    )
++    .map_err(|_| unavailable())?;
++    let digest = row
++        .try_get::<String, _>("digest")
++        .map_err(KnowledgeError::database)?;
++    if bundle["project_id"] != project
++        || bundle["sop_id"] != SOP_ID
++        || bundle["version"] != version
++        || bundle["digest"] != digest
++    {
++        return Err(unavailable());
++    }
++    let mut canonical = bundle.clone();
++    canonical
++        .as_object_mut()
++        .ok_or_else(unavailable)?
++        .remove("digest");
++    if crate::sop_contract::digest(&canonical).map_err(|_| unavailable())? != digest {
++        return Err(unavailable());
++    }
++    Ok(bundle)
++}
++
++async fn create(
++    State(state): State<AppState>,
++    Path((project, task_id)): Path<(String, String)>,
++    headers: HeaderMap,
++    bytes: Bytes,
++) -> Result<(StatusCode, Json<Value>), KnowledgeError> {
++    let actor = browser_actor(&state, &headers, &project, true).await?;
++    let request: CreateInput = decode(&bytes)?;
++    if request.sop_version <= 0 || request.sop_version > 9_007_199_254_740_991 {
++        return Err(KnowledgeError::invalid("sop_version"));
++    }
++    if request
++        .target_commit
++        .as_ref()
++        .is_some_and(|sha| sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_hexdigit()))
++    {
++        return Err(KnowledgeError::invalid("target_commit"));
++    }
++    let (task, sop) = {
++        let mut conn = state
++            .pool
++            .acquire()
++            .await
++            .map_err(KnowledgeError::database)?;
++        let role = task_knowledge::local_role(&mut conn, &actor, &project).await?;
++        let task = tasks::get(&mut conn, &project, &task_id).await?;
++        task_knowledge::ensure_task_edit(&actor, &role, &task)?;
++        (
++            task,
++            exact_sop(&mut conn, &project, request.sop_version).await?,
++        )
++    };
++    let _slot = SLOTS
++        .get_or_init(|| Semaphore::new(2))
++        .try_acquire()
++        .map_err(|_| KnowledgeError::new(StatusCode::TOO_MANY_REQUESTS, "sop_verification_busy"))?;
++    if state.settings.sop_verification.python.is_none()
++        || state.settings.sop_verification.worker.is_none()
++    {
++        return Err(unavailable());
++    }
++    let frozen = snapshot::freeze(
++        &state,
++        &actor,
++        &task,
++        sop.clone(),
++        request.target_commit.as_deref(),
++    )
++    .await?;
++    let report = worker::run(&state, &frozen.input).await?;
++    validate_report(&report, &frozen.input)?;
++    let status = if report["analysis_complete"] == true {
++        "candidate"
++    } else {
++        "failed"
++    };
++    let summary = json!({"result":report["summary"]["result"],"counts":report["summary"]["counts"],"review_state":report["summary"]["review_state"]});
++    let id = uuid::Uuid::new_v4().to_string();
++    let created_at = chrono::Utc::now().to_rfc3339();
++    let input_digest = crate::sop_contract::digest(&frozen.input).map_err(|_| invalid_worker())?;
++    let reader = SourceReader::from_state(&state);
++    let mut connections = HashSet::new();
++    for source in &frozen.turns {
++        if connections.insert(source.location.connection_id.clone()) {
++            reader.authorize(&actor, source).await?;
++        }
++    }
++    if let Some(connection) = frozen.scope["commit_connection_id"].as_str() {
++        reader
++            .authorize_connection(&actor, &project, connection)
++            .await?;
++    }
++    let (mut tx, role) = task_knowledge::begin_project_write(&state.pool, &actor, &project).await?;
++    let current_task = tasks::get(&mut tx, &project, &task_id).await?;
++    task_knowledge::ensure_task_edit(&actor, &role, &current_task)?;
++    if serde_json::to_value(&current_task).map_err(|_| unavailable())?
++        != serde_json::to_value(&task).map_err(|_| unavailable())?
++    {
++        return Err(KnowledgeError::new(
++            StatusCode::CONFLICT,
++            "sop_verification_task_changed",
++        ));
++    }
++    // Match publication/withdrawal's pointer lock while checking the exact
++    // version, so a concurrent withdrawal cannot race report insertion.
++    sqlx::query("UPDATE sop_pointers SET revision=revision WHERE project_id=$1 AND sop_id=$2")
++        .bind(&project)
++        .bind(SOP_ID)
++        .execute(&mut *tx)
++        .await
++        .map_err(KnowledgeError::database)?;
++    if exact_sop(&mut tx, &project, request.sop_version).await? != sop {
++        return Err(KnowledgeError::new(
++            StatusCode::CONFLICT,
++            "sop_verification_sop_changed",
++        ));
++    }
++    for source in &frozen.turns {
++        reader.recheck(&mut tx, &actor, source).await?;
++    }
++    if let Some(connection) = frozen.scope["commit_connection_id"].as_str() {
++        crate::knowledge::sources::recheck_connection(&mut tx, &actor, &project, connection)
++            .await?;
++    }
++    sqlx::query("INSERT INTO sop_verification_reports(id,project_id,task_id,created_by,created_at,status,sop_id,sop_version,sop_digest,input_digest,input_snapshot,scope_snapshot,summary,report) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)")
++        .bind(&id).bind(&project).bind(&task_id).bind(&actor.user_id).bind(&created_at).bind(status).bind(SOP_ID).bind(request.sop_version).bind(sop["digest"].as_str().ok_or_else(unavailable)?).bind(&input_digest)
++        .bind(frozen.input.to_string()).bind(frozen.scope.to_string()).bind(summary.to_string()).bind(report.to_string())
++        .execute(&mut *tx).await.map_err(KnowledgeError::database)?;
++    tx.commit().await.map_err(KnowledgeError::database)?;
++    Ok((
++        StatusCode::CREATED,
++        Json(
++            json!({"id":id,"project_id":project,"task_id":task_id,"created_by":actor.user_id,"created_at":created_at,"status":status,"sop":{"sop_id":SOP_ID,"version":request.sop_version,"digest":sop["digest"]},"input_digest":input_digest,"summary":summary,"input_snapshot":frozen.input,"scope_snapshot":frozen.scope,"source_refs_by_id":snapshot::source_refs(&frozen.input),"report":report}),
++        ),
++    ))
++}
++
++#[derive(Deserialize)]
++#[serde(deny_unknown_fields)]
++struct ListQuery {
++    #[serde(default = "limit")]
++    limit: usize,
++    #[serde(default)]
++    offset: usize,
++}
++fn limit() -> usize {
++    25
++}
++async fn list(
++    State(state): State<AppState>,
++    Path((project, task)): Path<(String, String)>,
++    headers: HeaderMap,
++    q: Result<Query<ListQuery>, QueryRejection>,
++) -> Result<Json<Value>, KnowledgeError> {
++    browser_actor(&state, &headers, &project, false).await?;
++    let q = query(q)?;
++    PageQuery {
++        limit: q.limit,
++        offset: q.offset,
++    }
++    .validate()?;
++    let mut conn = state
++        .pool
++        .acquire()
++        .await
++        .map_err(KnowledgeError::database)?;
++    tasks::get(&mut conn, &project, &task).await?;
++    let total: i64 = sqlx::query_scalar(
++        "SELECT COUNT(*) FROM sop_verification_reports WHERE project_id=$1 AND task_id=$2",
++    )
++    .bind(&project)
++    .bind(&task)
++    .fetch_one(&mut *conn)
++    .await
++    .map_err(KnowledgeError::database)?;
++    let rows=sqlx::query("SELECT id,project_id,task_id,created_by,created_at,status,sop_id,sop_version,sop_digest,input_digest,summary FROM sop_verification_reports WHERE project_id=$1 AND task_id=$2 ORDER BY created_at DESC,id DESC LIMIT $3 OFFSET $4").bind(&project).bind(&task).bind(q.limit as i64).bind(q.offset as i64).fetch_all(&mut *conn).await.map_err(KnowledgeError::database)?;
++    let items = rows.iter().map(metadata).collect::<Result<Vec<_>, _>>()?;
++    let next = q.offset.saturating_add(items.len());
++    Ok(Json(
++        json!({"items":items,"total":total,"next_offset":(next<(total as usize)).then_some(next)}),
++    ))
++}
++fn stored(row: &sqlx::any::AnyRow, key: &str) -> Result<Value, KnowledgeError> {
++    serde_json::from_str(
++        &row.try_get::<String, _>(key)
++            .map_err(KnowledgeError::database)?,
++    )
++    .map_err(|_| unavailable())
++}
++fn metadata(row: &sqlx::any::AnyRow) -> Result<Value, KnowledgeError> {
++    let mut result = json!({"sop":{"sop_id":row.try_get::<String,_>("sop_id").map_err(KnowledgeError::database)?,"version":row.try_get::<i64,_>("sop_version").map_err(KnowledgeError::database)?,"digest":row.try_get::<String,_>("sop_digest").map_err(KnowledgeError::database)?},"summary":stored(row,"summary")?});
++    for key in [
++        "id",
++        "project_id",
++        "task_id",
++        "created_by",
++        "created_at",
++        "status",
++        "input_digest",
++    ] {
++        result[key] = json!(
++            row.try_get::<String, _>(key)
++                .map_err(KnowledgeError::database)?
++        );
++    }
++    Ok(result)
++}
++async fn detail(
++    State(state): State<AppState>,
++    Path((project, task, id)): Path<(String, String, String)>,
++    headers: HeaderMap,
++) -> Result<Json<Value>, KnowledgeError> {
++    let actor = browser_actor(&state, &headers, &project, false).await?;
++    let row = sqlx::query(
++        "SELECT * FROM sop_verification_reports WHERE project_id=$1 AND task_id=$2 AND id=$3",
++    )
++    .bind(&project)
++    .bind(&task)
++    .bind(&id)
++    .fetch_optional(&state.pool)
++    .await
++    .map_err(KnowledgeError::database)?
++    .ok_or_else(|| KnowledgeError::new(StatusCode::NOT_FOUND, "sop_verification_not_found"))?;
++    let mut result = metadata(&row)?;
++    let scope = stored(&row, "scope_snapshot")?;
++    let turns: Vec<TurnSource> =
++        serde_json::from_value(scope["turns"].clone()).map_err(|_| unavailable())?;
++    let reader = SourceReader::from_state(&state);
++    let mut connections = HashSet::new();
++    for source in turns {
++        if connections.insert(source.location.connection_id.clone()) {
++            reader.authorize(&actor, &source).await?;
++        }
++    }
++    if let Some(connection) = scope["commit_connection_id"].as_str() {
++        reader
++            .authorize_connection(&actor, &project, connection)
++            .await?;
++    }
++    let version = row
++        .try_get::<i64, _>("sop_version")
++        .map_err(KnowledgeError::database)?;
++    let mut conn = state
++        .pool
++        .acquire()
++        .await
++        .map_err(KnowledgeError::database)?;
++    let sop = exact_sop(&mut conn, &project, version).await?;
++    if sop["digest"] != result["sop"]["digest"] {
++        return Err(unavailable());
++    }
++    result["input_snapshot"] = stored(&row, "input_snapshot")?;
++    result["scope_snapshot"] = scope;
++    result["report"] = stored(&row, "report")?;
++    result["source_refs_by_id"] = snapshot::source_refs(&result["input_snapshot"]);
++    Ok(Json(result))
++}
++
++fn validate_report(report: &Value, input: &Value) -> Result<(), KnowledgeError> {
++    contract::validate(report, input)?;
++    for check in report["checks"].as_array().ok_or_else(invalid_worker)? {
++        validate_evidence(check, input)?;
++        for item in check["items"].as_array().ok_or_else(invalid_worker)? {
++            validate_evidence(item, input)?;
++        }
++    }
++    Ok(())
++}
++fn validate_evidence(item: &Value, input: &Value) -> Result<(), KnowledgeError> {
++    for reference in item["evidence_refs"]
++        .as_array()
++        .filter(|a| a.len() <= 8)
++        .ok_or_else(invalid_worker)?
++    {
++        let source = input["sources"]
++            .as_array()
++            .ok_or_else(invalid_worker)?
++            .iter()
++            .find(|s| s["id"] == reference["source_id"])
++            .ok_or_else(invalid_worker)?;
++        let lines = source["content"]
++            .as_str()
++            .ok_or_else(invalid_worker)?
++            .split('\n')
++            .collect::<Vec<_>>();
++        let start = usize::try_from(
++            reference["start_line"]
++                .as_u64()
++                .ok_or_else(invalid_worker)?,
++        )
++        .map_err(|_| invalid_worker())?;
++        let end = usize::try_from(reference["end_line"].as_u64().ok_or_else(invalid_worker)?)
++            .map_err(|_| invalid_worker())?;
++        let quote = reference["quote"]
++            .as_str()
++            .filter(|s| !s.is_empty() && s.chars().count() <= 1000)
++            .ok_or_else(invalid_worker)?;
++        if start == 0
++            || start > end
++            || end > lines.len()
++            || !lines[start - 1..end].join("\n").contains(quote)
++        {
++            return Err(invalid_worker());
++        }
++    }
++    Ok(())
++}
+diff --git a/rust/formsy-server/src/sop_verification/snapshot.rs b/rust/formsy-server/src/sop_verification/snapshot.rs
+new file mode 100644
+index 0000000..8b7a831
+--- /dev/null
++++ b/rust/formsy-server/src/sop_verification/snapshot.rs
+@@ -0,0 +1,335 @@
++use super::*;
++use crate::{
++    content_read::VisibleEvent,
++    knowledge::{
++        model::SourceRef,
++        sources::{SourceCursor, SourceReader, TurnSource},
++    },
++    project_access::PlatformActor,
++    tasks::{SourceBinding, Task},
++};
++use std::collections::{HashMap, HashSet};
++
++pub(super) const MAX_INPUT: usize = 2 * 1024 * 1024;
++pub(super) const MAX_SOURCES: usize = 400;
++pub(super) const MAX_CHARACTERS: usize = 320_000;
++
++pub(super) struct Snapshot {
++    pub input: Value,
++    pub scope: Value,
++    pub turns: Vec<TurnSource>,
++}
++
++fn too_large() -> KnowledgeError {
++    KnowledgeError::new(
++        StatusCode::PAYLOAD_TOO_LARGE,
++        "sop_verification_input_too_large",
++    )
++}
++
++pub(super) async fn freeze(
++    state: &AppState,
++    actor: &PlatformActor,
++    task: &Task,
++    sop: Value,
++    target_commit: Option<&str>,
++) -> Result<Snapshot, KnowledgeError> {
++    if task.source_bindings.is_empty() {
++        return Err(KnowledgeError::new(
++            StatusCode::UNPROCESSABLE_ENTITY,
++            "sop_verification_scope_empty",
++        ));
++    }
++    let reader = SourceReader::from_state(state);
++    let mut turns = Vec::new();
++    let mut seen = HashSet::new();
++    let mut authorized = HashSet::new();
++    for binding in &task.source_bindings {
++        let (session, ids) = match binding {
++            SourceBinding::Turns {
++                session_id,
++                turn_ids,
++            } => (session_id, turn_ids.clone()),
++            SourceBinding::SessionFrom {
++                session_id,
++                from_turn_id,
++                until_turn_id,
++            } => {
++                let from = resolve(
++                    &reader,
++                    actor,
++                    &task.project_id,
++                    session_id,
++                    from_turn_id,
++                    &mut authorized,
++                )
++                .await?;
++                let until = match until_turn_id {
++                    Some(id) => Some(
++                        resolve(
++                            &reader,
++                            actor,
++                            &task.project_id,
++                            session_id,
++                            id,
++                            &mut authorized,
++                        )
++                        .await?,
++                    ),
++                    None => None,
++                };
++                let sqlite = state.pool.connect_options().database_url.scheme() == "sqlite";
++                let time = if sqlite {
++                    "julianday(started_at)"
++                } else {
++                    "CAST(started_at AS TIMESTAMP)"
++                };
++                let param = |n: u8| {
++                    if sqlite {
++                        format!("julianday(${n})")
++                    } else {
++                        format!("CAST(${n} AS TIMESTAMP)")
++                    }
++                };
++                let sql = format!(
++                    "SELECT turn_id FROM (SELECT t.turn_id,CAST(t.started_at AS TEXT) AS started_at FROM entire_turns t JOIN entire_sessions s ON s.id=t.session_id WHERE t.project_id=$1 AND s.session_id=$2 UNION ALL SELECT h.turn_id,CAST(h.started_at AS TEXT) AS started_at FROM historical_turns h JOIN entire_sessions s ON s.id=h.session_id WHERE h.project_id=$1 AND s.session_id=$2) physical WHERE ({time}>{start} OR ({time}={start} AND turn_id>=$4)) AND ($7=0 OR {time}<{end} OR ({time}={end} AND turn_id<=$6)) GROUP BY turn_id,started_at ORDER BY {time},turn_id LIMIT 401",
++                    start = param(3),
++                    end = param(5)
++                );
++                let ids: Vec<String> = sqlx::query_scalar(&sql)
++                    .bind(&task.project_id)
++                    .bind(session_id)
++                    .bind(&from.started_at)
++                    .bind(from_turn_id)
++                    .bind(
++                        until
++                            .as_ref()
++                            .map(|t| t.started_at.as_str())
++                            .unwrap_or(&from.started_at),
++                    )
++                    .bind(until_turn_id.as_deref().unwrap_or(""))
++                    .bind(if until.is_some() { 1_i64 } else { 0_i64 })
++                    .fetch_all(&state.pool)
++                    .await
++                    .map_err(KnowledgeError::database)?;
++                if ids.is_empty() {
++                    return Err(KnowledgeError::new(StatusCode::CONFLICT, "source_changed"));
++                }
++                (session_id, ids)
++            }
++        };
++        for id in ids {
++            if !seen.insert((session.clone(), id.clone())) {
++                continue;
++            }
++            if turns.len() >= MAX_SOURCES {
++                return Err(too_large());
++            }
++            // Every selected turn must be readable. Silently skipping one would
++            // turn a permission or capture gap into apparently complete evidence.
++            turns.push(
++                resolve(
++                    &reader,
++                    actor,
++                    &task.project_id,
++                    session,
++                    &id,
++                    &mut authorized,
++                )
++                .await?,
++            );
++        }
++    }
++    let mut capture_limits=turns.iter().filter(|t| t.content_status!="available" || t.completion_status!="complete").map(|t|json!({"session_id":t.session_id,"turn_id":t.turn_id,"content_status":t.content_status,"completion_status":t.completion_status,"record_source":t.record_source})).collect::<Vec<_>>();
++    let mut sources = Vec::new();
++    let mut characters = 0;
++    for source in &turns {
++        let mut events: Vec<VisibleEvent> = Vec::new();
++        let mut positions: HashMap<String, usize> = HashMap::new();
++        let mut cursor = SourceCursor::default();
++        loop {
++            let page = reader.read_complete_page(source, cursor.clone()).await?;
++            for event in page.items {
++                characters += event.text.chars().count();
++                if characters > MAX_CHARACTERS {
++                    return Err(too_large());
++                }
++                if let Some(index) = positions.get(&event.id) {
++                    events[*index].text.push_str(&event.text);
++                } else {
++                    positions.insert(event.id.clone(), events.len());
++                    events.push(event);
++                }
++            }
++            match page.next_cursor {
++                Some(next) if next != cursor => cursor = next,
++                Some(_) => {
++                    return Err(KnowledgeError::new(
++                        StatusCode::SERVICE_UNAVAILABLE,
++                        "sop_verification_source_incomplete",
++                    ));
++                }
++                None => break,
++            }
++        }
++        if events.is_empty() {
++            capture_limits.push(json!({"session_id":source.session_id,"turn_id":source.turn_id,"reason":"no_visible_events"}));
++        }
++        for event in events {
++            if sources.len() >= MAX_SOURCES {
++                return Err(too_large());
++            }
++            let kind = match (event.kind.as_str(), event.role.as_str()) {
++                ("message", "user") => "user_message",
++                ("message", _) => "assistant_message",
++                ("tool_call", _) => "tool_call",
++                ("tool_result", _) => "tool_result",
++                _ => "source",
++            };
++            let locator = SourceRef::Turn {
++                session_id: source.session_id.clone(),
++                turn_id: source.turn_id.clone(),
++                message_ids: if event.kind == "message" {
++                    vec![event.id.clone()]
++                } else {
++                    vec![]
++                },
++                call_ids: event.call_id.iter().cloned().collect(),
++            };
++            let content = if event.kind.starts_with("tool_") {
++                format!(
++                    "[{} tool={} call_id={} is_error={} exit_code={}]\n{}",
++                    event.kind,
++                    event.tool_name.as_deref().unwrap_or("unknown"),
++                    event.call_id.as_deref().unwrap_or("unknown"),
++                    event
++                        .is_error
++                        .map(|v| v.to_string())
++                        .unwrap_or_else(|| "unknown".into()),
++                    event
++                        .exit_code
++                        .map(|v| v.to_string())
++                        .unwrap_or_else(|| "unknown".into()),
++                    event.text
++                )
++            } else {
++                event.text
++            };
++            sources.push(json!({"id":format!("source-{}", sources.len()+1),"kind":kind,"content":content,"locator":locator}));
++        }
++    }
++    let mut commit_connection = None;
++    if let Some(sha) = target_commit {
++        let connection:String=sqlx::query_scalar("SELECT id FROM entire_connections WHERE project_id=$1 ORDER BY created_at DESC LIMIT 1").bind(&task.project_id).fetch_optional(&state.pool).await.map_err(KnowledgeError::database)?.ok_or_else(||KnowledgeError::new(StatusCode::NOT_FOUND,"source_not_found"))?;
++        if !authorized.contains(&connection) {
++            reader
++                .authorize_connection(actor, &task.project_id, &connection)
++                .await?;
++        }
++        let diff = crate::commit_diff::CommitDiffReader::new(
++            state.pool.clone(),
++            state.git_repository.clone(),
++        )
++        .get(&task.project_id, sha)
++        .await
++        .map_err(|error| match error {
++            crate::commit_diff::CommitDiffError::NotFound => {
++                KnowledgeError::new(StatusCode::NOT_FOUND, "commit_not_found")
++            }
++            _ => KnowledgeError::new(StatusCode::SERVICE_UNAVAILABLE, "commit_diff_unavailable"),
++        })?;
++        let current:String=sqlx::query_scalar("SELECT id FROM entire_connections WHERE project_id=$1 ORDER BY created_at DESC LIMIT 1").bind(&task.project_id).fetch_one(&state.pool).await.map_err(KnowledgeError::database)?;
++        if current != connection {
++            return Err(KnowledgeError::new(StatusCode::CONFLICT, "source_changed"));
++        }
++        if diff.commit_oid != sha
++            || diff.truncated
++            || diff
++                .files
++                .iter()
++                .any(|f| f.truncated || f.binary || f.patch.is_none())
++        {
++            return Err(KnowledgeError::new(
++                StatusCode::CONFLICT,
++                "sop_verification_diff_incomplete",
++            ));
++        }
++        if sources.len() >= MAX_SOURCES {
++            return Err(too_large());
++        }
++        sources.push(json!({"id":format!("source-{}",sources.len()+1),"kind":"commit_diff","content":serde_json::to_string_pretty(&diff).map_err(|_|unavailable())?,"version_id":sha,"locator":SourceRef::Manual{note:format!("Server read complete target Commit {sha}"),url:None}}));
++        commit_connection = Some(connection);
++    }
++    if sources.is_empty() {
++        return Err(KnowledgeError::new(
++            StatusCode::CONFLICT,
++            "sop_verification_scope_empty",
++        ));
++    }
++    let mut context = json!({"project_id":task.project_id,"task_id":task.id,"title":task.title,"description":task.description,"evidence_completeness":if capture_limits.is_empty(){"complete"}else{"partial"}});
++    if let Some(sha) = target_commit {
++        context["target_commit"] = json!(sha);
++    }
++    let input =
++        json!({"schema_version":1,"context":context,"sop":sop,"sources":sources,"mode":"model"});
++    if serde_json::to_vec(&input)
++        .map_err(|_| invalid_worker())?
++        .len()
++        > MAX_INPUT
++        || serde_json::to_vec(&input["context"])
++            .map_err(|_| invalid_worker())?
++            .len()
++            > 16_384
++        || input["sources"]
++            .as_array()
++            .unwrap()
++            .iter()
++            .map(|s| s["content"].as_str().unwrap().chars().count())
++            .sum::<usize>()
++            > MAX_CHARACTERS
++    {
++        return Err(too_large());
++    }
++    Ok(Snapshot {
++        input,
++        scope: json!({"task":task,"turns":turns,"capture_limits":capture_limits,"commit_connection_id":commit_connection,"frozen_at":chrono::Utc::now().to_rfc3339()}),
++        turns,
++    })
++}
++
++// Authorize each physical connection once per frozen read, rather than making a
++// provider membership request for every turn in a long task.
++async fn resolve(
++    reader: &SourceReader,
++    actor: &PlatformActor,
++    project: &str,
++    session: &str,
++    turn: &str,
++    authorized: &mut HashSet<String>,
++) -> Result<TurnSource, KnowledgeError> {
++    let sources = reader.turn_locations(project, session, turn).await?;
++    let mut error = KnowledgeError::new(StatusCode::NOT_FOUND, "source_not_found");
++    for source in sources {
++        if authorized.contains(&source.location.connection_id) {
++            return Ok(source);
++        }
++        match reader.authorize(actor, &source).await {
++            Ok(()) => {
++                authorized.insert(source.location.connection_id.clone());
++                return Ok(source);
++            }
++            Err(e) => error = e,
++        }
++    }
++    Err(error)
++}
++
++pub(super) fn source_refs(input: &Value) -> Value {
++    let refs = input["sources"]
++        .as_array()
++        .into_iter()
++        .flatten()
++        .filter_map(|s| Some((s["id"].as_str()?.to_owned(), s["locator"].clone())))
++        .collect::<serde_json::Map<_, _>>();
++    Value::Object(refs)
++}
+diff --git a/rust/formsy-server/src/sop_verification/tests.rs b/rust/formsy-server/src/sop_verification/tests.rs
+new file mode 100644
+index 0000000..c7693e5
+--- /dev/null
++++ b/rust/formsy-server/src/sop_verification/tests.rs
+@@ -0,0 +1,607 @@
++use super::*;
++use crate::{
++    config::{Settings, SopVerificationSettings},
++    content_store::MemoryContentStore,
++    credential_vault::MemoryCredentialVault,
++    git_repository::{CommitDiff, CommitDiffFile, MemoryGitRepository},
++    identity::csrf_token,
++    oauth_gateway::{MemoryOAuthProviderGateway, OAuthCredential, OAuthIdentity},
++    platform_repository::{GitHubRepository, MemoryPlatformRepositoryGateway},
++    secret_resolver::MemorySecretResolver,
++    sync_source::MemorySyncSource,
++};
++use axum::{body::Body, http::Request};
++use http_body_util::BodyExt;
++use sha2::{Digest, Sha256};
++use sqlx::{AnyPool, any::AnyPoolOptions};
++use std::{path::PathBuf, sync::Arc};
++use tower::ServiceExt;
++
++struct Fixture {
++    pool: AnyPool,
++    app: Router,
++    store: Arc<MemoryContentStore>,
++    worker: PathBuf,
++    git: Arc<MemoryGitRepository>,
++}
++impl Drop for Fixture {
++    fn drop(&mut self) {
++        let _ = std::fs::remove_file(&self.worker);
++    }
++}
++async fn fixture() -> Fixture {
++    sqlx::any::install_default_drivers();
++    let pool = AnyPoolOptions::new()
++        .max_connections(1)
++        .connect("sqlite::memory:")
++        .await
++        .unwrap();
++    crate::migration::run(&pool).await.unwrap();
++    let vault = Arc::new(MemoryCredentialVault::default());
++    for (user, role) in [
++        ("owner", "owner"),
++        ("author", "developer"),
++        ("other", "developer"),
++        ("reader", "reader"),
++    ] {
++        sqlx::query("INSERT INTO users(id,tenant_id,display_name,status,created_at,updated_at) VALUES($1,'tenant',$1,'active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(user).execute(&pool).await.unwrap();
++        sqlx::query("INSERT INTO provider_identities(id,user_id,provider,provider_instance,provider_user_id,login,created_at,updated_at) VALUES($1,$1,'github','https://github.com',$1,$1,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(user).execute(&pool).await.unwrap();
++        sqlx::query("INSERT INTO provider_credentials(id,provider_identity_id,credential_ref,granted_scopes,status,created_at,updated_at) VALUES($1,$1,$1,'repo','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(user).execute(&pool).await.unwrap();
++        sqlx::query("INSERT INTO user_sessions(id,user_id,provider_identity_id,token_hash,expires_at,created_at,last_seen_at) VALUES($1,$1,$1,$2,'2099-01-01 00:00:00',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(user).bind(format!("{:x}",Sha256::digest(user.as_bytes()))).execute(&pool).await.unwrap();
++        if user == "owner" {
++            sqlx::query("INSERT INTO projects(id,tenant_id,name,slug,status,created_by_user_id,created_at,updated_at) VALUES('p','tenant','Project','p','active','owner',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").execute(&pool).await.unwrap();
++        }
++        sqlx::query("INSERT INTO project_memberships(id,project_id,user_id,source,provider_permission,repository_readable,formsy_role,status,last_verified_at,created_at,updated_at) VALUES($1,'p',$1,'fixture','write',TRUE,$2,'active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(user).bind(role).execute(&pool).await.unwrap();
++        vault
++            .insert(
++                user,
++                OAuthCredential {
++                    github_app: None,
++                    access_token: "fake-test-token".into(),
++                    refresh_token: None,
++                    scope: "repo".into(),
++                    expires_at: None,
++                    provider: "github".into(),
++                    identity: OAuthIdentity {
++                        id: user.into(),
++                        login: user.into(),
++                        name: None,
++                        avatar_url: None,
++                    },
++                },
++            )
++            .await;
++    }
++    for sql in [
++        "INSERT INTO project_repository_bindings(id,tenant_id,project_id,provider,provider_instance,provider_repository_id,owner_login,repository_name,full_name,clone_url,visibility,provider_identity_id,status,created_at,updated_at) VALUES('binding','tenant','p','github','https://github.com','repo','org','repo','org/repo','https://github.com/org/repo.git','private','owner','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
++        "INSERT INTO entire_connections(id,tenant_id,project_id,code_repo_url,checkpoint_repo_url,provider,auth_mode,repository_binding_id,created_by_user_id,sync_enabled,sync_gate_status,transcript_policy,status,created_at,updated_at) VALUES('allowed','tenant','p','https://github.com/org/repo.git','https://github.com/org/repo.git','github','oauth','binding','owner',TRUE,'ready','metadata_and_transcript','active',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)",
++        "INSERT INTO entire_ref_versions(id,connection_id,ref_name,ref_oid,backend_type,status,first_seen_at,parser_version,source_manifest) VALUES('ref','allowed','ref','oid','git','parsed',CURRENT_TIMESTAMP,1,'{}')",
++        "INSERT INTO entire_sessions(id,project_id,session_id,agent,first_seen_at,last_seen_at,latest_content_status,source_payload) VALUES('s-db','p','s','claude-code',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP,'available','{}')",
++        "INSERT INTO tasks(id,project_id,created_by,title,description,status,session_ids,source_bindings,created_at,updated_at) VALUES('task','p','author','Verify selected work','','active','[\"s\"]','[{\"kind\":\"session_from\",\"session_id\":\"s\",\"from_turn_id\":\"t1\",\"until_turn_id\":null}]','2026-10-12T00:00:00Z','2026-10-12T00:00:00Z')",
++    ] {
++        sqlx::query(sql).execute(&pool).await.unwrap();
++    }
++    for (turn, time) in [
++        ("t1", "2026-10-12 01:00:00"),
++        ("t2", "2026-10-12T02:00:00Z"),
++    ] {
++        sqlx::query("INSERT INTO entire_turns(id,project_id,session_id,turn_id,schema_version,agent,started_at,ended_at,transcript_status,file_observation_status,observed_paths,checkpoint_ids_during_turn,transcript_object_key,content_status,latest_ref_version_id,source_payload,first_seen_at,last_seen_at) VALUES($1,'p','s-db',$1,1,'claude-code',$2,$2,'complete','unavailable','[]','[]',$1,'available','ref','{}',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(turn).bind(time).execute(&pool).await.unwrap();
++    }
++    let mut sop: Value = serde_json::from_str(include_str!(
++        "../../../../contracts/sop-development-v1-template.json"
++    ))
++    .unwrap();
++    for version in [1_i64, 2] {
++        sop["project_id"] = json!("p");
++        sop["sop_id"] = json!(SOP_ID);
++        sop["version"] = json!(version);
++        sop["published_at"] = json!("2026-10-12T00:00:00Z");
++        sop.as_object_mut().unwrap().remove("digest");
++        sop["digest"] = json!(crate::sop_contract::digest(&sop).unwrap());
++        sqlx::query("INSERT INTO sop_versions(project_id,sop_id,version,bundle,digest,payload_digest,published_at,published_by) VALUES('p','development',$1,$2,$3,'payload','2026-10-12T00:00:00Z','owner')").bind(version).bind(sop.to_string()).bind(sop["digest"].as_str().unwrap()).execute(&pool).await.unwrap();
++    }
++    let store = Arc::new(MemoryContentStore::default());
++    for turn in ["t1", "t2"] {
++        store.insert(turn,format!("{}\n",json!({"type":"user","uuid":turn,"message":{"content":format!("Requirement for {turn}")}})).into_bytes()).await;
++    }
++    let repositories = Arc::new(MemoryPlatformRepositoryGateway::default());
++    repositories
++        .set_github(vec![GitHubRepository {
++            repository_id: "repo".into(),
++            owner: "org".into(),
++            name: "repo".into(),
++            full_name: "org/repo".into(),
++            clone_url: "https://github.com/org/repo.git".into(),
++            default_branch: None,
++            visibility: "private".into(),
++            archived: false,
++            permission: "write".into(),
++            role_name: None,
++        }])
++        .await;
++    let secrets = Arc::new(MemorySecretResolver::default());
++    secrets.insert("env://DEEPSEEK_API_KEY", "fake-only").await;
++    let worker = std::env::temp_dir().join(format!(
++        "formsy-verification-test-{}.py",
++        uuid::Uuid::new_v4()
++    ));
++    std::fs::write(&worker, FAKE_WORKER).unwrap();
++    let mut settings = Settings::from_env().unwrap();
++    settings.knowledge_model = Default::default();
++    settings.enforce_auth = true;
++    settings.public_base_url = "http://localhost:8001".into();
++    settings.web_base_url = Some("http://localhost:3000".into());
++    settings.sop_verification = SopVerificationSettings {
++        python: Some(PathBuf::from("/usr/bin/python3")),
++        worker: Some(worker.clone()),
++        ..Default::default()
++    };
++    let git = Arc::new(MemoryGitRepository::default());
++    let app = crate::server::router_with_runtime_dependencies(
++        pool.clone(),
++        settings,
++        store.clone(),
++        git.clone(),
++        Arc::new(MemoryOAuthProviderGateway::default()),
++        vault,
++        repositories,
++        Arc::new(MemorySyncSource::default()),
++        secrets,
++    );
++    Fixture {
++        pool,
++        app,
++        store,
++        worker,
++        git,
++    }
++}
++const FAKE_WORKER: &str = r#"import hashlib,json,sys
++p=json.load(sys.stdin)
++checks=[]
++for cid,rid,section,n in [('FIX01.C02','FIX01','goal',5),('FIX02.C01','FIX02','behavior',2),('FIX04.C02','FIX04','acceptance',5),('FIX05.C04','FIX05','acceptance',4)]:
++    items=[{'item_id':f'{cid}.I{i:02}','criterion':'fixture criterion','candidate_result':'unverified','result':'unverified','reason':'mocked, no model call','evidence_refs':[],'gaps':[],'proof_policy':'semantic'} for i in range(1,n+1)]
++    checks.append({'condition_id':cid,'rule_id':rid,'source_section_id':section,'title':'Fixture','criterion':'fixture criterion','candidate_result':'unverified','result':'unverified','reason':'mocked, no model call','evidence_refs':[],'sop_refs':[],'items':items,'gaps':[],'validation_errors':[],'review_state':'model_candidate','human_review':'not_reviewed','reference_rule':{}})
++index={s['id']:{'input_kind':s['kind'],'locator':s['locator'],'sha256':'sha256:'+hashlib.sha256(s['content'].encode()).hexdigest(),'original_sha256':'sha256:'+hashlib.sha256(s['content'].encode()).hexdigest(),'redacted':False,'version_id':s.get('version_id','')} for s in p['sources']}
++print(json.dumps({'schema_version':1,'engine_version':'fixture','context':p['context'],'sop_pin':{k:p['sop'][k] for k in ['project_id','sop_id','version','digest']},'scope':'candidate','review_state':'model_candidate','human_review':'not_reviewed','analysis_complete':True,'analysis_errors':[],'formal_closed':False,'checks':checks,'summary':{'result':'unverified','counts':{'satisfied':0,'unsatisfied':0,'unverified':4,'not_applicable':0},'review_state':'model_candidate'},'model':{'status':'completed','provider':'DeepSeek','model':'mock','invoked':True,'request_count':1},'coverage':{'profile_id':'sixchapters-codefix-mvp-v1','mapping_revision':'1','profile_digest':'sha256:'+'0'*64,'mapping_status':'draft_reference_subset','mapped_conditions':4,'total_sections':6,'mapped_sections':['goal','behavior','acceptance'],'unmapped_sections':['constraints','impact','preparation'],'complete_sop':False,'execution_verification_supported':False,'evidence_completeness':p['context'].get('evidence_completeness','unknown')},'source_index':index,'provenance':{},'limitations':['Mocked report, no real model call']}))
++"#;
++
++fn mock_report(input: &Value) -> Value {
++    use std::io::Write;
++    use std::process::{Command, Stdio};
++    let mut child = Command::new("/usr/bin/python3")
++        .args(["-I", "-c", FAKE_WORKER])
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .spawn()
++        .unwrap();
++    child
++        .stdin
++        .take()
++        .unwrap()
++        .write_all(input.to_string().as_bytes())
++        .unwrap();
++    let output = child.wait_with_output().unwrap();
++    assert!(output.status.success());
++    serde_json::from_slice(&output.stdout).unwrap()
++}
++
++async fn call(f: &Fixture, user: &str, method: &str, suffix: &str, body: Value) -> (u16, Value) {
++    let response = f
++        .app
++        .clone()
++        .oneshot(
++            Request::builder()
++                .method(method)
++                .uri(format!(
++                    "/api/v1/projects/p/tasks/task/sop-verifications{suffix}"
++                ))
++                .header("cookie", format!("formsy_session={user}"))
++                .header("origin", "http://localhost:3000")
++                .header("x-csrf-token", csrf_token(user))
++                .header("x-tenant-id", "tenant")
++                .header("x-formsy-role", "content-reader")
++                .header("content-type", "application/json")
++                .body(if method == "GET" {
++                    Body::empty()
++                } else {
++                    Body::from(body.to_string())
++                })
++                .unwrap(),
++        )
++        .await
++        .unwrap();
++    let status = response.status().as_u16();
++    assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
++    let body = response.into_body().collect().await.unwrap().to_bytes();
++    (status, serde_json::from_slice(&body).unwrap())
++}
++
++#[tokio::test]
++async fn task_permissions_csrf_and_exact_sop_version_are_required() {
++    let f = fixture().await;
++    for user in ["reader", "other"] {
++        let (status, value) = call(&f, user, "POST", "", json!({"sop_version":1})).await;
++        assert_eq!(status, 403, "{value}");
++    }
++    for (body, expected) in [
++        (json!({"sop_version":0}), 422),
++        (json!({"sop_version":99}), 404),
++        (json!({"sop_version":1,"candidate":{}}), 422),
++    ] {
++        assert_eq!(call(&f, "author", "POST", "", body).await.0, expected);
++    }
++    let response = f
++        .app
++        .clone()
++        .oneshot(
++            Request::post("/api/v1/projects/p/tasks/task/sop-verifications")
++                .header("cookie", "formsy_session=author")
++                .header("origin", "http://localhost:3000")
++                .body(Body::from("{\"sop_version\":1}"))
++                .unwrap(),
++        )
++        .await
++        .unwrap();
++    assert_eq!(response.status(), StatusCode::FORBIDDEN);
++    sqlx::query("UPDATE sop_versions SET status='withdrawn' WHERE version=1")
++        .execute(&f.pool)
++        .await
++        .unwrap();
++    assert_eq!(
++        call(&f, "author", "POST", "", json!({"sop_version":1}))
++            .await
++            .0,
++        410
++    );
++    assert_eq!(call(&f, "reader", "GET", "", json!({})).await.1["total"], 0);
++}
++
++#[tokio::test]
++async fn all_pages_long_results_and_open_scope_are_frozen_without_task_check_writes() {
++    let f = fixture().await;
++    let long = format!(
++        "{}MIDDLE_REQUIRED_EVIDENCE{}",
++        "a".repeat(35_000),
++        "z".repeat(35_000)
++    );
++    let mut transcript=(0..105).map(|i|json!({"type":"user","uuid":format!("u-{i}"),"message":{"content":format!("Requirement line {i}")}}).to_string()).collect::<Vec<_>>();
++    transcript.push(json!({"type":"user","uuid":"result","message":{"content":[{"type":"tool_result","tool_use_id":"call","content":long,"is_error":true}]}}).to_string());
++    f.store
++        .insert("t1", format!("{}\n", transcript.join("\n")).into_bytes())
++        .await;
++    let (status, first) = call(&f, "author", "POST", "", json!({"sop_version":1})).await;
++    assert_eq!(status, 201, "{first}");
++    assert_eq!(first["sop"]["version"], 1);
++    let sources = first["input_snapshot"]["sources"].as_array().unwrap();
++    assert!(sources.iter().any(|s| {
++        s["content"]
++            .as_str()
++            .unwrap()
++            .contains("Requirement line 104")
++    }));
++    assert!(sources.iter().any(|s| {
++        s["content"]
++            .as_str()
++            .unwrap()
++            .contains("MIDDLE_REQUIRED_EVIDENCE")
++    }));
++    assert!(sources.iter().any(|s| s["locator"]["turn_id"] == "t2"));
++    assert!(!first.to_string().contains("omitted middle"));
++    let (_, second) = call(&f, "owner", "POST", "", json!({"sop_version":2})).await;
++    assert_eq!(second["sop"]["version"], 2);
++    assert_ne!(first["id"], second["id"]);
++    let (_, page) = call(&f, "reader", "GET", "?limit=1", json!({})).await;
++    assert_eq!(page["total"], 2);
++    assert_eq!(page["next_offset"], 1);
++    assert!(page["items"][0].get("input_snapshot").is_none());
++    let (_, old) = call(
++        &f,
++        "reader",
++        "GET",
++        &format!("/{}", first["id"].as_str().unwrap()),
++        json!({}),
++    )
++    .await;
++    assert_eq!(old, first);
++    let checks: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM task_checks")
++        .fetch_one(&f.pool)
++        .await
++        .unwrap();
++    assert_eq!(checks, 0);
++    let state: String = sqlx::query_scalar("SELECT status FROM tasks WHERE id='task'")
++        .fetch_one(&f.pool)
++        .await
++        .unwrap();
++    assert_eq!(state, "active");
++    sqlx::query(
++        "UPDATE entire_connections SET transcript_policy='metadata_only' WHERE id='allowed'",
++    )
++    .execute(&f.pool)
++    .await
++    .unwrap();
++    assert_eq!(
++        call(
++            &f,
++            "reader",
++            "GET",
++            &format!("/{}", first["id"].as_str().unwrap()),
++            json!({})
++        )
++        .await
++        .0,
++        403
++    );
++}
++
++#[tokio::test]
++async fn partial_sources_are_marked_and_oversized_sources_fail_without_truncation() {
++    let f = fixture().await;
++    sqlx::query("UPDATE entire_turns SET content_status='partial' WHERE turn_id='t1'")
++        .execute(&f.pool)
++        .await
++        .unwrap();
++    let (status, partial) = call(&f, "author", "POST", "", json!({"sop_version":1})).await;
++    assert_eq!(status, 201, "{partial}");
++    assert_eq!(
++        partial["input_snapshot"]["context"]["evidence_completeness"],
++        "partial"
++    );
++    assert_eq!(
++        partial["scope_snapshot"]["capture_limits"]
++            .as_array()
++            .unwrap()
++            .len(),
++        1
++    );
++    sqlx::query("UPDATE entire_turns SET content_status='available' WHERE turn_id='t1'")
++        .execute(&f.pool)
++        .await
++        .unwrap();
++    f.store
++        .insert(
++            "oversized-object",
++            format!(
++                "{}\n",
++                json!({"type":"user","uuid":"huge","message":{"content":"x".repeat(320_001)}})
++            )
++            .into_bytes(),
++        )
++        .await;
++    sqlx::query(
++        "UPDATE entire_turns SET transcript_object_key='oversized-object' WHERE turn_id='t1'",
++    )
++    .execute(&f.pool)
++    .await
++    .unwrap();
++    assert_eq!(
++        call(&f, "author", "POST", "", json!({"sop_version":1}))
++            .await
++            .0,
++        413
++    );
++    assert_eq!(call(&f, "reader", "GET", "", json!({})).await.1["total"], 1);
++}
++
++#[tokio::test]
++async fn incomplete_renderer_shape_is_rejected_without_saving_a_report() {
++    let f = fixture().await;
++    std::fs::write(
++        &f.worker,
++        FAKE_WORKER.replace(
++            "'mapped_sections':['goal','behavior','acceptance']",
++            "'mapped_sections':None",
++        ),
++    )
++    .unwrap();
++    let (status, error) = call(&f, "author", "POST", "", json!({"sop_version":1})).await;
++    assert_eq!(status, 502, "{error}");
++    assert_eq!(call(&f, "reader", "GET", "", json!({})).await.1["total"], 0);
++}
++
++#[tokio::test]
++async fn changes_during_worker_io_cannot_publish_against_a_different_task() {
++    let f = fixture().await;
++    std::fs::write(
++        &f.worker,
++        format!("import time\ntime.sleep(0.15)\n{FAKE_WORKER}"),
++    )
++    .unwrap();
++    let (response, ()) = tokio::join!(
++        call(&f, "author", "POST", "", json!({"sop_version":1})),
++        async {
++            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
++            sqlx::query("UPDATE tasks SET title='Changed during analysis' WHERE id='task'")
++                .execute(&f.pool)
++                .await
++                .unwrap();
++        }
++    );
++    assert_eq!(response.0, 409, "{}", response.1);
++    assert_eq!(call(&f, "reader", "GET", "", json!({})).await.1["total"], 0);
++}
++
++#[tokio::test]
++async fn failed_model_round_is_append_only_and_worker_overflow_is_not_a_success() {
++    let f = fixture().await;
++    std::fs::write(
++        &f.worker,
++        FAKE_WORKER
++            .replace("'analysis_complete':True", "'analysis_complete':False")
++            .replace("'status':'completed'", "'status':'failed'"),
++    )
++    .unwrap();
++    let (status, report) = call(&f, "author", "POST", "", json!({"sop_version":1})).await;
++    assert_eq!(status, 201, "{report}");
++    assert_eq!(report["status"], "failed");
++    std::fs::write(
++        &f.worker,
++        "import sys\nsys.stdout.write('x' * (1024*1024+1))\n",
++    )
++    .unwrap();
++    let (status, error) = call(&f, "author", "POST", "", json!({"sop_version":1})).await;
++    assert_eq!(status, 502, "{error}");
++    assert_eq!(call(&f, "reader", "GET", "", json!({})).await.1["total"], 1);
++}
++
++#[tokio::test]
++async fn explicitly_selected_commit_requires_complete_authorized_diff() {
++    let f = fixture().await;
++    let sha = "a".repeat(40);
++    sqlx::query("INSERT INTO git_commits(id,project_id,commit_oid,parent_oids,title,message,branches,first_seen_at,last_seen_at) VALUES('commit','p',$1,'[]','Change','Change','[]',CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)").bind(&sha).execute(&f.pool).await.unwrap();
++    let mut diff = CommitDiff {
++        commit_oid: sha.clone(),
++        comparison_base: None,
++        truncated: false,
++        files: vec![CommitDiffFile {
++            path: "example.rs".into(),
++            previous_path: None,
++            status: "modified",
++            additions: Some(1),
++            deletions: Some(1),
++            patch: Some("@@ -1 +1 @@\n-old\n+new\n".into()),
++            binary: false,
++            truncated: false,
++        }],
++    };
++    f.git.insert("allowed", diff.clone()).await;
++    let (status, value) = call(
++        &f,
++        "author",
++        "POST",
++        "",
++        json!({"sop_version":1,"target_commit":sha}),
++    )
++    .await;
++    assert_eq!(status, 201, "{value}");
++    assert_eq!(value["input_snapshot"]["context"]["target_commit"], sha);
++    let source = value["input_snapshot"]["sources"]
++        .as_array()
++        .unwrap()
++        .iter()
++        .find(|s| s["kind"] == "commit_diff")
++        .unwrap();
++    assert_eq!(source["version_id"], sha);
++    assert_eq!(source["locator"]["kind"], "manual");
++    for kind in ["whole", "file", "binary", "missing"] {
++        diff.truncated = kind == "whole";
++        diff.files[0].truncated = kind == "file";
++        diff.files[0].binary = kind == "binary";
++        diff.files[0].patch = if kind == "missing" {
++            None
++        } else {
++            Some("patch".into())
++        };
++        f.git.insert("allowed", diff.clone()).await;
++        assert_eq!(
++            call(
++                &f,
++                "author",
++                "POST",
++                "",
++                json!({"sop_version":1,"target_commit":sha})
++            )
++            .await
++            .0,
++            409
++        );
++    }
++    assert_eq!(
++        call(
++            &f,
++            "author",
++            "POST",
++            "",
++            json!({"sop_version":1,"target_commit":"short"})
++        )
++        .await
++        .0,
++        422
++    );
++}
++
++#[test]
++fn evidence_lines_preserve_crlf_carriage_return_and_unicode_separators() {
++    let input = json!({"sources":[{"id":"s","content":"first\r\nsecond\rthird\u{2028}fourth\n"}]});
++    let item = |start, end, quote: &str| json!({"evidence_refs":[{"source_id":"s","start_line":start,"end_line":end,"quote":quote}]});
++    assert!(validate_evidence(&item(1, 1, "first\r"), &input).is_ok());
++    assert!(validate_evidence(&item(2, 2, "second\rthird\u{2028}fourth"), &input).is_ok());
++    assert!(validate_evidence(&item(1, 2, "first\r\nsecond"), &input).is_ok());
++    assert!(validate_evidence(&item(3, 3, "third"), &input).is_err());
++    assert!(validate_evidence(&item(1, 1, "first\r\n"), &input).is_err());
++}
++
++#[tokio::test]
++#[ignore = "requires the separately deployed SOP worker; runs only synthetic offline input"]
++async fn deployed_worker_contract_smoke_uses_real_entrypoint_without_model_calls() {
++    let worker = std::env::var("FORMSY_TEST_SOP_WORKER").expect("absolute worker path required");
++    assert!(PathBuf::from(&worker).is_absolute());
++    let f = fixture().await;
++    // This fixture wrapper is never available through the HTTP request schema.
++    // It runs the actual worker entrypoint with synthetic offline material.
++    std::fs::write(&f.worker,format!("import io,json,runpy,sys\np=json.load(sys.stdin)\np['mode']='offline'\nsys.stdin=io.TextIOWrapper(io.BytesIO(json.dumps(p).encode('utf-8')))\nrunpy.run_path({},run_name='__main__')\n",serde_json::to_string(&worker).unwrap())).unwrap();
++    let (status, value) = call(&f, "author", "POST", "", json!({"sop_version":1})).await;
++    assert_eq!(status, 201, "{value}");
++    assert_eq!(value["report"]["checks"].as_array().unwrap().len(), 4);
++    assert_eq!(value["report"]["model"]["invoked"], false);
++    assert_eq!(value["report"]["formal_closed"], false);
++    for (id, source) in value["report"]["source_index"].as_object().unwrap() {
++        assert_eq!(source["locator"], value["source_refs_by_id"][id]);
++    }
++    assert_eq!(value["status"], "failed");
++}
++
++#[test]
++fn cross_process_output_cannot_forge_a_source_or_quote() {
++    let input = json!({"context":{"project_id":"p","task_id":"t","evidence_completeness":"complete"},"sop":{"project_id":"p","sop_id":"development","version":1,"digest":"pin"},"sources":[{"id":"source-1","kind":"user_message","content":"actual\nevidence","locator":{"kind":"manual","note":"fixture"}}]});
++    let mut report = mock_report(&input);
++    assert!(validate_report(&report, &input).is_ok());
++    for reference in [
++        json!({"source_id":"unknown","start_line":1,"end_line":1,"quote":"actual"}),
++        json!({"source_id":"source-1","start_line":1,"end_line":1,"quote":"fabricated"}),
++        json!({"source_id":"source-1","start_line":0,"end_line":99,"quote":"actual"}),
++    ] {
++        report["checks"][0]["evidence_refs"] = json!([reference]);
++        assert!(validate_report(&report, &input).is_err());
++    }
++}
++
++#[test]
++fn worker_shape_and_condition_sets_must_match_the_renderer_contract() {
++    let input = json!({"context":{"project_id":"p","task_id":"t","evidence_completeness":"complete"},"sop":{"project_id":"p","sop_id":"development","version":1,"digest":"pin"},"sources":[{"id":"s","kind":"user_message","content":"fixture","locator":{"kind":"manual","note":"fixture"}}]});
++    let report = mock_report(&input);
++    for pointer in [
++        "/coverage",
++        "/analysis_errors",
++        "/checks/0/title",
++        "/checks/0/sop_refs",
++        "/checks/0/items/0/criterion",
++        "/human_review",
++        "/source_index",
++    ] {
++        let mut invalid = report.clone();
++        *invalid.pointer_mut(pointer).unwrap() = Value::Null;
++        assert!(
++            validate_report(&invalid, &input).is_err(),
++            "accepted invalid {pointer}"
++        );
++    }
++    for (pointer, value) in [
++        ("/checks/0/condition_id", json!("FIX99.C01")),
++        ("/checks/0/items/0/item_id", json!("wrong")),
++        ("/summary/counts/unverified", json!(3)),
++        ("/summary/result", json!("satisfied")),
++        ("/coverage/complete_sop", json!(true)),
++        (
++            "/source_index/s/locator",
++            json!({"kind":"manual","note":"forged"}),
++        ),
++    ] {
++        let mut invalid = report.clone();
++        *invalid.pointer_mut(pointer).unwrap() = value;
++        assert!(
++            validate_report(&invalid, &input).is_err(),
++            "accepted invalid {pointer}"
++        );
++    }
++}
+diff --git a/rust/formsy-server/src/sop_verification/worker.rs b/rust/formsy-server/src/sop_verification/worker.rs
+new file mode 100644
+index 0000000..311e1f1
+--- /dev/null
++++ b/rust/formsy-server/src/sop_verification/worker.rs
+@@ -0,0 +1,86 @@
++use super::*;
++use std::{process::Stdio, time::Duration};
++use tokio::{
++    io::{AsyncReadExt, AsyncWriteExt},
++    process::Command,
++};
++
++const MAX_OUTPUT: usize = 1024 * 1024;
++
++pub(super) async fn run(state: &AppState, input: &Value) -> Result<Value, KnowledgeError> {
++    let config = &state.settings.sop_verification;
++    let unavailable = || {
++        KnowledgeError::new(
++            StatusCode::SERVICE_UNAVAILABLE,
++            "sop_verification_unavailable",
++        )
++    };
++    let python = config
++        .python
++        .as_ref()
++        .filter(|p| p.is_absolute() && p.is_file())
++        .ok_or_else(unavailable)?;
++    let worker = config
++        .worker
++        .as_ref()
++        .filter(|p| p.is_absolute() && p.is_file())
++        .ok_or_else(unavailable)?;
++    let key = state
++        .secret_resolver
++        .resolve(&config.api_key_ref)
++        .await
++        .ok_or_else(|| {
++            KnowledgeError::new(
++                StatusCode::SERVICE_UNAVAILABLE,
++                "sop_verification_model_unconfigured",
++            )
++        })?;
++    let mut child = Command::new(python)
++        .arg("-I")
++        .arg(worker)
++        .env_clear()
++        .env("DEEPSEEK_API_KEY", key)
++        .env("DEEPSEEK_MODEL", &config.model)
++        .env("PYTHONIOENCODING", "utf-8")
++        .env("PYTHONUTF8", "1")
++        .stdin(Stdio::piped())
++        .stdout(Stdio::piped())
++        .stderr(Stdio::null())
++        .kill_on_drop(true)
++        .spawn()
++        .map_err(|_| unavailable())?;
++    let bytes = serde_json::to_vec(input).map_err(|_| invalid_worker())?;
++    tokio::time::timeout(Duration::from_secs(120), async {
++        let mut stdin = child.stdin.take().ok_or_else(unavailable)?;
++        let mut stdout = child
++            .stdout
++            .take()
++            .ok_or_else(unavailable)?
++            .take((MAX_OUTPUT + 1) as u64);
++        let mut output = Vec::new();
++        tokio::try_join!(
++            async {
++                stdin.write_all(&bytes).await.map_err(|_| unavailable())?;
++                drop(stdin);
++                Ok::<_, KnowledgeError>(())
++            },
++            async {
++                stdout
++                    .read_to_end(&mut output)
++                    .await
++                    .map_err(|_| unavailable())?;
++                if output.len() > MAX_OUTPUT {
++                    return Err(invalid_worker());
++                }
++                Ok::<_, KnowledgeError>(())
++            }
++        )?;
++        let status = child.wait().await.map_err(|_| unavailable())?;
++        if !status.success() {
++            return Err(invalid_worker());
++        }
++        serde_json::from_slice(&output).map_err(|_| invalid_worker())
++    })
++    .await
++    .map_err(|_| KnowledgeError::new(StatusCode::GATEWAY_TIMEOUT, "sop_verification_timeout"))?
++}
+diff --git a/rust/formsy-server/tests/git_read_probe.rs b/rust/formsy-server/tests/git_read_probe.rs
+index aab1759..64444dd 100644
+--- a/rust/formsy-server/tests/git_read_probe.rs
++++ b/rust/formsy-server/tests/git_read_probe.rs
+@@ -47,6 +47,7 @@ async fn process_read_probe_checks_advertised_refs_without_fetching_objects() {
+     );
+     let settings = Settings {
+         knowledge_model: Default::default(),
++        sop_verification: Default::default(),
+         session_lineage_enabled: true,
+         bind_address: "127.0.0.1:0".parse().unwrap(),
+         database_url: "sqlite::memory:".into(),
+diff --git a/rust/formsy-server/tests/read_contract.rs b/rust/formsy-server/tests/read_contract.rs
+index b471d40..89471e8 100644
+--- a/rust/formsy-server/tests/read_contract.rs
++++ b/rust/formsy-server/tests/read_contract.rs
+@@ -4072,6 +4072,7 @@ async fn post_with_csrf(app: &axum::Router, path: &str) -> axum::response::Respo
+ fn settings() -> Settings {
+     Settings {
+         knowledge_model: Default::default(),
++        sop_verification: Default::default(),
+         session_lineage_enabled: true,
+         bind_address: "127.0.0.1:0".parse().unwrap(),
+         database_url: "sqlite::memory:".into(),

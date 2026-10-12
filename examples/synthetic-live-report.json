@@ -1,0 +1,715 @@
+{
+  "schema_version": 1,
+  "engine_version": "0.1.0",
+  "context": {
+    "project_id": "fixture-project",
+    "task_id": "fixture-task",
+    "title": "合成语义样例：修复分页 limit 的零值丢失",
+    "description": "仅合成材料；未执行代码或测试。检查 None 默认值、合法零值和负数拒绝的边界。",
+    "target_commit": "9058a322770a3cbf4cffd3993e2242e907de3360",
+    "evidence_completeness": "complete"
+  },
+  "sop_pin": {
+    "project_id": "fixture-project",
+    "sop_id": "development",
+    "version": 1,
+    "digest": "sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8"
+  },
+  "sop_pin_validation": "structural_only; exact RFC8785 digest and authorization belong to calling Server",
+  "scope": "candidate",
+  "formal_closed": false,
+  "review_state": "model_candidate",
+  "human_review": "not_reviewed",
+  "analysis_complete": false,
+  "analysis_errors": [],
+  "model": {
+    "provider": "DeepSeek",
+    "model": "deepseek-flash",
+    "invoked": true,
+    "request_count": 1,
+    "status": "completed"
+  },
+  "coverage": {
+    "profile_id": "sixchapters-codefix-mvp-v1",
+    "mapping_revision": "1",
+    "profile_digest": "sha256:66d8d2f55a70a3ff1da9ca71a815a9679d4465bd627d83029a218d40fd50ca13",
+    "profile_digest_algorithm": "sha256_of_raw_profile_file_bytes",
+    "mapping_status": "draft_reference_subset",
+    "mapped_conditions": 4,
+    "total_sections": 6,
+    "mapped_sections": [
+      "goal",
+      "behavior",
+      "acceptance"
+    ],
+    "unmapped_sections": [
+      "constraints",
+      "impact",
+      "preparation"
+    ],
+    "complete_sop": false,
+    "evidence_completeness": "complete",
+    "execution_verification_supported": false
+  },
+  "checks": [
+    {
+      "condition_id": "FIX01.C02",
+      "rule_id": "FIX01",
+      "source_section_id": "goal",
+      "title": "有效要求、规则及对象版本是否明确？",
+      "criterion": "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份",
+      "candidate_result": "satisfied",
+      "result": "satisfied",
+      "reason": "用户原话、验收清单、规则版本摘要、目标源码与环境身份均有直接证据：user 给出 A1-A4 验收点，context 给出 SOP 版本与 digest、目标 SHA、环境计划，code/diff 绑定同一版本。",
+      "gaps": [],
+      "evidence_refs": [
+        {
+          "source_id": "user",
+          "start_line": 1,
+          "end_line": 8,
+          "quote": "修复 pagination.py 的 normalize_limit(value)：现有 value or 25 把合法 0 错误变成 25。",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: user"
+          },
+          "source_sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+          "redacted": false
+        },
+        {
+          "source_id": "context",
+          "start_line": 2,
+          "end_line": 3,
+          "quote": "源代码和完整 diff 的合成目标版本：9058a322770a3cbf4cffd3993e2242e907de3360；这个 SHA 仅用于版本绑定测试，不声称真实 Git 提交。",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: context"
+          },
+          "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+          "redacted": false
+        },
+        {
+          "source_id": "context",
+          "start_line": 9,
+          "end_line": 9,
+          "quote": "当前合成项目 SOP development v1，digest=sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8；六章文本完整附于 sop 字段。",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: context"
+          },
+          "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/0/items/0/1",
+          "quote": "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX01.C02.I01",
+          "criterion": "用户原话/有效决定引用",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "user 消息逐字给出修复对象、原缺陷与验收 A1-A4，属于用户原话/有效决定引用。",
+          "evidence_refs": [
+            {
+              "source_id": "user",
+              "start_line": 1,
+              "end_line": 5,
+              "quote": "修复 pagination.py 的 normalize_limit(value)：现有 value or 25 把合法 0 错误变成 25。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: user"
+              },
+              "source_sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I02",
+          "criterion": "任务与验收清单",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "user 第2-5行列出 A1-A4 验收点，第6-7行给出改动范围与测试设计要求，构成任务与验收清单。",
+          "evidence_refs": [
+            {
+              "source_id": "user",
+              "start_line": 2,
+              "end_line": 7,
+              "quote": "验收 A1：None 返回默认分页数量 25。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: user"
+              },
+              "source_sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I03",
+          "criterion": "规则版本摘要",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "context 第9行给出当前合成项目 SOP development v1 及 digest，属于规则版本摘要。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 9,
+              "end_line": 9,
+              "quote": "当前合成项目 SOP development v1，digest=sha256:7be9a57dd5425bb7129a41af601e693c9ad0e9724c68afb7aa02127cc9342cc8；六章文本完整附于 sop 字段。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: context"
+              },
+              "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I04",
+          "criterion": "目标源码身份明确并绑定审计目标版本",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "code 与 diff 均标注 version_id 9058a322770a3cbf4cffd3993e2242e907de3360，context 第2行说明该 SHA 用于版本绑定，目标源码身份与审计版本绑定。",
+          "evidence_refs": [
+            {
+              "source_id": "code",
+              "start_line": 1,
+              "end_line": 7,
+              "quote": "File: pagination.py",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: code"
+              },
+              "source_sha256": "sha256:f671d036bfc9f85834dd87a5b45b9bc53eeb5fd27049eb5f5caef05e2da07523",
+              "redacted": false
+            },
+            {
+              "source_id": "diff",
+              "start_line": 2,
+              "end_line": 12,
+              "quote": "diff --git a/pagination.py b/pagination.py",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: diff"
+              },
+              "source_sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX01.C02.I05",
+          "criterion": "目标环境身份明确；源码SHA只能定位源码版本，不能证明平台、解释器、依赖或运行前提",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "context 第3行明确目标环境计划 CPython 3.12、Linux x86_64、pytest 8.3，并说明源码使用标准库、测试仅依赖 pytest；环境身份明确。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 3,
+              "end_line": 3,
+              "quote": "目标环境计划：CPython 3.12、Linux x86_64、pytest 8.3；源码使用标准库，测试仅依赖 pytest。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: context"
+              },
+              "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "environment"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 6,
+          "end_line": 11,
+          "quote": "    \"required_evidence\": [\n      \"用户原话/有效决定引用\",\n      \"任务与验收清单\",\n      \"规则版本摘要\",\n      \"目标源码与环境身份\"\n    ],"
+        }
+      }
+    },
+    {
+      "condition_id": "FIX02.C01",
+      "rule_id": "FIX02",
+      "source_section_id": "behavior",
+      "title": "要求与实质改动是否双向对应？",
+      "criterion": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据",
+      "candidate_result": "satisfied",
+      "result": "satisfied",
+      "reason": "diff 显示 normalize_limit 的 None 默认值判断与 return value 改动，code 与 diff 一致；测试源码覆盖 A1-A4，且改动范围与 user 第6行“仅改这个函数”一致，无越出范围的实质改动。",
+      "gaps": [],
+      "evidence_refs": [
+        {
+          "source_id": "diff",
+          "start_line": 6,
+          "end_line": 12,
+          "quote": " def normalize_limit(value):",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: diff"
+          },
+          "source_sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+          "redacted": false
+        },
+        {
+          "source_id": "code",
+          "start_line": 2,
+          "end_line": 7,
+          "quote": "def normalize_limit(value):",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: code"
+          },
+          "source_sha256": "sha256:f671d036bfc9f85834dd87a5b45b9bc53eeb5fd27049eb5f5caef05e2da07523",
+          "redacted": false
+        },
+        {
+          "source_id": "user",
+          "start_line": 6,
+          "end_line": 6,
+          "quote": "仅改这个函数的 None 默认值判断，并在 tests/test_pagination.py 添加以上断言；不要修改其他 API 或增加依赖。",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: user"
+          },
+          "source_sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/1/items/0/1",
+          "quote": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX02.C01.I01",
+          "criterion": "每个必要验收点有语义成立的改动或有效无需改动依据",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "A1 由 if value is None: return 25 支持；A2 由 return value 支持；A3 由 return value 支持；A4 由保留的 if value < 0: raise ValueError 支持。每个验收点均有语义成立的改动。",
+          "evidence_refs": [
+            {
+              "source_id": "diff",
+              "start_line": 7,
+              "end_line": 12,
+              "quote": "+    if value is None:",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: diff"
+              },
+              "source_sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+              "redacted": false
+            },
+            {
+              "source_id": "code",
+              "start_line": 3,
+              "end_line": 7,
+              "quote": "    if value is None:",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: code"
+              },
+              "source_sha256": "sha256:f671d036bfc9f85834dd87a5b45b9bc53eeb5fd27049eb5f5caef05e2da07523",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX02.C01.I02",
+          "criterion": "每段实质变更有有效任务依据",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "diff 仅涉及 pagination.py 的 normalize_limit 与新增 tests/test_pagination.py，与 user 第6行限定的改动范围一致，未发现越出范围的实质改动。",
+          "evidence_refs": [
+            {
+              "source_id": "diff",
+              "start_line": 2,
+              "end_line": 16,
+              "quote": "diff --git a/pagination.py b/pagination.py",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: diff"
+              },
+              "source_sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+              "redacted": false
+            },
+            {
+              "source_id": "user",
+              "start_line": 6,
+              "end_line": 6,
+              "quote": "仅改这个函数的 None 默认值判断，并在 tests/test_pagination.py 添加以上断言；不要修改其他 API 或增加依赖。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: user"
+              },
+              "source_sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 23,
+          "end_line": 23,
+          "quote": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+        }
+      }
+    },
+    {
+      "condition_id": "FIX04.C02",
+      "rule_id": "FIX04",
+      "source_section_id": "acceptance",
+      "title": "测试断言是否验证要求及必要负面/回归？",
+      "criterion": "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明",
+      "candidate_result": "satisfied",
+      "result": "satisfied",
+      "reason": "测试源码可定位且绑定目标版本；context 第4行说明使用 pytest 默认配置；第6行给出 A1-A4 到断言的映射；第7行说明前置/负例/回归设计；第8行说明无 mock/skip/xfail。",
+      "gaps": [],
+      "evidence_refs": [
+        {
+          "source_id": "test",
+          "start_line": 1,
+          "end_line": 17,
+          "quote": "File: tests/test_pagination.py",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: test"
+          },
+          "source_sha256": "sha256:1bac3e45ee56ff70b8a1732d6932caa660cbbf88e0bfe9a2c49c22db5d97cf38",
+          "redacted": false
+        },
+        {
+          "source_id": "context",
+          "start_line": 4,
+          "end_line": 8,
+          "quote": "测试配置计划：使用 pytest 默认配置，没有 pytest.ini/pyproject pytest 配置覆盖。",
+          "locator": {
+            "kind": "manual",
+            "note": "Synthetic semantic fixture: context"
+          },
+          "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+          "redacted": false
+        }
+      ],
+      "sop_refs": [
+        {
+          "pointer": "/sections/5/items/0/1",
+          "quote": "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明"
+        }
+      ],
+      "items": [
+        {
+          "item_id": "FIX04.C02.I01",
+          "criterion": "目标版本测试源码可定位",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "test 源码以 version_id 9058a322770a3cbf4cffd3993e2242e907de3360 定位，且 diff 第13-16行显示新增 tests/test_pagination.py。",
+          "evidence_refs": [
+            {
+              "source_id": "test",
+              "start_line": 1,
+              "end_line": 17,
+              "quote": "File: tests/test_pagination.py",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: test"
+              },
+              "source_sha256": "sha256:1bac3e45ee56ff70b8a1732d6932caa660cbbf88e0bfe9a2c49c22db5d97cf38",
+              "redacted": false
+            },
+            {
+              "source_id": "diff",
+              "start_line": 13,
+              "end_line": 16,
+              "quote": "diff --git a/tests/test_pagination.py b/tests/test_pagination.py",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: diff"
+              },
+              "source_sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX04.C02.I02",
+          "criterion": "适用测试配置明确；可由配置、明确运行计划或明确采用默认配置的有效依据证明；不强制独立配置文件，证据不足记未核查",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "context 第4行明确使用 pytest 默认配置且无 pytest.ini/pyproject 覆盖，属于明确采用默认配置的有效依据。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 4,
+              "end_line": 4,
+              "quote": "测试配置计划：使用 pytest 默认配置，没有 pytest.ini/pyproject pytest 配置覆盖。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: context"
+              },
+              "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "evidence_plan"
+        },
+        {
+          "item_id": "FIX04.C02.I03",
+          "criterion": "验收点到断言映射",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "context 第6行给出 A1->test_none_defaults_to_25、A2->test_zero_stays_zero、A3->test_positive_limit_preserved[1/30]、A4->test_negative_limit_rejected 的映射，测试源码含对应断言。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 6,
+              "end_line": 6,
+              "quote": "验收到断言映射：A1->test_none_defaults_to_25；A2->test_zero_stays_zero；A3->test_positive_limit_preserved[1/30]；A4->test_negative_limit_rejected。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: context"
+              },
+              "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+              "redacted": false
+            },
+            {
+              "source_id": "test",
+              "start_line": 5,
+              "end_line": 17,
+              "quote": "def test_none_defaults_to_25():",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: test"
+              },
+              "source_sha256": "sha256:1bac3e45ee56ff70b8a1732d6932caa660cbbf88e0bfe9a2c49c22db5d97cf38",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX04.C02.I04",
+          "criterion": "前置/负例/回归设计",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "context 第7行说明前置条件及 0 为负例/修复回归、None 和正数为正常回归、负数验证保留拒绝契约；测试源码含 test_zero_stays_zero 与 test_negative_limit_rejected。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 7,
+              "end_line": 7,
+              "quote": "前置：从包含 pagination.py 的项目根目录导入；0 是明确负例/修复回归，None 和正数是正常回归，负数验证保留拒绝契约。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: context"
+              },
+              "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+              "redacted": false
+            },
+            {
+              "source_id": "test",
+              "start_line": 8,
+              "end_line": 17,
+              "quote": "def test_zero_stays_zero():",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: test"
+              },
+              "source_sha256": "sha256:1bac3e45ee56ff70b8a1732d6932caa660cbbf88e0bfe9a2c49c22db5d97cf38",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        },
+        {
+          "item_id": "FIX04.C02.I05",
+          "criterion": "mock与skip说明",
+          "candidate_result": "satisfied",
+          "result": "satisfied",
+          "reason": "context 第8行明确测试源码无 mock、无 skip、无 xfail，也不依赖网络或外部服务。",
+          "evidence_refs": [
+            {
+              "source_id": "context",
+              "start_line": 8,
+              "end_line": 8,
+              "quote": "mock/skip 说明：测试源码无 mock、无 skip、无 xfail，也不依赖网络或外部服务。",
+              "locator": {
+                "kind": "manual",
+                "note": "Synthetic semantic fixture: context"
+              },
+              "source_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+              "redacted": false
+            }
+          ],
+          "gaps": [],
+          "proof_policy": "semantic"
+        }
+      ],
+      "validation_errors": [],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 63,
+          "end_line": 68,
+          "quote": "    \"required_evidence\": [\n      \"测试源码及配置\",\n      \"验收点到断言映射\",\n      \"前置/负例/回归设计\",\n      \"mock与skip说明\"\n    ],"
+        }
+      }
+    },
+    {
+      "condition_id": "FIX05.C04",
+      "rule_id": "FIX05",
+      "source_section_id": "acceptance",
+      "title": "必需运行是否在对应版本和环境成立？",
+      "criterion": "实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份",
+      "candidate_result": "unverified",
+      "result": "unverified",
+      "reason": "user 第8行明确本次材料未实际执行测试并要求把运行核验保留未核查；context 第5行说明没有运行该命令，第10行说明没有运行输出、构建产物、人工复核或最终实例证据。缺少实际命令和完整输出、受测版本/补丁/测试设计、环境和真实/mock分类、必要产物与最终实例身份。",
+      "gaps": [
+        "本条件候选未通过原文引用或原子义务校验，保留未核查。"
+      ],
+      "evidence_refs": [],
+      "sop_refs": [],
+      "items": [],
+      "validation_errors": [
+        "unsupported_evidence_kind"
+      ],
+      "review_state": "model_candidate",
+      "human_review": "not_reviewed",
+      "reference_rule": {
+        "version": "0.1",
+        "source_ref": {
+          "document_id": "code-fix-0.1",
+          "start_line": 81,
+          "end_line": 86,
+          "quote": "    \"required_evidence\": [\n      \"实际命令和完整输出\",\n      \"受测版本/补丁/测试设计\",\n      \"环境和真实/mock分类\",\n      \"必要产物与最终实例身份\"\n    ],"
+        }
+      }
+    }
+  ],
+  "summary": {
+    "result": "unverified",
+    "counts": {
+      "not_applicable": 0,
+      "satisfied": 3,
+      "unsatisfied": 0,
+      "unverified": 1
+    },
+    "review_state": "model_candidate"
+  },
+  "source_index": {
+    "user": {
+      "input_kind": "user_message",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: user"
+      },
+      "sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+      "original_sha256": "sha256:1b7e2f10cae20a1e99ced3f637204f9cc09311346930531b5312eb851b61a4cb",
+      "redacted": false,
+      "version_id": ""
+    },
+    "diff": {
+      "input_kind": "commit_diff",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: diff"
+      },
+      "sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+      "original_sha256": "sha256:6ab1d47cc839fb4648f4a88e788d1b519fc9abc13e2df7fff0afe573545aecb0",
+      "redacted": false,
+      "version_id": "9058a322770a3cbf4cffd3993e2242e907de3360"
+    },
+    "code": {
+      "input_kind": "source",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: code"
+      },
+      "sha256": "sha256:f671d036bfc9f85834dd87a5b45b9bc53eeb5fd27049eb5f5caef05e2da07523",
+      "original_sha256": "sha256:f671d036bfc9f85834dd87a5b45b9bc53eeb5fd27049eb5f5caef05e2da07523",
+      "redacted": false,
+      "version_id": "9058a322770a3cbf4cffd3993e2242e907de3360"
+    },
+    "test": {
+      "input_kind": "source",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: test"
+      },
+      "sha256": "sha256:1bac3e45ee56ff70b8a1732d6932caa660cbbf88e0bfe9a2c49c22db5d97cf38",
+      "original_sha256": "sha256:1bac3e45ee56ff70b8a1732d6932caa660cbbf88e0bfe9a2c49c22db5d97cf38",
+      "redacted": false,
+      "version_id": "9058a322770a3cbf4cffd3993e2242e907de3360"
+    },
+    "context": {
+      "input_kind": "context",
+      "locator": {
+        "kind": "manual",
+        "note": "Synthetic semantic fixture: context"
+      },
+      "sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+      "original_sha256": "sha256:03df7455a28983335207672239a4c9d27e23081cc5ef45f3fc82d7bc8759c837",
+      "redacted": false,
+      "version_id": ""
+    }
+  },
+  "provenance": {
+    "project": "TraceAuditWeb",
+    "contract_file": "sop_contracts.py",
+    "contract_sha256": "7ce339595571237a4239b05dc431aa504ae08393668277002bba7aa635616815",
+    "catalog_sha256": "60a1df8d76874a0ceba41586a962223d547078cc3f63d231bce5f128008e3d91",
+    "note": "Frozen selected existing conditions and derived atomic evidence contracts. Mapping to FormSy chapters is a draft reference subset; no whole-SOP compliance claim.",
+    "source_document": {
+      "id": "code-fix-0.1",
+      "version": "0.1",
+      "sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "file": "code-fix-0.1.source.json"
+    }
+  },
+  "limitations": [
+    "仅核查4个参考条件，不代表六章全文或33规则/144条件均已核查。",
+    "语义结果是模型候选；原文和字段校验不能证明模型语义正确。",
+    "未执行上传代码、测试、部署或修复；普通Trace工具输出不等于受信CI回执。",
+    "草案映射不会提升为人工批准、正式关闭或历史SOP生效证明。"
+  ]
+}

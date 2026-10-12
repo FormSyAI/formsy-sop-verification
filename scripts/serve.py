@@ -1,0 +1,251 @@
+#!/usr/bin/env python3
+"""Loopback-only local UI for the existing candidate verifier; no dotenv loading."""
+
+import argparse
+from datetime import datetime, timezone
+import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import mimetypes
+import os
+from pathlib import Path
+import sys
+import threading
+from urllib.parse import unquote, urlsplit
+import uuid
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from formsy_sop_verification.core import MAX_INPUT_BYTES, decode_json, verify  # noqa: E402
+
+
+def encoded(value):
+    return json.dumps(value, ensure_ascii=False, allow_nan=False, sort_keys=True,
+                      separators=(",", ":")).encode("utf-8")
+
+
+def sha256(raw):
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def configuration():
+    return {"model_configured": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip()),
+            "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")}
+
+
+def load_demo(root, demo_report=None):
+    report_path = Path(demo_report) if demo_report else root / "examples/synthetic-live-report.json"
+    live = report_path.is_file()
+    if demo_report and not live:
+        raise ValueError("Configured demo report is unavailable.")
+    request_path = root / ("examples/model-request.json" if live else "examples/offline-request.json")
+    if not live:
+        report_path = root / "examples/offline-report.json"
+    request = decode_json(request_path.read_bytes())
+    report = decode_json(report_path.read_bytes())
+    pin = {key: request["sop"][key] for key in ("project_id", "sop_id", "version", "digest")}
+    if report.get("context") != request.get("context") or report.get("sop_pin") != pin:
+        raise ValueError("Demo request and report identities do not match.")
+    index = report.get("source_index", {})
+    if set(index) != {source["id"] for source in request["sources"]}:
+        raise ValueError("Demo request and report sources do not match.")
+    for source in request["sources"]:
+        entry = index[source["id"]]
+        if (entry.get("original_sha256") != sha256(source["content"].encode("utf-8"))
+                or entry.get("locator") != source["locator"]):
+            raise ValueError("Demo source content does not match the saved report.")
+    return {"request": request, "report": report,
+            "mode": "synthetic_replay" if live else "offline_fixture"}
+
+
+def save_record(directory, request, report):
+    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    record = {"id": str(uuid.uuid4()), "created_at": datetime.now(timezone.utc).isoformat(),
+              "input_sha256": sha256(encoded(request)), "report_sha256": sha256(encoded(report))}
+    path = directory / (record["id"] + ".json")
+    # Exclusive creation keeps local rounds append-only, with private file permissions.
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            output.write(encoded({"record": record, "request": request, "report": report,
+                                  "mode": request["mode"]}) + b"\n")
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
+    return record
+
+
+def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None):
+    root = Path(root).resolve()
+    demo = load_demo(root, demo_report)
+    web = (root / "web").resolve()
+    records = Path(reports_dir) if reports_dir is not None else root / "reports/local"
+    slots = threading.BoundedSemaphore(2)
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "FormSyLocal/0.1"
+
+        def setup(self):
+            super().setup()
+            self.connection.settimeout(15)
+
+        def log_message(self, *_):
+            # Paths, request bodies and provider errors may contain private input.
+            pass
+
+        def send_error(self, code, message=None, explain=None):
+            self.error(code, "http_error", "The local request could not be processed.")
+
+        def reply(self, status, body, content_type="application/json; charset=utf-8"):
+            self.send_response(status)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; "
+                             "img-src 'self' data:; style-src 'self'; script-src 'self'; "
+                             "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(body)
+
+        def error(self, status, code, message):
+            self.reply(status, encoded({"error": {"code": code, "message": message}}))
+
+        def trusted(self, write=False):
+            hosts = self.headers.get_all("Host", [])
+            port = self.server.server_port
+            allowed = {f"127.0.0.1:{port}", f"localhost:{port}"}
+            if len(hosts) != 1 or hosts[0].lower() not in allowed:
+                self.error(403, "untrusted_host", "Use this service through its loopback address.")
+                return False
+            origins = self.headers.get_all("Origin", [])
+            if (len(origins) > 1 or (write and len(origins) != 1)
+                    or (origins and origins[0].lower() != "http://" + hosts[0].lower())
+                    or self.headers.get("Sec-Fetch-Site") == "cross-site"):
+                self.error(403, "untrusted_origin", "Only requests from this local page are accepted.")
+                return False
+            return True
+
+        def request_path(self):
+            try:
+                parsed = urlsplit(self.path)
+                if parsed.scheme or parsed.netloc:
+                    raise ValueError("absolute_target")
+                return parsed.path
+            except ValueError:
+                self.error(400, "invalid_path", "Use a valid local request path.")
+                return None
+
+        def do_GET(self):
+            if not self.trusted():
+                return
+            path = self.request_path()
+            if path is None:
+                return
+            if path == "/api/config":
+                self.reply(200, encoded(configuration()))
+                return
+            if path == "/api/demo":
+                self.reply(200, encoded(demo))
+                return
+            if path.startswith("/api/"):
+                self.error(404, "not_found", "Local endpoint not found.")
+                return
+            try:
+                name = "index.html" if path == "/" else unquote(path).lstrip("/")
+                target = (web / name).resolve()
+                if not target.is_relative_to(web) or not target.is_file():
+                    self.error(404, "not_found", "Local file not found.")
+                    return
+                body = target.read_bytes()
+                mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
+                self.reply(200, body, mime + ("; charset=utf-8" if mime.startswith("text/") else ""))
+            except (OSError, ValueError):
+                self.error(404, "not_found", "Local file not found.")
+
+        def do_POST(self):
+            if not self.trusted(write=True):
+                return
+            path = self.request_path()
+            if path is None:
+                return
+            if path != "/api/verify":
+                self.error(404, "not_found", "Local endpoint not found.")
+                return
+            lengths = self.headers.get_all("Content-Length", [])
+            if self.headers.get("Transfer-Encoding") or len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdigit():
+                self.error(400, "invalid_length", "Provide one bounded Content-Length.")
+                return
+            if len(lengths[0]) > 10:
+                self.error(413, "input_too_large", "The JSON request exceeds 2 MiB.")
+                return
+            length = int(lengths[0])
+            if length > MAX_INPUT_BYTES:
+                self.error(413, "input_too_large", "The JSON request exceeds 2 MiB.")
+                return
+            if self.headers.get_content_type() != "application/json":
+                self.error(415, "json_required", "Use application/json.")
+                return
+            if not slots.acquire(blocking=False):
+                self.error(429, "verification_busy", "Two local verifications are already running.")
+                return
+            try:
+                raw = self.rfile.read(length)
+                if len(raw) != length:
+                    raise ValueError("incomplete_body")
+                body = decode_json(raw)
+                if not isinstance(body, dict) or set(body) != {"request"}:
+                    raise ValueError("request_wrapper_required")
+                request = body["request"]
+                if not isinstance(request, dict) or request.get("mode") not in ("offline", "model"):
+                    self.error(422, "explicit_mode_required", "Explicitly select offline or model mode.")
+                    return
+                if request["mode"] == "model" and not configuration()["model_configured"]:
+                    self.error(503, "model_unconfigured", "DeepSeek is not configured in this process.")
+                    return
+                report = verify(request)
+                if len(encoded(report)) > 1024 * 1024:
+                    self.error(502, "report_too_large", "The candidate report exceeds 1 MiB.")
+                    return
+                record = save_record(records, request, report)
+                self.reply(201, encoded({"request": request, "report": report,
+                                         "mode": request["mode"], "record": record}))
+            except (ValueError, TypeError, KeyError, AttributeError, UnicodeError, RecursionError, TimeoutError):
+                self.error(422, "invalid_request", "Invalid, incomplete or oversized verification request.")
+            except OSError:
+                self.error(500, "local_storage_failed", "Could not save the local round; do not retry automatically.")
+            except Exception:
+                self.error(500, "verification_failed", "Local verification failed; do not retry automatically.")
+            finally:
+                slots.release()
+
+    server = ThreadingHTTPServer(("127.0.0.1", port), Handler)
+    server.daemon_threads = True
+    return server
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--port", type=int, default=8769)
+    parser.add_argument("--demo-report", type=Path)
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
+    try:
+        server = make_server(port=args.port, demo_report=args.demo_report)
+    except (OSError, ValueError, KeyError, TypeError):
+        parser.exit(2, "Could not load matched demo files or bind the loopback port.\n")
+    print(f"Local candidate review: http://127.0.0.1:{server.server_port}", flush=True)
+    print("Synthetic replay/offline fixtures are separate from a new verification. No automatic model calls.", flush=True)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
+if __name__ == "__main__":
+    main()
