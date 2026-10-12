@@ -17,6 +17,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 from formsy_sop_verification.core import MAX_INPUT_BYTES, decode_json, verify  # noqa: E402
+from formsy_sop_verification.local_full_audit import FullAuditJobs, private_json  # noqa: E402
 
 
 def encoded(value):
@@ -31,6 +32,36 @@ def sha256(raw):
 def configuration():
     return {"model_configured": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip()),
             "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")}
+
+
+def full_configuration():
+    try:
+        from formsy_sop_verification.full_audit import catalog_summary
+    except ImportError:
+        return {**configuration(), "available": False, "max_sop_calls": 64}
+    try:
+        return {**configuration(), **catalog_summary(), "available": True, "default_available": True}
+    except (ValueError, OSError):
+        return {**configuration(), "available": True, "default_available": False,
+                "max_sop_calls": 64, "max_total_calls": 80, "max_upload_rules": 8,
+                "default_error": "默认 FormSy SOP 规则尚未安装或未通过版本校验；可上传自定义规则。"}
+
+
+def sop_template():
+    return {"rules": [{"id": "CUSTOM01", "title": "保留显式零值", "version": "1.0",
+                       "criterion": "满足条件：输入为0时保留0；输入缺失时才采用默认值。",
+                       "required_evidence": ["目标版本完整源码", "覆盖0与缺失值的测试设计"],
+                       "recheck": "补充证据后重新核查，不覆盖旧报告。",
+                       "closure_policy": "人工复核候选结论后决定是否接受。"}]}
+
+
+def full_demo():
+    return {"title": "合成演示：只移除开头的前缀", "audit_context": {"profile": "code_fix"},
+            "trace": {"messages": [{"role": "user", "content": "只移除一个开头前缀；中间出现的前缀保留。"}]},
+            "commits": [{"sha": "a" * 40, "parent": "b" * 40, "repository": "synthetic/demo",
+                         "diff": "diff --git a/demo.py b/demo.py\n--- a/demo.py\n+++ b/demo.py\n@@ -1,2 +1,2 @@\n def remove_prefix(value, prefix):\n-    return value.replace(prefix, '')\n+    return value[len(prefix):] if value.startswith(prefix) else value\n"}],
+            "materials": [{"kind": "source", "name": "demo.py", "path": "demo.py", "version_id": "a" * 40,
+                           "content": "def remove_prefix(value, prefix):\n    return value[len(prefix):] if value.startswith(prefix) else value\n"}]}
 
 
 def load_demo(root, demo_report=None):
@@ -75,12 +106,15 @@ def save_record(directory, request, report):
     return record
 
 
-def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None):
+def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_jobs=None):
     root = Path(root).resolve()
     demo = load_demo(root, demo_report)
     web = (root / "web").resolve()
     records = Path(reports_dir) if reports_dir is not None else root / "reports/local"
     slots = threading.BoundedSemaphore(2)
+    full_jobs = full_jobs or FullAuditJobs(records / "full")
+    uploads = {}
+    uploads_lock = threading.Lock()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "FormSyLocal/0.1"
@@ -150,6 +184,35 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None):
             if path == "/api/demo":
                 self.reply(200, encoded(demo))
                 return
+            if path == "/api/full-audit-config":
+                self.reply(200, encoded(full_configuration()))
+                return
+            if path == "/api/full-audit-demo":
+                self.reply(200, encoded(full_demo()))
+                return
+            if path == "/api/sop-template":
+                self.reply(200, encoded(sop_template()))
+                return
+            if path == "/api/sop-library":
+                config = full_configuration()
+                self.reply(200, encoded({key: value for key, value in config.items()
+                                         if key not in {"model_configured", "model"}}))
+                return
+            if path.startswith("/api/sop-uploads/"):
+                with uploads_lock:
+                    upload = uploads.get(path.removeprefix("/api/sop-uploads/"))
+                if upload is None:
+                    self.error(404, "sop_upload_not_found", "This process has no matching SOP upload.")
+                else:
+                    self.reply(200, encoded(upload))
+                return
+            if path.startswith("/api/full-audits/"):
+                job = full_jobs.get(path.removeprefix("/api/full-audits/"))
+                if job is None:
+                    self.error(404, "full_audit_not_found", "This local process has no matching audit job.")
+                else:
+                    self.reply(200, encoded(job))
+                return
             if path.startswith("/api/"):
                 self.error(404, "not_found", "Local endpoint not found.")
                 return
@@ -171,7 +234,7 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None):
             path = self.request_path()
             if path is None:
                 return
-            if path != "/api/verify":
+            if path not in ("/api/verify", "/api/full-audits", "/api/sop-uploads"):
                 self.error(404, "not_found", "Local endpoint not found.")
                 return
             lengths = self.headers.get_all("Content-Length", [])
@@ -196,6 +259,39 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None):
                 if len(raw) != length:
                     raise ValueError("incomplete_body")
                 body = decode_json(raw)
+                if path == "/api/sop-uploads":
+                    from formsy_sop_verification.rule_sources import validate_upload
+                    if not isinstance(body, dict) or set(body) != {"rules"}:
+                        raise ValueError("sop_rules_wrapper_required")
+                    prepared = validate_upload(body)
+                    upload = {"id": str(uuid.uuid4()), "summary": prepared["summary"],
+                              "rules": prepared["rules"], "model_invoked": False,
+                              "created_at": datetime.now(timezone.utc).isoformat()}
+                    directory = records / "sop-uploads"
+                    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                    private_json(directory / (upload["id"] + ".json"),
+                                 {**upload, "original": body, "catalog": prepared["catalog"]})
+                    with uploads_lock:
+                        uploads[upload["id"]] = upload
+                    self.reply(201, encoded(upload))
+                    return
+                if path == "/api/full-audits":
+                    if not isinstance(body, dict) or set(body) != {"request", "mode"} or body["mode"] != "model":
+                        raise ValueError("explicit_full_model_request_required")
+                    config = full_configuration()
+                    if not config["available"]:
+                        self.error(503, "full_engine_unavailable", "The full audit engine is unavailable.")
+                        return
+                    if not config["model_configured"]:
+                        self.error(503, "model_unconfigured", "DeepSeek is not configured in this process.")
+                        return
+                    try:
+                        job = full_jobs.submit(body["request"])
+                    except RuntimeError:
+                        self.error(429, "full_audit_busy", "One full audit is already running; do not resubmit.")
+                        return
+                    self.reply(202, encoded(job))
+                    return
                 if not isinstance(body, dict) or set(body) != {"request"}:
                     raise ValueError("request_wrapper_required")
                 request = body["request"]

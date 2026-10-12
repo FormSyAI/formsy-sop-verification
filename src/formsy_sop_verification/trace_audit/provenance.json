@@ -1,0 +1,304 @@
+{
+  "origin": "TraceAuditWeb local source frozen at semantic-rerun-11",
+  "upstream_report": "semantic-rerun-11/report.md",
+  "runtime_modules": 16,
+  "upstream_public_programs": 109,
+  "upstream_claimed_regressions": 1018,
+  "selected_upstream_test_modules": [
+    "test_bare_reference_diagnostics",
+    "test_engine",
+    "test_engine_quote_retry",
+    "test_engine_retry_reason",
+    "test_execution_mapping_stage",
+    "test_failure_retry_reason",
+    "test_reference_reason_recovery",
+    "test_requirement_isolation",
+    "test_requirement_review",
+    "test_requirement_summary",
+    "test_sop_audit",
+    "test_sop_claim_review",
+    "test_sop_failures"
+  ],
+  "excluded": [
+    ".env*",
+    "data",
+    "reports",
+    "model outputs",
+    "private signing configuration",
+    "screenshots",
+    "uploaded traces"
+  ],
+  "files": [
+    {
+      "path": "audit_engine.py",
+      "upstream_sha256": "e5a53136d7c478cc3061718f240dbe08815e6565558a552166ed26e3ac2ff143",
+      "packaged_sha256": "0cf06e4afd40faf9f6cd2ae5ae58eceb8c4c8869eff9b33af51fb5e31497de40",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "reference_repair.py",
+      "upstream_sha256": "9dfb826d078266003099ca6f32587578c21ee764e31f4eee66feb80c8158cd2b",
+      "packaged_sha256": "9dfb826d078266003099ca6f32587578c21ee764e31f4eee66feb80c8158cd2b",
+      "adaptations": []
+    },
+    {
+      "path": "audit_policy.py",
+      "upstream_sha256": "cb63c15f9d45b4f955302d75db3a105cfe8e7bb6b03bbdf6d3e23b99afe62bb6",
+      "packaged_sha256": "d7591f67d9e4d7d72356f59635982a7f16a34ae9f81cefcbeb04284ff833f4d9",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "run_evidence.py",
+      "upstream_sha256": "7efa08237abbf2c871e4d1655177b8ce6428370e715c3f38bed93f3a3ebecbe9",
+      "packaged_sha256": "7efa08237abbf2c871e4d1655177b8ce6428370e715c3f38bed93f3a3ebecbe9",
+      "adaptations": []
+    },
+    {
+      "path": "sop_catalog.py",
+      "upstream_sha256": "0e126886baf9839e48c5386a1c6cfdd875d2f2dcf7d429f61a06c056fb7f9850",
+      "packaged_sha256": "dc126eecade5ae288bd7363a43fc0f638954d436f2a7ac84e38b0cc8bf0a3c95",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_audit.py",
+      "upstream_sha256": "f4ab4b36c30ee73905d47013456153db9aadba449c40c21507a35e6767cf9c08",
+      "packaged_sha256": "e2dddf8f13c71c029e25133c9c89df75a17a282458e85a3db987131059d891ab",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_contracts.py",
+      "upstream_sha256": "7ce339595571237a4239b05dc431aa504ae08393668277002bba7aa635616815",
+      "packaged_sha256": "7ce339595571237a4239b05dc431aa504ae08393668277002bba7aa635616815",
+      "adaptations": []
+    },
+    {
+      "path": "sop_judgments.py",
+      "upstream_sha256": "d867b05f9ff77d920a9938c773d6fbe13ffc29467e3f80bea39a536f653dded3",
+      "packaged_sha256": "692df2de601e7dfa35f2b03554c73c5a98aab85ad1018bcffde558cddcdd422b",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_claim_review.py",
+      "upstream_sha256": "1fc0fac86b6df3139fc9ee3789858a06b2b9e9e848696d747e86da3aa7bfea29",
+      "packaged_sha256": "44be44152c54785ec01b0e41aa1b02e4c07119de06b8ed4d5d31f246def2977f",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_design.py",
+      "upstream_sha256": "598a2064640749ccd41080e2015fc70d5ea0ed0c50f5746cb18d9538aac6e611",
+      "packaged_sha256": "2768115a9739c26c8074814ffc15c002cd600dd43da15fb51dfaf93531958de3",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_scope.py",
+      "upstream_sha256": "68732bccf47f339b074edffe43e4b6981697ad6efd3e60f34a6f69cedd44d6e4",
+      "packaged_sha256": "c234cc96b40b2350272f3fdbf83d6bece95504dc1d2aad026de56c65dccb0cb5",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_failures.py",
+      "upstream_sha256": "4109750ab933899b76af61cbc6968fbe31db0c6b81f14b1fd8fcdf5d2218f63a",
+      "packaged_sha256": "8a555149bfa8b6cc6761cc756db0630547a3150a06785f6089095b3e7e277c3a",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_resolution_review.py",
+      "upstream_sha256": "4c5f8b438418f71aec128f7e9e180428c38558fee468c2a2f451c13a2623f2ed",
+      "packaged_sha256": "3e2397e585fdb26b142457c378ee25d3a97a5b3e3850970dc1d4e621e81e12df",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "sop_exclusions.py",
+      "upstream_sha256": "96496004db27a4108940345b2091321856f9d94df687fe338fd2be3a41583910",
+      "packaged_sha256": "e3a90316b1683ed2ca93931f54071d25cf85d63bd5a3954cc8870fce5a5a8c97",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "requirement_review.py",
+      "upstream_sha256": "77adb58ba71a5f970f90a3b6d65c729b2e271ee606da88c04e08977e7390a560",
+      "packaged_sha256": "dda72e641d658feff06f071f617862bce432fa48afa56a5a9398b04fd00435dc",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "model_client.py",
+      "upstream_sha256": "4f083a8ac505b4d91d32fc2b7165c63246847f85978edbc65fe953897eb19f51",
+      "packaged_sha256": "98f3d6f9a17e8446580c79ea274be11e0f57e88e313c3a5f6a38988a24105e9b",
+      "adaptations": [
+        "legacy private_config is environment-only; no dotenv reads",
+        "artifact writer also scrubs the explicit process API key"
+      ]
+    },
+    {
+      "path": "rules/default_rules.json",
+      "upstream_sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "packaged_sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "adaptations": []
+    },
+    {
+      "path": "rules/语义审计判定规范.md",
+      "upstream_sha256": "faf54d4ba33169994c353a4cf5aa4ceee5adc04dc9964b1b928c70c6c99aae6d",
+      "packaged_sha256": "faf54d4ba33169994c353a4cf5aa4ceee5adc04dc9964b1b928c70c6c99aae6d",
+      "adaptations": []
+    },
+    {
+      "path": "rules/sop-library/catalog.json",
+      "upstream_sha256": "60a1df8d76874a0ceba41586a962223d547078cc3f63d231bce5f128008e3d91",
+      "packaged_sha256": "a9319f1132898e809e43b9bdcd012e8825ad8ff8a1cc51c28134fa32baa0c3a5",
+      "adaptations": [
+        "source_path points to packaged snapshot instead of an upstream developer absolute path"
+      ]
+    },
+    {
+      "path": "rules/sop-library/snapshots/code-fix-0.1.json",
+      "upstream_sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "packaged_sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "adaptations": []
+    },
+    {
+      "path": "rules/sop-library/snapshots/code-fix-guidance-0.1.md",
+      "upstream_sha256": "6963d4e12200345dd2ed2ebaf8e5f449f85b4b9a49e72aa6108fb5b20a7b7cb0",
+      "packaged_sha256": "6963d4e12200345dd2ed2ebaf8e5f449f85b4b9a49e72aa6108fb5b20a7b7cb0",
+      "adaptations": []
+    },
+    {
+      "path": "rules/sop-library/snapshots/security-0.1.md",
+      "upstream_sha256": "ad4f9198bcfc20fab65764dbae2056d517254479f067d3686f2157a186a2c40a",
+      "packaged_sha256": "ad4f9198bcfc20fab65764dbae2056d517254479f067d3686f2157a186a2c40a",
+      "adaptations": []
+    },
+    {
+      "path": "rules/sop-library/snapshots/technical-0.2.md",
+      "upstream_sha256": "889f35383f6fe25d55b73d9bef1ab64fe68e945d22de996eec63784e8736ff16",
+      "packaged_sha256": "889f35383f6fe25d55b73d9bef1ab64fe68e945d22de996eec63784e8736ff16",
+      "adaptations": []
+    },
+    {
+      "path": "tests/test_bare_reference_diagnostics.py",
+      "upstream_sha256": "633280783836be0dc4e1f7b06f7ae84e2da529392f423330958428fb864b9715",
+      "packaged_sha256": "2d0f92ef09b4d086c2154af7f52cdd9b877b875c2f66404b54bdb6b4b9175d21",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_engine.py",
+      "upstream_sha256": "55676c550164ef64bd40230ed8563f48c6ed230addf25f6fa58a18d89dab09df",
+      "packaged_sha256": "fdf81a15c949a754129df793628e28bcd434430c907efb5f8c877ebbdf30178d",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_engine_quote_retry.py",
+      "upstream_sha256": "15a03e843420224802ad2d40d014537941a3e955cb40460f4f37f79501d20c20",
+      "packaged_sha256": "1b336d0228923ff75b2c82585d14a27f3888d24392133a964df5a3a26b2bfd51",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_engine_retry_reason.py",
+      "upstream_sha256": "07815ef3a3076e5ffc2df0d3357d90601d96686eab952ccd2c24c7f75ade37a4",
+      "packaged_sha256": "64a5b8c45be1e5f6e1a2d635a862ae0c0962e58604af755c55c8a5525d554889",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_execution_mapping_stage.py",
+      "upstream_sha256": "5408f496766874fc74321aad2da5733731a808b1c601fbc64b2f5b37a42c947c",
+      "packaged_sha256": "764fd4a9e14f3594b8e8533dbf7570c0052050bf6537940a420a418bdb6298fd",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_failure_retry_reason.py",
+      "upstream_sha256": "71e3cdbc5fc699cecc0b4ea41d3e8f01a890ba2f8ff7cfc1de24a54309f6d0bd",
+      "packaged_sha256": "c193276450b242cb02f3add03552378d48c40aed71c92856411a4d4d45a137e2",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_reference_reason_recovery.py",
+      "upstream_sha256": "855d9edab985a2d9995aab5726bb3b3f9394c6496af27736bacd070c50a57311",
+      "packaged_sha256": "5650c32a53a5c7112d2985b0670b884e1de002798b240a2323a281c3d69eb130",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_requirement_isolation.py",
+      "upstream_sha256": "6b598c98f53790dc3cc703952b668d610a066b5fe6bbecd376ed2307c76f9ecd",
+      "packaged_sha256": "40360f3b1c6246ce00acfa77021211534a46ebe17c55089096da0ba57802f723",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_requirement_review.py",
+      "upstream_sha256": "210166a1bc944fcddfe0067aad1407a76b5bfad5718a43d2610daef298f1fe0a",
+      "packaged_sha256": "cb072943e11241e367b59bcff0bcaf41df06fcfb157a277bbb9ddbe827773dae",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_requirement_summary.py",
+      "upstream_sha256": "465b210125cafa834bcc644f2498571966b14a15b406cbe5ee65667f1b465827",
+      "packaged_sha256": "a64db596790d89e49a27acc590f88b92646a013fe40a9ee88b5e0aadecbafc34",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_sop_audit.py",
+      "upstream_sha256": "55cc9263fa7cd5fd98be72e9e0952abfc5d37f1cc2347011e1f4ffb17d38c76d",
+      "packaged_sha256": "194db6a074ae7867dd0e1a665c2705fee7a375ed48a902c1fe9b78f2eea0e81e",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_sop_claim_review.py",
+      "upstream_sha256": "7fd3f16e4e5725f72d48ea2bc2a19ff248f957d2461b58b094ea9562c024890f",
+      "packaged_sha256": "be122c30ea190cc20d2cf8aadfdfe70745facd4649b2818908a4bc31af3f9c50",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    },
+    {
+      "path": "tests/test_sop_failures.py",
+      "upstream_sha256": "aa1cc86cb1ee8c824dfe99731e053ec3e705574a2ed581b7d430944c6fe9c85f",
+      "packaged_sha256": "3f2d7745248833f028dac9662a170576fe07288cfc1ee4b57568450469095567",
+      "adaptations": [
+        "package-relative imports and qualified test mock targets"
+      ]
+    }
+  ]
+}

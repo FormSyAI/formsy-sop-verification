@@ -4,101 +4,139 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="light" />
-    <title>FormSy · SOP 核查</title>
+    <title>FormSy · SOP 核查工作台</title>
     <link rel="stylesheet" href="/style.css" />
     <script type="module" src="/app.js"></script>
   </head>
   <body>
-    <header class="topbar">
-      <a class="brand" href="/">FORM<span>SY</span><i></i></a>
-      <span class="product-name">SOP 核查工作台</span>
-      <span class="local-tag">本地运行</span>
-    </header>
+    <a class="skip-link" href="#main">跳转到主要内容</a>
+    <aside class="sidebar" aria-label="工作台导航">
+      <a class="brand" href="/">Form<span>Sy</span><i></i></a>
+      <div class="workspace-label">本地工作台 <span class="badge">候选核查</span></div>
+      <div class="sidebar-label">任务验证</div>
+      <nav>
+        <button type="button" data-view="full" class="nav-active" aria-current="page">
+          <span class="nav-icon">▦</span
+          ><span>完整 SOP 审计<small>默认 FormSy SOP / 自定义规则</small></span>
+        </button>
+      </nav>
+      <div class="sidebar-note">
+        <strong>先看证据，再作结论</strong>
+        <p>固定规范与材料<br />保留缺口和历史轮次<br />交由人工复核</p>
+      </div>
+      <div class="sidebar-bottom"><span class="status-dot"></span> 本地运行 · 未接入正式任务</div>
+    </aside>
     <div class="workspace">
-      <aside class="sidebar" aria-label="核查流程">
-        <div class="sidebar-label">VERIFICATION</div>
-        <a class="nav-active" href="#report">◉ <span>候选报告</span></a>
-        <a href="#input">＋ <span>核查材料</span></a>
-        <div class="workflow-label">一轮核查的流程</div>
-        <ol class="workflow">
-          <li>
-            <b>01</b><span>固定规范与来源<small>SOP 版本、摘要、原文</small></span>
-          </li>
-          <li>
-            <b>02</b><span>生成语义候选<small>显式发起模型请求</small></span>
-          </li>
-          <li>
-            <b>03</b><span>校验引用与边界<small>保留缺口与分析错误</small></span>
-          </li>
-          <li>
-            <b>04</b><span>交给人工复核<small>候选不会自动关闭任务</small></span>
-          </li>
-        </ol>
-        <p class="sidebar-note">首版局部验证<br />4 个参考条件 · 6 章 SOP</p>
-      </aside>
-      <main>
+      <header class="topbar">
         <div class="breadcrumb">
-          FormSy <span>/</span> SOP Verification <span>/</span> 本地工作台
+          FormSy <span>/</span> 任务验证 <span>/</span> <strong id="view-crumb">完整 SOP 审计</strong>
         </div>
+        <span class="local-tag">人工未复核 · 正式未关闭</span>
+      </header>
+      <main id="main">
         <section class="heading">
           <div>
-            <div class="eyebrow">EVIDENCE BEFORE CONCLUSIONS</div>
-            <h1>把结论，落回证据。</h1>
-            <p>固定本轮规范和材料，逐项查看候选、缺口与原文。</p>
+            <div class="eyebrow">验证工作台</div>
+            <h1 id="view-title">完整 SOP 审计</h1>
+            <p id="view-description">默认使用 FormSyAI/formsy-sop 冻结规则，也可上传本轮自定义规则。</p>
           </div>
-          <button id="reset-demo" class="button secondary" type="button" disabled>
-            查看合成示例
-          </button>
+          <span class="badge local-badge">本地工具</span>
         </section>
-        <div id="error" class="notice error" role="alert" hidden></div>
-        <section id="input" class="card input-card" aria-labelledby="input-heading">
-          <div class="section-title">
-            <div>
-              <span class="step-label">START A CHECK</span>
-              <h2 id="input-heading">核查材料</h2>
+        <div class="notice local-notice">
+          <strong>本地候选工作台</strong>尚未接入 FormSy
+          任务权限或正式报告库。完整矩阵、模型分析、人工认可和任务完成分别记录；任何结论都不会自动完成任务。
+        </div>
+        <section id="full-view" aria-label="完整 SOP 审计">
+          <div id="full-error" class="notice error" role="alert" hidden></div>
+          <section class="card input-card" aria-labelledby="full-input-heading">
+            <div class="section-title">
+              <div>
+                <span class="step-label">完整条件矩阵</span>
+                <h2 id="full-input-heading">完整 SOP 审计</h2>
+              </div>
+              <div class="job-actions">
+                <button id="full-model-status" class="button secondary" type="button">DeepSeek API · 读取配置</button>
+                <button id="full-demo" class="button secondary" type="button">载入安全合成示例</button>
+              </div>
             </div>
-            <span id="config-label" class="muted">正在读取本地配置…</span>
-          </div>
-          <div class="input-controls">
-            <label class="file-control"
-              ><input id="request-file" type="file" accept="application/json,.json" disabled /><span
-                class="file-icon"
-                >↑</span
-              ><span
-                ><strong>选择 worker request JSON</strong
-                ><small id="file-label">正在载入合成示例…</small></span
+            <p class="section-description">
+              默认规则来自 FormSyAI/formsy-sop
+              的冻结版本，也可上传自定义规则。矩阵完整不代表分析完成；缺少证据的条件保持未核查。
+            </p>
+            <div class="sop-source-controls">
+              <label class="mode-control"
+                >本轮规则来源<select id="full-sop-source">
+                  <option value="default">默认 FormSyAI/formsy-sop</option>
+                  <option value="uploaded">上传自定义 SOP 规则 JSON</option>
+                </select></label
+              >
+              <a class="button secondary" href="/api/sop-template" download="sop-rules-example.json"
+                >下载规则样例</a
+              >
+            </div>
+            <div id="full-sop-upload" hidden>
+              <label class="file-control"
+                ><input id="full-sop-file" type="file" accept="application/json,.json" /><span
+                  class="file-icon"
+                  >↑</span
+                ><span
+                  ><strong>上传自定义 SOP 规则 JSON</strong
+                  ><small>接受规则数组或 {"rules": […]}；不支持自动编译 Markdown</small></span
+                ></label
+              >
+              <p class="help">
+                上传仅在本机校验并冻结规则，不发送模型。确认规则后，仍需单独启动模型审计。
+              </p>
+            </div>
+            <div id="full-sop-summary" class="notice">正在读取默认 SOP 版本…</div>
+            <div class="input-controls">
+              <label class="file-control"
+                ><input id="full-request-file" type="file" accept="application/json,.json" /><span
+                  class="file-icon"
+                  >↑</span
+                ><span
+                  ><strong>导入完整审计请求或已有报告</strong
+                  ><small id="full-file-label">先载入合成示例或选择 JSON</small></span
+                ></label
+              >
+              <label class="mode-control"
+                >核查方式<select id="full-mode">
+                  <option value="model" selected>DeepSeek 多轮语义审计</option>
+                  <option value="offline" hidden disabled>本地结构检查 · 备用</option>
+                </select></label
+              >
+              <button id="full-verify" class="button primary" type="button" disabled>
+                使用 DeepSeek 开始审计
+              </button>
+            </div>
+            <label id="full-consent-label" class="consent" hidden
+              ><input id="full-consent" type="checkbox" /><span
+                >我了解：完整审计会分多次将所选材料发送至
+                DeepSeek，可能产生费用；结果仍需人工复核。</span
               ></label
             >
-            <label class="mode-control"
-              >本轮模式<select id="mode" disabled>
-                <option value="offline">离线验证 · 不调用模型</option>
-                <option value="model" disabled>DeepSeek 语义核查</option>
-              </select></label
-            >
-            <button id="verify" class="button primary" type="button" disabled>
-              运行离线核查 <span>↗</span>
-            </button>
-          </div>
-          <p id="mode-help" class="help">
-            离线模式只校验 request 内已有的
-            candidate，不会生成新的模型结论。上传材料里的命令不会被执行。
-          </p>
-          <p class="help local-boundary">
-            这是新仓库内的本地工具，尚未接入 FormSy
-            任务权限或正式报告库。仅显式选择模型模式并点击运行时，才会向已配置的 DeepSeek
-            发送所选材料。
-          </p>
+            <p id="full-mode-help" class="help">
+              默认使用 DeepSeek。导入材料或报告不会自动开始审计。
+            </p>
+            <div class="input-bottom">
+              <span id="full-config-label" class="muted">正在读取完整审计配置…</span>
+            </div>
+          </section>
+          <section id="full-report" aria-label="完整审计报告" aria-live="polite">
+            <div class="card empty-state">
+              <span class="empty-icon">▦</span>
+              <h2>从固定材料开始</h2>
+              <p>导入材料并确认后使用 DeepSeek 核查。已有报告可直接导入回看。</p>
+            </div>
+          </section>
         </section>
-        <section id="report" aria-label="核查报告" aria-live="polite">
-          <div class="loading card">正在读取示例报告…</div>
-        </section>
-        <footer>候选 ≠ 人工认可 ≠ 任务完成 <span>FormSy SOP Verification · MVP</span></footer>
+        <footer>候选 ≠ 人工认可 ≠ 任务完成 <span>FormSy SOP Verification</span></footer>
       </main>
     </div>
     <dialog id="source-dialog" aria-labelledby="source-title">
       <div class="dialog-heading">
         <div>
-          <span class="step-label">ORIGINAL EVIDENCE</span>
+          <span class="step-label">固定来源</span>
           <h2 id="source-title">原文证据</h2>
         </div>
         <button id="close-dialog" class="icon-button" type="button" aria-label="关闭原文">×</button>

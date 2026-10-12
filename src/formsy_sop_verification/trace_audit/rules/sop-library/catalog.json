@@ -1,0 +1,2666 @@
+{
+  "catalog_version": "1.0",
+  "documents": [
+    {
+      "id": "technical-0.2",
+      "title": "技术检查 SOP 0.2",
+      "version": "0.2",
+      "source_path": "packaged:rules/sop-library/snapshots/technical-0.2.md",
+      "snapshot_path": "snapshots/technical-0.2.md",
+      "sha256": "889f35383f6fe25d55b73d9bef1ab64fe68e945d22de996eec63784e8736ff16",
+      "current_reference": true,
+      "task_types": [
+        "code_fix"
+      ],
+      "has_rules": true,
+      "status": "design_reference"
+    },
+    {
+      "id": "security-0.1",
+      "title": "安全专项检查 SOP 0.1",
+      "version": "0.1",
+      "source_path": "packaged:rules/sop-library/snapshots/security-0.1.md",
+      "snapshot_path": "snapshots/security-0.1.md",
+      "sha256": "ad4f9198bcfc20fab65764dbae2056d517254479f067d3686f2157a186a2c40a",
+      "current_reference": true,
+      "task_types": [
+        "code_fix"
+      ],
+      "has_rules": true,
+      "status": "design_reference"
+    },
+    {
+      "id": "code-fix-0.1",
+      "title": "代码修复任务审计规则 0.1",
+      "version": "0.1",
+      "source_path": "packaged:rules/sop-library/snapshots/code-fix-0.1.json",
+      "snapshot_path": "snapshots/code-fix-0.1.json",
+      "sha256": "ef203dbb6cd9b852f7efe27336cdab94742bce56c98940557fc02b88935a4d17",
+      "current_reference": true,
+      "task_types": [
+        "code_fix"
+      ],
+      "has_rules": true,
+      "status": "design_reference"
+    },
+    {
+      "id": "code-fix-guidance-0.1",
+      "title": "代码修复任务审计说明 0.1",
+      "version": "0.1",
+      "source_path": "packaged:rules/sop-library/snapshots/code-fix-guidance-0.1.md",
+      "snapshot_path": "snapshots/code-fix-guidance-0.1.md",
+      "sha256": "6963d4e12200345dd2ed2ebaf8e5f449f85b4b9a49e72aa6108fb5b20a7b7cb0",
+      "current_reference": false,
+      "task_types": [
+        "code_fix"
+      ],
+      "has_rules": false,
+      "status": "design_reference"
+    }
+  ],
+  "rules": [
+    {
+      "id": "FIX01",
+      "document_id": "code-fix-0.1",
+      "title": "有效要求、规则及对象版本是否明确？",
+      "version": "0.1",
+      "original_rule_version": "本地基线 0.2 / 代码修复补充 0.1",
+      "applicability": "代码修复任务；按具体任务与证据范围判断",
+      "source_ref": {
+        "document_id": "code-fix-0.1",
+        "start_line": 2,
+        "end_line": 19,
+        "quote": "  {\n    \"id\": \"FIX01\",\n    \"title\": \"有效要求、规则及对象版本是否明确？\",\n    \"criterion\": \"满足条件：全部必要基准明确，候选/历史授权/当前解释区分且复核绑定本轮；不满足条件：已证实基准或版本被错误替换且仍以其宣称符合要求；未核查条件：关键验收、范围、目标版本或有效决定缺失\",\n    \"required_evidence\": [\n      \"用户原话/有效决定引用\",\n      \"任务与验收清单\",\n      \"规则版本摘要\",\n      \"目标源码与环境身份\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC01\",\n      \"TC14\"\n    ],\n    \"recheck\": \"新增决定及对象差异，重新确认受影响基准和结论\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+      },
+      "criterion": "满足条件：全部必要基准明确，候选/历史授权/当前解释区分且复核绑定本轮；不满足条件：已证实基准或版本被错误替换且仍以其宣称符合要求；未核查条件：关键验收、范围、目标版本或有效决定缺失",
+      "source_rules": [
+        "TC01",
+        "TC14"
+      ],
+      "conditions": [
+        {
+          "id": "FIX01.C01",
+          "text": "全部必要基准明确，候选/历史授权/当前解释区分且复核绑定本轮",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 5,
+            "end_line": 5,
+            "quote": "全部必要基准明确，候选/历史授权/当前解释区分且复核绑定本轮"
+          }
+        },
+        {
+          "id": "FIX01.C02",
+          "text": "用户原话/有效决定引用；任务与验收清单；规则版本摘要；目标源码与环境身份",
+          "kind": "semantic",
+          "stage": "required_evidence",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 6,
+            "end_line": 11,
+            "quote": "    \"required_evidence\": [\n      \"用户原话/有效决定引用\",\n      \"任务与验收清单\",\n      \"规则版本摘要\",\n      \"目标源码与环境身份\"\n    ],"
+          },
+          "source_items": [
+            "用户原话/有效决定引用",
+            "任务与验收清单",
+            "规则版本摘要",
+            "目标源码与环境身份"
+          ]
+        },
+        {
+          "id": "FIX01.C03",
+          "text": "新增决定及对象差异，重新确认受影响基准和结论",
+          "kind": "semantic",
+          "stage": "recheck",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 17,
+            "end_line": 17,
+            "quote": "新增决定及对象差异，重新确认受影响基准和结论"
+          }
+        },
+        {
+          "id": "FIX01.C04",
+          "text": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足",
+          "kind": "human",
+          "stage": "closure_policy",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 18,
+            "end_line": 18,
+            "quote": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FIX02",
+      "document_id": "code-fix-0.1",
+      "title": "要求与实质改动是否双向对应？",
+      "version": "0.1",
+      "original_rule_version": "本地基线 0.2 / 代码修复补充 0.1",
+      "applicability": "代码修复任务；按具体任务与证据范围判断",
+      "source_ref": {
+        "document_id": "code-fix-0.1",
+        "start_line": 20,
+        "end_line": 36,
+        "quote": "  {\n    \"id\": \"FIX02\",\n    \"title\": \"要求与实质改动是否双向对应？\",\n    \"criterion\": \"满足条件：每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据；不满足条件：明确漏实现，或已确认的范围被实质越出；未核查条件：只有平台/时间关系，或缺语义上下文及历史依据\",\n    \"required_evidence\": [\n      \"验收点ID\",\n      \"固定版本实质diff及必要上下文\",\n      \"双向关系及孤立清单\",\n      \"关联依据和人工复核\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC02\"\n    ],\n    \"recheck\": \"逐验收点重新绑定hunk及两端版本；解释孤立和范围变化\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+      },
+      "criterion": "满足条件：每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据；不满足条件：明确漏实现，或已确认的范围被实质越出；未核查条件：只有平台/时间关系，或缺语义上下文及历史依据",
+      "source_rules": [
+        "TC02"
+      ],
+      "conditions": [
+        {
+          "id": "FIX02.C01",
+          "text": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据"
+          }
+        },
+        {
+          "id": "FIX02.C02",
+          "text": "验收点ID；固定版本实质diff及必要上下文；双向关系及孤立清单；关联依据和人工复核",
+          "kind": "human",
+          "stage": "required_evidence",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 24,
+            "end_line": 29,
+            "quote": "    \"required_evidence\": [\n      \"验收点ID\",\n      \"固定版本实质diff及必要上下文\",\n      \"双向关系及孤立清单\",\n      \"关联依据和人工复核\"\n    ],"
+          },
+          "source_items": [
+            "验收点ID",
+            "固定版本实质diff及必要上下文",
+            "双向关系及孤立清单",
+            "关联依据和人工复核"
+          ]
+        },
+        {
+          "id": "FIX02.C03",
+          "text": "逐验收点重新绑定hunk及两端版本；解释孤立和范围变化",
+          "kind": "semantic",
+          "stage": "recheck",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 34,
+            "end_line": 34,
+            "quote": "逐验收点重新绑定hunk及两端版本；解释孤立和范围变化"
+          }
+        },
+        {
+          "id": "FIX02.C04",
+          "text": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足",
+          "kind": "human",
+          "stage": "closure_policy",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 35,
+            "end_line": 35,
+            "quote": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FIX03",
+      "document_id": "code-fix-0.1",
+      "title": "修改是否修复原错误且保持必要边界？",
+      "version": "0.1",
+      "original_rule_version": "本地基线 0.2 / 代码修复补充 0.1",
+      "applicability": "代码修复任务；按具体任务与证据范围判断",
+      "source_ref": {
+        "document_id": "code-fix-0.1",
+        "start_line": 37,
+        "end_line": 58,
+        "quote": "  {\n    \"id\": \"FIX03\",\n    \"title\": \"修改是否修复原错误且保持必要边界？\",\n    \"criterion\": \"满足条件：原错误因果链被修改，适用合同/负面/兼容边界无已知未处置反例；运行性结论另需实际证据；不满足条件：固定对象和前提下存在可复现或静态可成立的错误路径；未核查条件：只有局部diff、触发条件未知、关键上下文或必要实证缺失\",\n    \"required_evidence\": [\n      \"原错误触发\",\n      \"变更前后代码\",\n      \"必要调用/数据/状态路径\",\n      \"相关合同及边界\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC04\",\n      \"TC05\",\n      \"TC06\",\n      \"TC07\",\n      \"TC09\",\n      \"TC11\"\n    ],\n    \"recheck\": \"对原反例及受影响边界重新检查；按必要性取得运行证据\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+      },
+      "criterion": "满足条件：原错误因果链被修改，适用合同/负面/兼容边界无已知未处置反例；运行性结论另需实际证据；不满足条件：固定对象和前提下存在可复现或静态可成立的错误路径；未核查条件：只有局部diff、触发条件未知、关键上下文或必要实证缺失",
+      "source_rules": [
+        "TC04",
+        "TC05",
+        "TC06",
+        "TC07",
+        "TC09",
+        "TC11"
+      ],
+      "conditions": [
+        {
+          "id": "FIX03.C01",
+          "text": "原错误因果链被修改，适用合同/负面/兼容边界无已知未处置反例",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 40,
+            "end_line": 40,
+            "quote": "原错误因果链被修改，适用合同/负面/兼容边界无已知未处置反例"
+          }
+        },
+        {
+          "id": "FIX03.C02",
+          "text": "运行性结论另需实际证据",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 40,
+            "end_line": 40,
+            "quote": "运行性结论另需实际证据"
+          }
+        },
+        {
+          "id": "FIX03.C03",
+          "text": "原错误触发；变更前后代码；必要调用/数据/状态路径；相关合同及边界",
+          "kind": "semantic",
+          "stage": "required_evidence",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 41,
+            "end_line": 46,
+            "quote": "    \"required_evidence\": [\n      \"原错误触发\",\n      \"变更前后代码\",\n      \"必要调用/数据/状态路径\",\n      \"相关合同及边界\"\n    ],"
+          },
+          "source_items": [
+            "原错误触发",
+            "变更前后代码",
+            "必要调用/数据/状态路径",
+            "相关合同及边界"
+          ]
+        },
+        {
+          "id": "FIX03.C04",
+          "text": "对原反例及受影响边界重新检查；按必要性取得运行证据",
+          "kind": "semantic",
+          "stage": "recheck",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 56,
+            "end_line": 56,
+            "quote": "对原反例及受影响边界重新检查；按必要性取得运行证据"
+          }
+        },
+        {
+          "id": "FIX03.C05",
+          "text": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足",
+          "kind": "human",
+          "stage": "closure_policy",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 57,
+            "end_line": 57,
+            "quote": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FIX04",
+      "document_id": "code-fix-0.1",
+      "title": "测试断言是否验证要求及必要负面/回归？",
+      "version": "0.1",
+      "original_rule_version": "本地基线 0.2 / 代码修复补充 0.1",
+      "applicability": "代码修复任务；按具体任务与证据范围判断",
+      "source_ref": {
+        "document_id": "code-fix-0.1",
+        "start_line": 59,
+        "end_line": 76,
+        "quote": "  {\n    \"id\": \"FIX04\",\n    \"title\": \"测试断言是否验证要求及必要负面/回归？\",\n    \"criterion\": \"满足条件：断言能区分原错误与正确行为，必要负面/回归有验证方法，范围经复核；不满足条件：断言明确没有验证原要求，或必要边界被证实遗漏；未核查条件：只有文件/名称/计数而无断言上下文；关键跳过适用性未知\",\n    \"required_evidence\": [\n      \"测试源码及配置\",\n      \"验收点到断言映射\",\n      \"前置/负例/回归设计\",\n      \"mock与skip说明\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC13\",\n      \"TC12\"\n    ],\n    \"recheck\": \"查看新版测试和断言差异，不用执行全绿替代设计复核\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+      },
+      "criterion": "满足条件：断言能区分原错误与正确行为，必要负面/回归有验证方法，范围经复核；不满足条件：断言明确没有验证原要求，或必要边界被证实遗漏；未核查条件：只有文件/名称/计数而无断言上下文；关键跳过适用性未知",
+      "source_rules": [
+        "TC13",
+        "TC12"
+      ],
+      "conditions": [
+        {
+          "id": "FIX04.C01",
+          "text": "断言能区分原错误与正确行为，必要负面/回归有验证方法，范围经复核",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 62,
+            "end_line": 62,
+            "quote": "断言能区分原错误与正确行为，必要负面/回归有验证方法，范围经复核"
+          }
+        },
+        {
+          "id": "FIX04.C02",
+          "text": "测试源码及配置；验收点到断言映射；前置/负例/回归设计；mock与skip说明",
+          "kind": "semantic",
+          "stage": "required_evidence",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 63,
+            "end_line": 68,
+            "quote": "    \"required_evidence\": [\n      \"测试源码及配置\",\n      \"验收点到断言映射\",\n      \"前置/负例/回归设计\",\n      \"mock与skip说明\"\n    ],"
+          },
+          "source_items": [
+            "测试源码及配置",
+            "验收点到断言映射",
+            "前置/负例/回归设计",
+            "mock与skip说明"
+          ]
+        },
+        {
+          "id": "FIX04.C03",
+          "text": "查看新版测试和断言差异，不用执行全绿替代设计复核",
+          "kind": "semantic",
+          "stage": "recheck",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 74,
+            "end_line": 74,
+            "quote": "查看新版测试和断言差异，不用执行全绿替代设计复核"
+          }
+        },
+        {
+          "id": "FIX04.C04",
+          "text": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足",
+          "kind": "human",
+          "stage": "closure_policy",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 75,
+            "end_line": 75,
+            "quote": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FIX05",
+      "document_id": "code-fix-0.1",
+      "title": "必需运行是否在对应版本和环境成立？",
+      "version": "0.1",
+      "original_rule_version": "本地基线 0.2 / 代码修复补充 0.1",
+      "applicability": "代码修复任务；按具体任务与证据范围判断",
+      "source_ref": {
+        "document_id": "code-fix-0.1",
+        "start_line": 77,
+        "end_line": 94,
+        "quote": "  {\n    \"id\": \"FIX05\",\n    \"title\": \"必需运行是否在对应版本和环境成立？\",\n    \"criterion\": \"满足条件：每个必验行为有正确版本/环境的有效通过结果；跳过有有效替代；交付绑定足够；不满足条件：实际必验断言失败，或可核实的必要交付条件不成立；未核查条件：仅作者陈述、缺日志、版本/环境不匹配或用mock支持真实声明\",\n    \"required_evidence\": [\n      \"实际命令和完整输出\",\n      \"受测版本/补丁/测试设计\",\n      \"环境和真实/mock分类\",\n      \"必要产物与最终实例身份\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC01\",\n      \"TC14\"\n    ],\n    \"recheck\": \"当前受测对象的原始执行与身份绑定，不继承旧版本同名结果\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+      },
+      "criterion": "满足条件：每个必验行为有正确版本/环境的有效通过结果；跳过有有效替代；交付绑定足够；不满足条件：实际必验断言失败，或可核实的必要交付条件不成立；未核查条件：仅作者陈述、缺日志、版本/环境不匹配或用mock支持真实声明",
+      "source_rules": [
+        "TC01",
+        "TC14"
+      ],
+      "conditions": [
+        {
+          "id": "FIX05.C01",
+          "text": "每个必验行为有正确版本/环境的有效通过结果",
+          "kind": "execution",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 80,
+            "end_line": 80,
+            "quote": "每个必验行为有正确版本/环境的有效通过结果"
+          },
+          "applicability": "仅对任务要求必须实际运行或交付核验的行为适用；不以源码推断代替运行结果"
+        },
+        {
+          "id": "FIX05.C02",
+          "text": "跳过有有效替代",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 80,
+            "end_line": 80,
+            "quote": "跳过有有效替代"
+          }
+        },
+        {
+          "id": "FIX05.C03",
+          "text": "交付绑定足够",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 80,
+            "end_line": 80,
+            "quote": "交付绑定足够"
+          }
+        },
+        {
+          "id": "FIX05.C04",
+          "text": "实际命令和完整输出；受测版本/补丁/测试设计；环境和真实/mock分类；必要产物与最终实例身份",
+          "kind": "execution",
+          "stage": "required_evidence",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 81,
+            "end_line": 86,
+            "quote": "    \"required_evidence\": [\n      \"实际命令和完整输出\",\n      \"受测版本/补丁/测试设计\",\n      \"环境和真实/mock分类\",\n      \"必要产物与最终实例身份\"\n    ],"
+          },
+          "source_items": [
+            "实际命令和完整输出",
+            "受测版本/补丁/测试设计",
+            "环境和真实/mock分类",
+            "必要产物与最终实例身份"
+          ],
+          "applicability": "仅对任务要求必须实际运行或交付核验的行为适用；不以源码推断代替运行结果"
+        },
+        {
+          "id": "FIX05.C05",
+          "text": "当前受测对象的原始执行与身份绑定，不继承旧版本同名结果",
+          "kind": "execution",
+          "stage": "recheck",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 92,
+            "end_line": 92,
+            "quote": "当前受测对象的原始执行与身份绑定，不继承旧版本同名结果"
+          },
+          "applicability": "仅对任务要求必须实际运行或交付核验的行为适用；不以源码推断代替运行结果"
+        },
+        {
+          "id": "FIX05.C06",
+          "text": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足",
+          "kind": "human",
+          "stage": "closure_policy",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 93,
+            "end_line": 93,
+            "quote": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足"
+          }
+        }
+      ]
+    },
+    {
+      "id": "FIX06",
+      "document_id": "code-fix-0.1",
+      "title": "原问题及影响范围是否复检并满足关闭条件？",
+      "version": "0.1",
+      "original_rule_version": "本地基线 0.2 / 代码修复补充 0.1",
+      "applicability": "代码修复任务；按具体任务与证据范围判断",
+      "source_ref": {
+        "document_id": "code-fix-0.1",
+        "start_line": 95,
+        "end_line": 111,
+        "quote": "  {\n    \"id\": \"FIX06\",\n    \"title\": \"原问题及影响范围是否复检并满足关闭条件？\",\n    \"criterion\": \"满足条件：当前必验项与问题处置满足关闭门槛，原失败和影响范围复检、独立复核齐全；不满足条件：已证实仍有阻塞反例或缺必要复检/确认却宣称关闭；未核查条件：修复说明存在但复检、版本绑定、关键补证或独立复核不足\",\n    \"required_evidence\": [\n      \"原失败证据\",\n      \"修改版本及影响分析\",\n      \"原问题及回归复检\",\n      \"补证单处置和独立关闭复核\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC15\"\n    ],\n    \"recheck\": \"追加新轮次并复核完整关闭清单；新反例重开，旧失败不删除\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  }"
+      },
+      "criterion": "满足条件：当前必验项与问题处置满足关闭门槛，原失败和影响范围复检、独立复核齐全；不满足条件：已证实仍有阻塞反例或缺必要复检/确认却宣称关闭；未核查条件：修复说明存在但复检、版本绑定、关键补证或独立复核不足",
+      "source_rules": [
+        "TC15"
+      ],
+      "conditions": [
+        {
+          "id": "FIX06.C01",
+          "text": "当前必验项与问题处置满足关闭门槛，原失败和影响范围复检、独立复核齐全",
+          "kind": "human",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 98,
+            "end_line": 98,
+            "quote": "当前必验项与问题处置满足关闭门槛，原失败和影响范围复检、独立复核齐全"
+          }
+        },
+        {
+          "id": "FIX06.C02",
+          "text": "原失败证据；修改版本及影响分析；原问题及回归复检；补证单处置和独立关闭复核",
+          "kind": "human",
+          "stage": "required_evidence",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 99,
+            "end_line": 104,
+            "quote": "    \"required_evidence\": [\n      \"原失败证据\",\n      \"修改版本及影响分析\",\n      \"原问题及回归复检\",\n      \"补证单处置和独立关闭复核\"\n    ],"
+          },
+          "source_items": [
+            "原失败证据",
+            "修改版本及影响分析",
+            "原问题及回归复检",
+            "补证单处置和独立关闭复核"
+          ]
+        },
+        {
+          "id": "FIX06.C03",
+          "text": "追加新轮次并复核完整关闭清单；新反例重开，旧失败不删除",
+          "kind": "semantic",
+          "stage": "recheck",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 109,
+            "end_line": 109,
+            "quote": "追加新轮次并复核完整关闭清单；新反例重开，旧失败不删除"
+          }
+        },
+        {
+          "id": "FIX06.C04",
+          "text": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足",
+          "kind": "human",
+          "stage": "closure_policy",
+          "source_ref": {
+            "document_id": "code-fix-0.1",
+            "start_line": 110,
+            "end_line": 110,
+            "quote": "满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC01",
+      "document_id": "technical-0.2",
+      "title": "基线、有效决定、范围、平台是否明确？",
+      "version": "0.2",
+      "applicability": "所有项目",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 64,
+        "end_line": 64,
+        "quote": "| TC01 | 所有项目 | 对象/规则版本和范围可定位；有效决定、目标平台明确；草案/已确认分开，基线冲突不隐藏 |"
+      },
+      "criterion": "对象/规则版本和范围可定位；有效决定、目标平台明确；草案/已确认分开，基线冲突不隐藏",
+      "conditions": [
+        {
+          "id": "TC01.C01",
+          "text": "对象/规则版本和范围可定位",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 64,
+            "end_line": 64,
+            "quote": "对象/规则版本和范围可定位"
+          }
+        },
+        {
+          "id": "TC01.C02",
+          "text": "有效决定、目标平台明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 64,
+            "end_line": 64,
+            "quote": "有效决定、目标平台明确"
+          }
+        },
+        {
+          "id": "TC01.C03",
+          "text": "草案/已确认分开，基线冲突不隐藏",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 64,
+            "end_line": 64,
+            "quote": "草案/已确认分开，基线冲突不隐藏"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC02",
+      "document_id": "technical-0.2",
+      "title": "每项需求有设计、任务和验收，设计反向有来源吗？",
+      "version": "0.2",
+      "applicability": "所有项目",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 65,
+        "end_line": 65,
+        "quote": "| TC02 | 所有项目 | 每条适用需求有内容正确的设计、任务、验收关联；设计反向有需求或交付目的；缺口/孤立对象有处理记录 |"
+      },
+      "criterion": "每条适用需求有内容正确的设计、任务、验收关联；设计反向有需求或交付目的；缺口/孤立对象有处理记录",
+      "conditions": [
+        {
+          "id": "TC02.C01",
+          "text": "每条适用需求有内容正确的设计、任务、验收关联",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 65,
+            "end_line": 65,
+            "quote": "每条适用需求有内容正确的设计、任务、验收关联"
+          }
+        },
+        {
+          "id": "TC02.C02",
+          "text": "设计反向有需求或交付目的",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 65,
+            "end_line": 65,
+            "quote": "设计反向有需求或交付目的"
+          }
+        },
+        {
+          "id": "TC02.C03",
+          "text": "缺口/孤立对象有处理记录",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 65,
+            "end_line": 65,
+            "quote": "缺口/孤立对象有处理记录"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC03",
+      "document_id": "technical-0.2",
+      "title": "模块职责、边界、数据所有者、调用与失败责任清楚吗？",
+      "version": "0.2",
+      "applicability": "所有项目；层次按规模",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 66,
+        "end_line": 66,
+        "quote": "| TC03 | 所有项目；层次按规模 | 职责、边界、输入输出、数据归属、依赖、失败责任清楚；必要动作无无人负责或冲突负责；依赖满足声明约束 |"
+      },
+      "criterion": "职责、边界、输入输出、数据归属、依赖、失败责任清楚；必要动作无无人负责或冲突负责；依赖满足声明约束",
+      "conditions": [
+        {
+          "id": "TC03.C01",
+          "text": "职责、边界、输入输出、数据归属、依赖、失败责任清楚",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 66,
+            "end_line": 66,
+            "quote": "职责、边界、输入输出、数据归属、依赖、失败责任清楚"
+          }
+        },
+        {
+          "id": "TC03.C02",
+          "text": "必要动作无无人负责或冲突负责",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 66,
+            "end_line": 66,
+            "quote": "必要动作无无人负责或冲突负责"
+          }
+        },
+        {
+          "id": "TC03.C03",
+          "text": "依赖满足声明约束",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 66,
+            "end_line": 66,
+            "quote": "依赖满足声明约束"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC04",
+      "document_id": "technical-0.2",
+      "title": "接口的输入、输出、错误、权限、版本与双方预期一致吗？",
+      "version": "0.2",
+      "applicability": "跨模块/进程/文件/服务边界；无独立边界要说明",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 67,
+        "end_line": 67,
+        "quote": "| TC04 | 跨模块/进程/文件/服务边界；无独立边界要说明 | 双方输入类型/约束、输出、错误、权限和版本一致；适用调用顺序、超时/重复/兼容行为明确；关键未知转 TC07 |"
+      },
+      "criterion": "双方输入类型/约束、输出、错误、权限和版本一致；适用调用顺序、超时/重复/兼容行为明确；关键未知转 TC07",
+      "conditions": [
+        {
+          "id": "TC04.C01",
+          "text": "双方输入类型/约束、输出、错误、权限和版本一致",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 67,
+            "end_line": 67,
+            "quote": "双方输入类型/约束、输出、错误、权限和版本一致"
+          }
+        },
+        {
+          "id": "TC04.C02",
+          "text": "适用调用顺序、超时/重复/兼容行为明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 67,
+            "end_line": 67,
+            "quote": "适用调用顺序、超时/重复/兼容行为明确"
+          }
+        },
+        {
+          "id": "TC04.C03",
+          "text": "关键未知转 TC07",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 67,
+            "end_line": 67,
+            "quote": "关键未知转 TC07"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC05",
+      "document_id": "technical-0.2",
+      "title": "数据类型、约束、生命周期、保存失败和恢复具体吗？",
+      "version": "0.2",
+      "applicability": "数据必查；持久化/敏感数据/迁移按范围",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 68,
+        "end_line": 68,
+        "quote": "| TC05 | 数据必查；持久化/敏感数据/迁移按范围 | 类型、约束、归属、生命周期、读写明确；需保存时有失败保留/恢复；需删除/迁移时有范围/后果；关键假设取得所需依据 |"
+      },
+      "criterion": "类型、约束、归属、生命周期、读写明确；需保存时有失败保留/恢复；需删除/迁移时有范围/后果；关键假设取得所需依据",
+      "conditions": [
+        {
+          "id": "TC05.C01",
+          "text": "类型、约束、归属、生命周期、读写明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 68,
+            "end_line": 68,
+            "quote": "类型、约束、归属、生命周期、读写明确"
+          }
+        },
+        {
+          "id": "TC05.C02",
+          "text": "需保存时有失败保留/恢复",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 68,
+            "end_line": 68,
+            "quote": "需保存时有失败保留/恢复"
+          }
+        },
+        {
+          "id": "TC05.C03",
+          "text": "需删除/迁移时有范围/后果",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 68,
+            "end_line": 68,
+            "quote": "需删除/迁移时有范围/后果"
+          }
+        },
+        {
+          "id": "TC05.C04",
+          "text": "关键假设取得所需依据",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 68,
+            "end_line": 68,
+            "quote": "关键假设取得所需依据"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC06",
+      "document_id": "technical-0.2",
+      "title": "关键正常操作、启动退出、取消、部分失败、重复和恢复有设计吗？",
+      "version": "0.2",
+      "applicability": "正常关键操作必查；其他场景按能力及风险",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 69,
+        "end_line": 69,
+        "quote": "| TC06 | 正常关键操作必查；其他场景按能力及风险 | 适用场景有前状态、事件、状态/数据变化、可见结果和失败责任；关键可达状态无未说明出口；不支持的行为有明确边界 |"
+      },
+      "criterion": "适用场景有前状态、事件、状态/数据变化、可见结果和失败责任；关键可达状态无未说明出口；不支持的行为有明确边界",
+      "conditions": [
+        {
+          "id": "TC06.C01",
+          "text": "适用场景有前状态、事件、状态/数据变化、可见结果和失败责任",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 69,
+            "end_line": 69,
+            "quote": "适用场景有前状态、事件、状态/数据变化、可见结果和失败责任"
+          }
+        },
+        {
+          "id": "TC06.C02",
+          "text": "关键可达状态无未说明出口",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 69,
+            "end_line": 69,
+            "quote": "关键可达状态无未说明出口"
+          }
+        },
+        {
+          "id": "TC06.C03",
+          "text": "不支持的行为有明确边界",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 69,
+            "end_line": 69,
+            "quote": "不支持的行为有明确边界"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC07",
+      "document_id": "technical-0.2",
+      "title": "核心技术未知已分类，所需事实或试验已经得到依据吗？",
+      "version": "0.2",
+      "applicability": "所有项目先识别未知；关键假设需查证",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 70,
+        "end_line": 70,
+        "quote": "| TC07 | 所有项目先识别未知；关键假设需查证 | 未知分类、影响与下一动作明确；影响核心实施的假设取得事先要求的资料或实际试验依据；失败/未验证不算解决 |"
+      },
+      "criterion": "未知分类、影响与下一动作明确；影响核心实施的假设取得事先要求的资料或实际试验依据；失败/未验证不算解决",
+      "conditions": [
+        {
+          "id": "TC07.C01",
+          "text": "未知分类、影响与下一动作明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 70,
+            "end_line": 70,
+            "quote": "未知分类、影响与下一动作明确"
+          }
+        },
+        {
+          "id": "TC07.C02",
+          "text": "影响核心实施的假设取得事先要求的资料或实际试验依据",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 70,
+            "end_line": 70,
+            "quote": "影响核心实施的假设取得事先要求的资料或实际试验依据"
+          }
+        },
+        {
+          "id": "TC07.C03",
+          "text": "失败/未验证不算解决",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 70,
+            "end_line": 70,
+            "quote": "失败/未验证不算解决"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC08",
+      "document_id": "technical-0.2",
+      "title": "质量要求可判断，数字有单位、规模和来源吗？",
+      "version": "0.2",
+      "applicability": "已声明及范围必要的质量约束",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 71,
+        "end_line": 71,
+        "quote": "| TC08 | 已声明及范围必要的质量约束 | 触发、环境/规模、响应、判断方法明确；数字有单位/来源；无依据登记待决定/待测，不自行编造阈值 |"
+      },
+      "criterion": "触发、环境/规模、响应、判断方法明确；数字有单位/来源；无依据登记待决定/待测，不自行编造阈值",
+      "conditions": [
+        {
+          "id": "TC08.C01",
+          "text": "触发、环境/规模、响应、判断方法明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 71,
+            "end_line": 71,
+            "quote": "触发、环境/规模、响应、判断方法明确"
+          }
+        },
+        {
+          "id": "TC08.C02",
+          "text": "数字有单位/来源",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 71,
+            "end_line": 71,
+            "quote": "数字有单位/来源"
+          }
+        },
+        {
+          "id": "TC08.C03",
+          "text": "无依据登记待决定/待测，不自行编造阈值",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 71,
+            "end_line": 71,
+            "quote": "无依据登记待决定/待测，不自行编造阈值"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC09",
+      "document_id": "technical-0.2",
+      "title": "信任边界、凭据、权限、数据外发及删除规则明确吗？",
+      "version": "0.2",
+      "applicability": "权限/副作用必查；凭据/外发按实际能力",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 72,
+        "end_line": 72,
+        "quote": "| TC09 | 权限/副作用必查；凭据/外发按实际能力 | 信任边界、必要权限、数据流和保护/生命周期明确；副作用在有效决定内；新增或未知权限不默许 |"
+      },
+      "criterion": "信任边界、必要权限、数据流和保护/生命周期明确；副作用在有效决定内；新增或未知权限不默许",
+      "conditions": [
+        {
+          "id": "TC09.C01",
+          "text": "信任边界、必要权限、数据流和保护/生命周期明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 72,
+            "end_line": 72,
+            "quote": "信任边界、必要权限、数据流和保护/生命周期明确"
+          }
+        },
+        {
+          "id": "TC09.C02",
+          "text": "副作用在有效决定内",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 72,
+            "end_line": 72,
+            "quote": "副作用在有效决定内"
+          }
+        },
+        {
+          "id": "TC09.C03",
+          "text": "新增或未知权限不默许",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 72,
+            "end_line": 72,
+            "quote": "新增或未知权限不默许"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC10",
+      "document_id": "technical-0.2",
+      "title": "外部依赖版本、许可、支持环境、限制与替代影响已查证吗？",
+      "version": "0.2",
+      "applicability": "使用外部库/工具/服务/复用代码时",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 73,
+        "end_line": 73,
+        "quote": "| TC10 | 使用外部库/工具/服务/复用代码时 | 版本、许可义务、目标环境、关键限制可查证；关键依赖失效有影响和可行处理；低风险依赖不强制备份技术栈 |"
+      },
+      "criterion": "版本、许可义务、目标环境、关键限制可查证；关键依赖失效有影响和可行处理；低风险依赖不强制备份技术栈",
+      "conditions": [
+        {
+          "id": "TC10.C01",
+          "text": "版本、许可义务、目标环境、关键限制可查证",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 73,
+            "end_line": 73,
+            "quote": "版本、许可义务、目标环境、关键限制可查证"
+          }
+        },
+        {
+          "id": "TC10.C02",
+          "text": "关键依赖失效有影响和可行处理",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 73,
+            "end_line": 73,
+            "quote": "关键依赖失效有影响和可行处理"
+          }
+        },
+        {
+          "id": "TC10.C03",
+          "text": "低风险依赖不强制备份技术栈",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 73,
+            "end_line": 73,
+            "quote": "低风险依赖不强制备份技术栈"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC11",
+      "document_id": "technical-0.2",
+      "title": "安装、升级、数据兼容、回退与环境差异按适用性考虑了吗？",
+      "version": "0.2",
+      "applicability": "交付环境必查；安装/升级/回退按范围",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 74,
+        "end_line": 74,
+        "quote": "| TC11 | 交付环境必查；安装/升级/回退按范围 | 各平台运行/交付前提明确；适用兼容、失败和恢复行为具体；环境缺口保留；首版未承诺升级需说明边界 |"
+      },
+      "criterion": "各平台运行/交付前提明确；适用兼容、失败和恢复行为具体；环境缺口保留；首版未承诺升级需说明边界",
+      "conditions": [
+        {
+          "id": "TC11.C01",
+          "text": "各平台运行/交付前提明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 74,
+            "end_line": 74,
+            "quote": "各平台运行/交付前提明确"
+          }
+        },
+        {
+          "id": "TC11.C02",
+          "text": "适用兼容、失败和恢复行为具体",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 74,
+            "end_line": 74,
+            "quote": "适用兼容、失败和恢复行为具体"
+          }
+        },
+        {
+          "id": "TC11.C03",
+          "text": "环境缺口保留",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 74,
+            "end_line": 74,
+            "quote": "环境缺口保留"
+          }
+        },
+        {
+          "id": "TC11.C04",
+          "text": "首版未承诺升级需说明边界",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 74,
+            "end_line": 74,
+            "quote": "首版未承诺升级需说明边界"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC12",
+      "document_id": "technical-0.2",
+      "title": "每条适用验收有操作、断言、环境、数据和证据计划吗？",
+      "version": "0.2",
+      "applicability": "全部适用验收×平台组合",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 75,
+        "end_line": 75,
+        "quote": "| TC12 | 全部适用验收×平台组合 | 前置、环境、数据、操作、可判定断言、证据计划齐全；自动/人工方法与观察能力一致；缺环境仍有设计，真实运行另列 |"
+      },
+      "criterion": "前置、环境、数据、操作、可判定断言、证据计划齐全；自动/人工方法与观察能力一致；缺环境仍有设计，真实运行另列",
+      "conditions": [
+        {
+          "id": "TC12.C01",
+          "text": "前置、环境、数据、操作、可判定断言、证据计划齐全",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 75,
+            "end_line": 75,
+            "quote": "前置、环境、数据、操作、可判定断言、证据计划齐全"
+          }
+        },
+        {
+          "id": "TC12.C02",
+          "text": "自动/人工方法与观察能力一致",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 75,
+            "end_line": 75,
+            "quote": "自动/人工方法与观察能力一致"
+          }
+        },
+        {
+          "id": "TC12.C03",
+          "text": "缺环境仍有设计，真实运行另列",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 75,
+            "end_line": 75,
+            "quote": "缺环境仍有设计，真实运行另列"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC13",
+      "document_id": "technical-0.2",
+      "title": "用例能验证需求，而非只证明实现存在吗？",
+      "version": "0.2",
+      "applicability": "全部验收设计与关键试验",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 76,
+        "end_line": 76,
+        "quote": "| TC13 | 全部验收设计与关键试验 | 断言验证原需求行为/结果；关键反例按风险覆盖；不以文件、按钮或实现存在代替功能完成 |"
+      },
+      "criterion": "断言验证原需求行为/结果；关键反例按风险覆盖；不以文件、按钮或实现存在代替功能完成",
+      "conditions": [
+        {
+          "id": "TC13.C01",
+          "text": "断言验证原需求行为/结果",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 76,
+            "end_line": 76,
+            "quote": "断言验证原需求行为/结果"
+          }
+        },
+        {
+          "id": "TC13.C02",
+          "text": "关键反例按风险覆盖",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 76,
+            "end_line": 76,
+            "quote": "关键反例按风险覆盖"
+          }
+        },
+        {
+          "id": "TC13.C03",
+          "text": "不以文件、按钮或实现存在代替功能完成",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 76,
+            "end_line": 76,
+            "quote": "不以文件、按钮或实现存在代替功能完成"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC14",
+      "document_id": "technical-0.2",
+      "title": "来源可定位、适用且与当前版本一致，冲突保留了吗？",
+      "version": "0.2",
+      "applicability": "外部依据与继承证据；本地决定亦绑定版本",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 77,
+        "end_line": 77,
+        "quote": "| TC14 | 外部依据与继承证据；本地决定亦绑定版本 | 来源/版本/日期/位置及适用性明确；主张不超出资料；冲突/失效保留；依据复用有影响评估 |"
+      },
+      "criterion": "来源/版本/日期/位置及适用性明确；主张不超出资料；冲突/失效保留；依据复用有影响评估",
+      "conditions": [
+        {
+          "id": "TC14.C01",
+          "text": "来源/版本/日期/位置及适用性明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 77,
+            "end_line": 77,
+            "quote": "来源/版本/日期/位置及适用性明确"
+          }
+        },
+        {
+          "id": "TC14.C02",
+          "text": "主张不超出资料",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 77,
+            "end_line": 77,
+            "quote": "主张不超出资料"
+          }
+        },
+        {
+          "id": "TC14.C03",
+          "text": "冲突/失效保留",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 77,
+            "end_line": 77,
+            "quote": "冲突/失效保留"
+          }
+        },
+        {
+          "id": "TC14.C04",
+          "text": "依据复用有影响评估",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 77,
+            "end_line": 77,
+            "quote": "依据复用有影响评估"
+          }
+        }
+      ]
+    },
+    {
+      "id": "TC15",
+      "document_id": "technical-0.2",
+      "title": "问题修订后有复检，影响与旧记录保留了吗？",
+      "version": "0.2",
+      "applicability": "所有发现；无发现亦需复核记录",
+      "source_ref": {
+        "document_id": "technical-0.2",
+        "start_line": 78,
+        "end_line": 78,
+        "quote": "| TC15 | 所有发现；无发现亦需复核记录 | 问题有影响、状态、下一动作；关闭有依据和复检；变更/反例触发重开或失效评估；暂停/取消不算关闭 |"
+      },
+      "criterion": "问题有影响、状态、下一动作；关闭有依据和复检；变更/反例触发重开或失效评估；暂停/取消不算关闭",
+      "conditions": [
+        {
+          "id": "TC15.C01",
+          "text": "问题有影响、状态、下一动作",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 78,
+            "end_line": 78,
+            "quote": "问题有影响、状态、下一动作"
+          }
+        },
+        {
+          "id": "TC15.C02",
+          "text": "关闭有依据和复检",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 78,
+            "end_line": 78,
+            "quote": "关闭有依据和复检"
+          }
+        },
+        {
+          "id": "TC15.C03",
+          "text": "变更/反例触发重开或失效评估",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 78,
+            "end_line": 78,
+            "quote": "变更/反例触发重开或失效评估"
+          }
+        },
+        {
+          "id": "TC15.C04",
+          "text": "暂停/取消不算关闭",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "technical-0.2",
+            "start_line": 78,
+            "end_line": 78,
+            "quote": "暂停/取消不算关闭"
+          }
+        }
+      ]
+    },
+    {
+      "id": "SEC01",
+      "document_id": "security-0.1",
+      "title": "保护目的、资产与威胁",
+      "version": "0.1",
+      "applicability": "所有项目；深度按资产与能力",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 19,
+        "end_line": 19,
+        "quote": "| SEC01 | 所有项目；深度按资产与能力 | 有效基线、保护目的、资产/数据流/信任边界、TH 不当路径与风险理由明确；应对/责任/残余风险不无依据默认接受 | 基线/版本、AST/TB/DF/TH 和来源关系、适用及未知字段 | 图/步骤对应真实产品路径；风险描述有前提与损失，覆盖缺口与范围外理由合理 | 如需检验模型与实现一致，观察实际数据流/入口/事件；无构建时不填实际一致 | 不能定位保护范围和威胁的相关设计/实施；关键范围未知时先做影响分析 |"
+      },
+      "criterion": "有效基线、保护目的、资产/数据流/信任边界、TH 不当路径与风险理由明确；应对/责任/残余风险不无依据默认接受",
+      "blocking_scope": "不能定位保护范围和威胁的相关设计/实施；关键范围未知时先做影响分析",
+      "conditions": [
+        {
+          "id": "SEC01.C01",
+          "text": "有效基线、保护目的、资产/数据流/信任边界、TH 不当路径与风险理由明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 19,
+            "end_line": 19,
+            "quote": "有效基线、保护目的、资产/数据流/信任边界、TH 不当路径与风险理由明确"
+          }
+        },
+        {
+          "id": "SEC01.C02",
+          "text": "应对/责任/残余风险不无依据默认接受",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 19,
+            "end_line": 19,
+            "quote": "应对/责任/残余风险不无依据默认接受"
+          }
+        },
+        {
+          "id": "SEC01.C03",
+          "text": "基线/版本、AST/TB/DF/TH 和来源关系、适用及未知字段",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 19,
+            "end_line": 19,
+            "quote": "基线/版本、AST/TB/DF/TH 和来源关系、适用及未知字段"
+          }
+        },
+        {
+          "id": "SEC01.C04",
+          "text": "图/步骤对应真实产品路径；风险描述有前提与损失，覆盖缺口与范围外理由合理",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 19,
+            "end_line": 19,
+            "quote": "图/步骤对应真实产品路径；风险描述有前提与损失，覆盖缺口与范围外理由合理"
+          }
+        },
+        {
+          "id": "SEC01.C05",
+          "text": "如需检验模型与实现一致，观察实际数据流/入口/事件；无构建时不填实际一致",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 19,
+            "end_line": 19,
+            "quote": "如需检验模型与实现一致，观察实际数据流/入口/事件；无构建时不填实际一致"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC02",
+      "document_id": "security-0.1",
+      "title": "可信主体与权限边界",
+      "version": "0.1",
+      "applicability": "主体/权限必判定；进程/IPC按能力",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 20,
+        "end_line": 20,
+        "quote": "| SEC02 | 主体/权限必判定；进程/IPC按能力 | 权限由可信上下文和有效决定取得，在实际入口判定主体、项目、对象、动作和状态；IPC来源/通道/参数、UI暴露能力具体 | 权限/通道表、MOD/API映射、许可/撤销关联和拒绝结果 | 隐藏控件不能代替授权；调用参数自报主体/项目不作依据；主进程/服务不无条件接受请求 | 合成授权主体正常允许、无权/非法来源/旧对象/撤销请求拒绝；观察输出和副作用；框架隔离配置与实际生效验证 | 受影响读取/执行/发送/返回及依赖任务；未授权路径不得通过平均分释放 |"
+      },
+      "criterion": "权限由可信上下文和有效决定取得，在实际入口判定主体、项目、对象、动作和状态；IPC来源/通道/参数、UI暴露能力具体",
+      "blocking_scope": "受影响读取/执行/发送/返回及依赖任务；未授权路径不得通过平均分释放",
+      "conditions": [
+        {
+          "id": "SEC02.C01",
+          "text": "权限由可信上下文和有效决定取得，在实际入口判定主体、项目、对象、动作和状态",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 20,
+            "end_line": 20,
+            "quote": "权限由可信上下文和有效决定取得，在实际入口判定主体、项目、对象、动作和状态"
+          }
+        },
+        {
+          "id": "SEC02.C02",
+          "text": "IPC来源/通道/参数、UI暴露能力具体",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 20,
+            "end_line": 20,
+            "quote": "IPC来源/通道/参数、UI暴露能力具体"
+          }
+        },
+        {
+          "id": "SEC02.C03",
+          "text": "权限/通道表、MOD/API映射、许可/撤销关联和拒绝结果",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 20,
+            "end_line": 20,
+            "quote": "权限/通道表、MOD/API映射、许可/撤销关联和拒绝结果"
+          }
+        },
+        {
+          "id": "SEC02.C04",
+          "text": "隐藏控件不能代替授权；调用参数自报主体/项目不作依据；主进程/服务不无条件接受请求",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 20,
+            "end_line": 20,
+            "quote": "隐藏控件不能代替授权；调用参数自报主体/项目不作依据；主进程/服务不无条件接受请求"
+          }
+        },
+        {
+          "id": "SEC02.C05",
+          "text": "合成授权主体正常允许、无权/非法来源/旧对象/撤销请求拒绝；观察输出和副作用；框架隔离配置与实际生效验证",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 20,
+            "end_line": 20,
+            "quote": "合成授权主体正常允许、无权/非法来源/旧对象/撤销请求拒绝；观察输出和副作用；框架隔离配置与实际生效验证"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC03",
+      "document_id": "security-0.1",
+      "title": "文件与工具操作边界",
+      "version": "0.1",
+      "applicability": "文件/导入/导出/清理/工具或子进程存在时",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 21,
+        "end_line": 21,
+        "quote": "| SEC03 | 文件/导入/导出/清理/工具或子进程存在时 | 允许实际对象/目录、操作和参数明确；路径解析/链接/别名/竞态/解包/覆盖有适用处置；工具权限、环境、资源、生命周期受控 | 文件/工具契约、工作目录、允许对象/动作/参数、资源及取消责任 | 字符串前缀检查不足；模型文本不能直接变成无限工具权限；各I/O入口一致 | 合成根目录与根外哨兵文件验证正常读写、越界/链接/异常路径/归档及工具请求；不操作真实未授权文件；观察哨兵和进程/输出未产生越权变化 | 不具备边界保证的文件/工具动作及依赖产物；独立文档设计可继续 |"
+      },
+      "criterion": "允许实际对象/目录、操作和参数明确；路径解析/链接/别名/竞态/解包/覆盖有适用处置；工具权限、环境、资源、生命周期受控",
+      "blocking_scope": "不具备边界保证的文件/工具动作及依赖产物；独立文档设计可继续",
+      "conditions": [
+        {
+          "id": "SEC03.C01",
+          "text": "允许实际对象/目录、操作和参数明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 21,
+            "end_line": 21,
+            "quote": "允许实际对象/目录、操作和参数明确"
+          }
+        },
+        {
+          "id": "SEC03.C02",
+          "text": "路径解析/链接/别名/竞态/解包/覆盖有适用处置",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 21,
+            "end_line": 21,
+            "quote": "路径解析/链接/别名/竞态/解包/覆盖有适用处置"
+          }
+        },
+        {
+          "id": "SEC03.C03",
+          "text": "工具权限、环境、资源、生命周期受控",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 21,
+            "end_line": 21,
+            "quote": "工具权限、环境、资源、生命周期受控"
+          }
+        },
+        {
+          "id": "SEC03.C04",
+          "text": "文件/工具契约、工作目录、允许对象/动作/参数、资源及取消责任",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 21,
+            "end_line": 21,
+            "quote": "文件/工具契约、工作目录、允许对象/动作/参数、资源及取消责任"
+          }
+        },
+        {
+          "id": "SEC03.C05",
+          "text": "字符串前缀检查不足；模型文本不能直接变成无限工具权限；各I/O入口一致",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 21,
+            "end_line": 21,
+            "quote": "字符串前缀检查不足；模型文本不能直接变成无限工具权限；各I/O入口一致"
+          }
+        },
+        {
+          "id": "SEC03.C06",
+          "text": "合成根目录与根外哨兵文件验证正常读写、越界/链接/异常路径/归档及工具请求；不操作真实未授权文件；观察哨兵和进程/输出未产生越权变化",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 21,
+            "end_line": 21,
+            "quote": "合成根目录与根外哨兵文件验证正常读写、越界/链接/异常路径/归档及工具请求；不操作真实未授权文件；观察哨兵和进程/输出未产生越权变化"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC04",
+      "document_id": "security-0.1",
+      "title": "不可信输入与执行边界",
+      "version": "0.1",
+      "applicability": "任何不可信输入；HTML/Markdown/模型/工具按能力",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 22,
+        "end_line": 22,
+        "quote": "| SEC04 | 任何不可信输入；HTML/Markdown/模型/工具按能力 | 格式/大小/解析错误、显示处理和执行边界具体；资料指令不改变身份、范围、采用、工具或确认；模型输出仍经实际策略核验 | 输入信任标签、解析/显示/工具契约及角色区分 | 文档、元数据、响应和跨块诱导不可伪装许可；提示词不能替代入口限制 | 合成异常格式/大小/显示载荷、伪确认和跨块注入；观察无非预期执行/越权查询/外发/批准，并有可见受限或错误状态 | 被影响入口、上下文、显示/执行与正式输出；正文识别不充分不能宣称完全防注入 |"
+      },
+      "criterion": "格式/大小/解析错误、显示处理和执行边界具体；资料指令不改变身份、范围、采用、工具或确认；模型输出仍经实际策略核验",
+      "blocking_scope": "被影响入口、上下文、显示/执行与正式输出；正文识别不充分不能宣称完全防注入",
+      "conditions": [
+        {
+          "id": "SEC04.C01",
+          "text": "格式/大小/解析错误、显示处理和执行边界具体",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 22,
+            "end_line": 22,
+            "quote": "格式/大小/解析错误、显示处理和执行边界具体"
+          }
+        },
+        {
+          "id": "SEC04.C02",
+          "text": "资料指令不改变身份、范围、采用、工具或确认",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 22,
+            "end_line": 22,
+            "quote": "资料指令不改变身份、范围、采用、工具或确认"
+          }
+        },
+        {
+          "id": "SEC04.C03",
+          "text": "模型输出仍经实际策略核验",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 22,
+            "end_line": 22,
+            "quote": "模型输出仍经实际策略核验"
+          }
+        },
+        {
+          "id": "SEC04.C04",
+          "text": "输入信任标签、解析/显示/工具契约及角色区分",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 22,
+            "end_line": 22,
+            "quote": "输入信任标签、解析/显示/工具契约及角色区分"
+          }
+        },
+        {
+          "id": "SEC04.C05",
+          "text": "文档、元数据、响应和跨块诱导不可伪装许可；提示词不能替代入口限制",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 22,
+            "end_line": 22,
+            "quote": "文档、元数据、响应和跨块诱导不可伪装许可；提示词不能替代入口限制"
+          }
+        },
+        {
+          "id": "SEC04.C06",
+          "text": "合成异常格式/大小/显示载荷、伪确认和跨块注入；观察无非预期执行/越权查询/外发/批准，并有可见受限或错误状态",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 22,
+            "end_line": 22,
+            "quote": "合成异常格式/大小/显示载荷、伪确认和跨块注入；观察无非预期执行/越权查询/外发/批准，并有可见受限或错误状态"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC05",
+      "document_id": "security-0.1",
+      "title": "检索与外部请求范围",
+      "version": "0.1",
+      "applicability": "知识库/联网/外部API或自定义端点存在时",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 23,
+        "end_line": 23,
+        "quote": "| SEC05 | 知识库/联网/外部API或自定义端点存在时 | 共享/项目/跨项目范围、采用版本、任务相关片段、目标/协议/重定向/证书与失败/预算明确；配置Key不授权全库发送；响应不提升权限 | 范围/采用/许可、上下文清单、端点契约、MOD/API/DATA及重试关联 | 原件/索引/摘要/缓存/标题/错误/导出/载荷共同检查；跨项目明确选择；地址/重试不暗增边界 | 合成A/B先证明B本域可检索，再查A无许可/有限许可/撤销；受控本地捕获核对载荷、重定向/失败/重试；真实网络调用另核许可和预算 | 无有效范围的检索/出站/依赖结论；环境缺口保留未验证 |"
+      },
+      "criterion": "共享/项目/跨项目范围、采用版本、任务相关片段、目标/协议/重定向/证书与失败/预算明确；配置Key不授权全库发送；响应不提升权限",
+      "blocking_scope": "无有效范围的检索/出站/依赖结论；环境缺口保留未验证",
+      "conditions": [
+        {
+          "id": "SEC05.C01",
+          "text": "共享/项目/跨项目范围、采用版本、任务相关片段、目标/协议/重定向/证书与失败/预算明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "共享/项目/跨项目范围、采用版本、任务相关片段、目标/协议/重定向/证书与失败/预算明确"
+          }
+        },
+        {
+          "id": "SEC05.C02",
+          "text": "配置Key不授权全库发送",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "配置Key不授权全库发送"
+          }
+        },
+        {
+          "id": "SEC05.C03",
+          "text": "响应不提升权限",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "响应不提升权限"
+          }
+        },
+        {
+          "id": "SEC05.C04",
+          "text": "范围/采用/许可、上下文清单、端点契约、MOD/API/DATA及重试关联",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "范围/采用/许可、上下文清单、端点契约、MOD/API/DATA及重试关联"
+          }
+        },
+        {
+          "id": "SEC05.C05",
+          "text": "原件/索引/摘要/缓存/标题/错误/导出/载荷共同检查；跨项目明确选择；地址/重试不暗增边界",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "原件/索引/摘要/缓存/标题/错误/导出/载荷共同检查；跨项目明确选择；地址/重试不暗增边界"
+          }
+        },
+        {
+          "id": "SEC05.C06",
+          "text": "合成A/B先证明B本域可检索，再查A无许可/有限许可/撤销；受控本地捕获核对载荷、重定向/失败/重试；真实网络调用另核许可和预算",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 23,
+            "end_line": 23,
+            "quote": "合成A/B先证明B本域可检索，再查A无许可/有限许可/撤销；受控本地捕获核对载荷、重定向/失败/重试；真实网络调用另核许可和预算"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC06",
+      "document_id": "security-0.1",
+      "title": "凭据保护与生命周期",
+      "version": "0.1",
+      "applicability": "凭据必判定；实际使用时完整适用",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 24,
+        "end_line": 24,
+        "quote": "| SEC06 | 凭据必判定；实际使用时完整适用 | 保存、最少读取、配置校验、替换/撤销/删除、锁定/不可用/版本迁移和平台责任明确；真实秘密不进入源码、包、示例、普通业务层和证据 | 凭据别名/设施/生命周期、调用责任、平台/版本及有效决定；不存值 | 保护设施能力有依据，Key配置与用途许可分离；授权失败不默许明文降级；升级后提示/身份边界真实 | 专用受控占位/测试凭据核对生命周期、拒绝与恢复；扫描受控输出/包/日志/载荷的禁记占位；目标设施在实际平台验证 | 不具备凭据保护或有效权限的相关调用/交付；缺设施事实先查证 |"
+      },
+      "criterion": "保存、最少读取、配置校验、替换/撤销/删除、锁定/不可用/版本迁移和平台责任明确；真实秘密不进入源码、包、示例、普通业务层和证据",
+      "blocking_scope": "不具备凭据保护或有效权限的相关调用/交付；缺设施事实先查证",
+      "conditions": [
+        {
+          "id": "SEC06.C01",
+          "text": "保存、最少读取、配置校验、替换/撤销/删除、锁定/不可用/版本迁移和平台责任明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 24,
+            "end_line": 24,
+            "quote": "保存、最少读取、配置校验、替换/撤销/删除、锁定/不可用/版本迁移和平台责任明确"
+          }
+        },
+        {
+          "id": "SEC06.C02",
+          "text": "真实秘密不进入源码、包、示例、普通业务层和证据",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 24,
+            "end_line": 24,
+            "quote": "真实秘密不进入源码、包、示例、普通业务层和证据"
+          }
+        },
+        {
+          "id": "SEC06.C03",
+          "text": "凭据别名/设施/生命周期、调用责任、平台/版本及有效决定；不存值",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 24,
+            "end_line": 24,
+            "quote": "凭据别名/设施/生命周期、调用责任、平台/版本及有效决定；不存值"
+          }
+        },
+        {
+          "id": "SEC06.C04",
+          "text": "保护设施能力有依据，Key配置与用途许可分离；授权失败不默许明文降级；升级后提示/身份边界真实",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 24,
+            "end_line": 24,
+            "quote": "保护设施能力有依据，Key配置与用途许可分离；授权失败不默许明文降级；升级后提示/身份边界真实"
+          }
+        },
+        {
+          "id": "SEC06.C05",
+          "text": "专用受控占位/测试凭据核对生命周期、拒绝与恢复；扫描受控输出/包/日志/载荷的禁记占位；目标设施在实际平台验证",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 24,
+            "end_line": 24,
+            "quote": "专用受控占位/测试凭据核对生命周期、拒绝与恢复；扫描受控输出/包/日志/载荷的禁记占位；目标设施在实际平台验证"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC07",
+      "document_id": "security-0.1",
+      "title": "数据保护、撤销与恢复",
+      "version": "0.1",
+      "applicability": "数据/生命周期必判定；保护/加密/备份按实际需要",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 25,
+        "end_line": 25,
+        "quote": "| SEC07 | 数据/生命周期必判定；保护/加密/备份按实际需要 | 保护需要来自资产/威胁；保护层选择/限制明确，具体加密候选不冒充决定；密钥不可用/损坏/轮换/退役、缓存/备份/导出、撤销/删除/恢复边界可判断 | 保护决策、钥匙与数据关系、生命周期、副本/保留/清理与恢复表 | 加密不代替访问控制；本地存储不等于私密；备份不绕过撤销；远端或已导出副本不伪称可回收 | 按已选方案用合成数据验证拒绝、损坏、密钥失效/轮换/旧备份恢复及撤销/清理；观察残留和失败；不能仅删文件就证实不可恢复 | 受影响存储/使用/清理/恢复；关键保护未知或数据损失风险未解决时不就绪 |"
+      },
+      "criterion": "保护需要来自资产/威胁；保护层选择/限制明确，具体加密候选不冒充决定；密钥不可用/损坏/轮换/退役、缓存/备份/导出、撤销/删除/恢复边界可判断",
+      "blocking_scope": "受影响存储/使用/清理/恢复；关键保护未知或数据损失风险未解决时不就绪",
+      "conditions": [
+        {
+          "id": "SEC07.C01",
+          "text": "保护需要来自资产/威胁",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 25,
+            "end_line": 25,
+            "quote": "保护需要来自资产/威胁"
+          }
+        },
+        {
+          "id": "SEC07.C02",
+          "text": "保护层选择/限制明确，具体加密候选不冒充决定",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 25,
+            "end_line": 25,
+            "quote": "保护层选择/限制明确，具体加密候选不冒充决定"
+          }
+        },
+        {
+          "id": "SEC07.C03",
+          "text": "密钥不可用/损坏/轮换/退役、缓存/备份/导出、撤销/删除/恢复边界可判断",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 25,
+            "end_line": 25,
+            "quote": "密钥不可用/损坏/轮换/退役、缓存/备份/导出、撤销/删除/恢复边界可判断"
+          }
+        },
+        {
+          "id": "SEC07.C04",
+          "text": "保护决策、钥匙与数据关系、生命周期、副本/保留/清理与恢复表",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 25,
+            "end_line": 25,
+            "quote": "保护决策、钥匙与数据关系、生命周期、副本/保留/清理与恢复表"
+          }
+        },
+        {
+          "id": "SEC07.C05",
+          "text": "加密不代替访问控制；本地存储不等于私密；备份不绕过撤销；远端或已导出副本不伪称可回收",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 25,
+            "end_line": 25,
+            "quote": "加密不代替访问控制；本地存储不等于私密；备份不绕过撤销；远端或已导出副本不伪称可回收"
+          }
+        },
+        {
+          "id": "SEC07.C06",
+          "text": "按已选方案用合成数据验证拒绝、损坏、密钥失效/轮换/旧备份恢复及撤销/清理；观察残留和失败；不能仅删文件就证实不可恢复",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 25,
+            "end_line": 25,
+            "quote": "按已选方案用合成数据验证拒绝、损坏、密钥失效/轮换/旧备份恢复及撤销/清理；观察残留和失败；不能仅删文件就证实不可恢复"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC08",
+      "document_id": "security-0.1",
+      "title": "日志、错误与报告保护",
+      "version": "0.1",
+      "applicability": "日志/错误/截图/报告/导出存在时；无日志须理由",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 26,
+        "end_line": 26,
+        "quote": "| SEC08 | 日志/错误/截图/报告/导出存在时；无日志须理由 | 必须/允许/禁记字段、访问/脱敏/保留/删除、容量与记录失败明确；不默认遥测/上传；失败证据可定位且不泄漏 | 事件/证据字段表、权限/保留、公开/受控原证据定位及ST关联 | 不以调试理由记录秘密/无关正文；路径/堆栈/错误也审阅；截图不是全部副作用证据 | 用合成秘密/正文占位触发正常/异常/崩溃/导出路径；日志注入/写失败/容量与证据读取拒绝；核对脱敏副本和必要失败截图 | 泄露或未经许可收集/导出的相关记录/报告/动作；原测试失败仍独立阻塞 |"
+      },
+      "criterion": "必须/允许/禁记字段、访问/脱敏/保留/删除、容量与记录失败明确；不默认遥测/上传；失败证据可定位且不泄漏",
+      "blocking_scope": "泄露或未经许可收集/导出的相关记录/报告/动作；原测试失败仍独立阻塞",
+      "conditions": [
+        {
+          "id": "SEC08.C01",
+          "text": "必须/允许/禁记字段、访问/脱敏/保留/删除、容量与记录失败明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 26,
+            "end_line": 26,
+            "quote": "必须/允许/禁记字段、访问/脱敏/保留/删除、容量与记录失败明确"
+          }
+        },
+        {
+          "id": "SEC08.C02",
+          "text": "不默认遥测/上传",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 26,
+            "end_line": 26,
+            "quote": "不默认遥测/上传"
+          }
+        },
+        {
+          "id": "SEC08.C03",
+          "text": "失败证据可定位且不泄漏",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 26,
+            "end_line": 26,
+            "quote": "失败证据可定位且不泄漏"
+          }
+        },
+        {
+          "id": "SEC08.C04",
+          "text": "事件/证据字段表、权限/保留、公开/受控原证据定位及ST关联",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 26,
+            "end_line": 26,
+            "quote": "事件/证据字段表、权限/保留、公开/受控原证据定位及ST关联"
+          }
+        },
+        {
+          "id": "SEC08.C05",
+          "text": "不以调试理由记录秘密/无关正文；路径/堆栈/错误也审阅；截图不是全部副作用证据",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 26,
+            "end_line": 26,
+            "quote": "不以调试理由记录秘密/无关正文；路径/堆栈/错误也审阅；截图不是全部副作用证据"
+          }
+        },
+        {
+          "id": "SEC08.C06",
+          "text": "用合成秘密/正文占位触发正常/异常/崩溃/导出路径；日志注入/写失败/容量与证据读取拒绝；核对脱敏副本和必要失败截图",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 26,
+            "end_line": 26,
+            "quote": "用合成秘密/正文占位触发正常/异常/崩溃/导出路径；日志注入/写失败/容量与证据读取拒绝；核对脱敏副本和必要失败截图"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC09",
+      "document_id": "security-0.1",
+      "title": "依赖与构建链风险",
+      "version": "0.1",
+      "applicability": "外部组件/工具/复用源码/构建链存在时",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 27,
+        "end_line": 27,
+        "quote": "| SEC09 | 外部组件/工具/复用源码/构建链存在时 | 实际版本/来源/许可/内容标识与模块关联可查；漏洞公告匹配/影响分析、修复/缓解/责任/复测和残余风险具体；无扫描不称零漏洞 | 依赖/构建输入清单、来源、公告/问题、处理/任务/ST记录 | 对应实际版本与可达性；候选工具不是已采用；扫描范围/未知明示；修复不无证据关闭 | 实际组件清单对构建核对，授权扫描或受控缺陷样本验证发现/升级/重测；结果绑定工具/数据库日期与范围，不扩推全无漏洞 | 受影响组件及依赖执行/发行；不可达/误报理由可复核才调整影响 |"
+      },
+      "criterion": "实际版本/来源/许可/内容标识与模块关联可查；漏洞公告匹配/影响分析、修复/缓解/责任/复测和残余风险具体；无扫描不称零漏洞",
+      "blocking_scope": "受影响组件及依赖执行/发行；不可达/误报理由可复核才调整影响",
+      "conditions": [
+        {
+          "id": "SEC09.C01",
+          "text": "实际版本/来源/许可/内容标识与模块关联可查",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 27,
+            "end_line": 27,
+            "quote": "实际版本/来源/许可/内容标识与模块关联可查"
+          }
+        },
+        {
+          "id": "SEC09.C02",
+          "text": "漏洞公告匹配/影响分析、修复/缓解/责任/复测和残余风险具体",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 27,
+            "end_line": 27,
+            "quote": "漏洞公告匹配/影响分析、修复/缓解/责任/复测和残余风险具体"
+          }
+        },
+        {
+          "id": "SEC09.C03",
+          "text": "无扫描不称零漏洞",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 27,
+            "end_line": 27,
+            "quote": "无扫描不称零漏洞"
+          }
+        },
+        {
+          "id": "SEC09.C04",
+          "text": "依赖/构建输入清单、来源、公告/问题、处理/任务/ST记录",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 27,
+            "end_line": 27,
+            "quote": "依赖/构建输入清单、来源、公告/问题、处理/任务/ST记录"
+          }
+        },
+        {
+          "id": "SEC09.C05",
+          "text": "对应实际版本与可达性；候选工具不是已采用；扫描范围/未知明示；修复不无证据关闭",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 27,
+            "end_line": 27,
+            "quote": "对应实际版本与可达性；候选工具不是已采用；扫描范围/未知明示；修复不无证据关闭"
+          }
+        },
+        {
+          "id": "SEC09.C06",
+          "text": "实际组件清单对构建核对，授权扫描或受控缺陷样本验证发现/升级/重测；结果绑定工具/数据库日期与范围，不扩推全无漏洞",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 27,
+            "end_line": 27,
+            "quote": "实际组件清单对构建核对，授权扫描或受控缺陷样本验证发现/升级/重测；结果绑定工具/数据库日期与范围，不扩推全无漏洞"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC10",
+      "document_id": "security-0.1",
+      "title": "安装发行与更新恢复",
+      "version": "0.1",
+      "applicability": "交付安装包必查；更新/回退按承诺",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 28,
+        "end_line": 28,
+        "quote": "| SEC10 | 交付安装包必查；更新/回退按承诺 | 包/版本/平台/来源/可信校验身份、签名/公证与约定限制具体；适用更新验证/非法旧包处理/失败保留/恢复及修复分发明确 | 发行/更新契约、信任来源、包绑定与平台/恢复表 | 包和同渠道哈希不能单独证明发布者；ad hoc不等同发行认证；不擅自引入收费账号/更新能力 | 当前平台合成篡改/不兼容/旧版本测试包及断网/更新失败计划对应执行；核对拒绝、不损原件和实际签名/恢复结果；无环境保持未验证 | 无可靠发行/更新保证的对应交付或动作；不把本机结果迁到Windows |"
+      },
+      "criterion": "包/版本/平台/来源/可信校验身份、签名/公证与约定限制具体；适用更新验证/非法旧包处理/失败保留/恢复及修复分发明确",
+      "blocking_scope": "无可靠发行/更新保证的对应交付或动作；不把本机结果迁到Windows",
+      "conditions": [
+        {
+          "id": "SEC10.C01",
+          "text": "包/版本/平台/来源/可信校验身份、签名/公证与约定限制具体",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 28,
+            "end_line": 28,
+            "quote": "包/版本/平台/来源/可信校验身份、签名/公证与约定限制具体"
+          }
+        },
+        {
+          "id": "SEC10.C02",
+          "text": "适用更新验证/非法旧包处理/失败保留/恢复及修复分发明确",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 28,
+            "end_line": 28,
+            "quote": "适用更新验证/非法旧包处理/失败保留/恢复及修复分发明确"
+          }
+        },
+        {
+          "id": "SEC10.C03",
+          "text": "发行/更新契约、信任来源、包绑定与平台/恢复表",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 28,
+            "end_line": 28,
+            "quote": "发行/更新契约、信任来源、包绑定与平台/恢复表"
+          }
+        },
+        {
+          "id": "SEC10.C04",
+          "text": "包和同渠道哈希不能单独证明发布者；ad hoc不等同发行认证；不擅自引入收费账号/更新能力",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 28,
+            "end_line": 28,
+            "quote": "包和同渠道哈希不能单独证明发布者；ad hoc不等同发行认证；不擅自引入收费账号/更新能力"
+          }
+        },
+        {
+          "id": "SEC10.C05",
+          "text": "当前平台合成篡改/不兼容/旧版本测试包及断网/更新失败计划对应执行；核对拒绝、不损原件和实际签名/恢复结果；无环境保持未验证",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 28,
+            "end_line": 28,
+            "quote": "当前平台合成篡改/不兼容/旧版本测试包及断网/更新失败计划对应执行；核对拒绝、不损原件和实际签名/恢复结果；无环境保持未验证"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC11",
+      "document_id": "security-0.1",
+      "title": "任务副作用、停止与恢复",
+      "version": "0.1",
+      "applicability": "长任务/副作用/重复/取消/恢复必判断；预算按实际授权",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 29,
+        "end_line": 29,
+        "quote": "| SEC11 | 长任务/副作用/重复/取消/恢复必判断；预算按实际授权 | 操作ID、提交/已外发/结果未知、检查点、进程/临时/句柄、重试/剩余额度和停止/恢复责任具体；恢复重验版本/许可/端点/配置 | 状态/提交边界、幂等范围、取消确认、恢复前提与计次/费用记录 | 暂停/取消不关闭问题；已外发不伪称收回；过期检查点不恢复旧许可；结果未知不无条件重发 | 合成任务在关键边界重复/取消/中断、恢复前撤销/更版/超额度；观察无新增未授权动作、保留可信状态、资源清理和可见出口 | 未确认状态和边界的对应任务/恢复/出站；可保存已授权成果，不能继续无界循环 |"
+      },
+      "criterion": "操作ID、提交/已外发/结果未知、检查点、进程/临时/句柄、重试/剩余额度和停止/恢复责任具体；恢复重验版本/许可/端点/配置",
+      "blocking_scope": "未确认状态和边界的对应任务/恢复/出站；可保存已授权成果，不能继续无界循环",
+      "conditions": [
+        {
+          "id": "SEC11.C01",
+          "text": "操作ID、提交/已外发/结果未知、检查点、进程/临时/句柄、重试/剩余额度和停止/恢复责任具体",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 29,
+            "end_line": 29,
+            "quote": "操作ID、提交/已外发/结果未知、检查点、进程/临时/句柄、重试/剩余额度和停止/恢复责任具体"
+          }
+        },
+        {
+          "id": "SEC11.C02",
+          "text": "恢复重验版本/许可/端点/配置",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 29,
+            "end_line": 29,
+            "quote": "恢复重验版本/许可/端点/配置"
+          }
+        },
+        {
+          "id": "SEC11.C03",
+          "text": "状态/提交边界、幂等范围、取消确认、恢复前提与计次/费用记录",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 29,
+            "end_line": 29,
+            "quote": "状态/提交边界、幂等范围、取消确认、恢复前提与计次/费用记录"
+          }
+        },
+        {
+          "id": "SEC11.C04",
+          "text": "暂停/取消不关闭问题；已外发不伪称收回；过期检查点不恢复旧许可；结果未知不无条件重发",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 29,
+            "end_line": 29,
+            "quote": "暂停/取消不关闭问题；已外发不伪称收回；过期检查点不恢复旧许可；结果未知不无条件重发"
+          }
+        },
+        {
+          "id": "SEC11.C05",
+          "text": "合成任务在关键边界重复/取消/中断、恢复前撤销/更版/超额度；观察无新增未授权动作、保留可信状态、资源清理和可见出口",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 29,
+            "end_line": 29,
+            "quote": "合成任务在关键边界重复/取消/中断、恢复前撤销/更版/超额度；观察无新增未授权动作、保留可信状态、资源清理和可见出口"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    },
+    {
+      "id": "SEC12",
+      "document_id": "security-0.1",
+      "title": "安全证据与关闭声明",
+      "version": "0.1",
+      "applicability": "所有安全检查、测试、问题关闭及就绪声明",
+      "source_ref": {
+        "document_id": "security-0.1",
+        "start_line": 30,
+        "end_line": 30,
+        "quote": "| SEC12 | 所有安全检查、测试、问题关闭及就绪声明 | TH→CTRL→MOD/API/DATA→ST/验收→证据链内容一致；实际主体/版本/构建/平台/配置和状态真实；失败截图/副作用证据适用；设计/实际/确认/残余决定分开 | 追踪、检查/证据/问题和闭环历史字段；缺口引用有显式登记 | 测试验证保护目的与拒绝副作用，不只看按钮/配置；旧证据、计划、源采用、截图存在或分数不替代真实通过 | 核对本次原始输出/文件/载荷/截图与断言；受控旧证据/缺证据/缺平台/计划样本不被误记通过或关闭；当前版本重测另留记录 | 无证据的通过/关闭/就绪声明及其实际依赖；审计记录诚实不代表原问题已解决 |"
+      },
+      "criterion": "TH→CTRL→MOD/API/DATA→ST/验收→证据链内容一致；实际主体/版本/构建/平台/配置和状态真实；失败截图/副作用证据适用；设计/实际/确认/残余决定分开",
+      "blocking_scope": "无证据的通过/关闭/就绪声明及其实际依赖；审计记录诚实不代表原问题已解决",
+      "conditions": [
+        {
+          "id": "SEC12.C01",
+          "text": "TH→CTRL→MOD/API/DATA→ST/验收→证据链内容一致",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "TH→CTRL→MOD/API/DATA→ST/验收→证据链内容一致"
+          }
+        },
+        {
+          "id": "SEC12.C02",
+          "text": "实际主体/版本/构建/平台/配置和状态真实",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "实际主体/版本/构建/平台/配置和状态真实"
+          }
+        },
+        {
+          "id": "SEC12.C03",
+          "text": "失败截图/副作用证据适用",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "失败截图/副作用证据适用"
+          }
+        },
+        {
+          "id": "SEC12.C04",
+          "text": "设计/实际/确认/残余决定分开",
+          "kind": "semantic",
+          "stage": "satisfaction",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "设计/实际/确认/残余决定分开"
+          }
+        },
+        {
+          "id": "SEC12.C05",
+          "text": "追踪、检查/证据/问题和闭环历史字段；缺口引用有显式登记",
+          "kind": "semantic",
+          "stage": "L1",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "追踪、检查/证据/问题和闭环历史字段；缺口引用有显式登记"
+          }
+        },
+        {
+          "id": "SEC12.C06",
+          "text": "测试验证保护目的与拒绝副作用，不只看按钮/配置；旧证据、计划、源采用、截图存在或分数不替代真实通过",
+          "kind": "semantic",
+          "stage": "L2",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "测试验证保护目的与拒绝副作用，不只看按钮/配置；旧证据、计划、源采用、截图存在或分数不替代真实通过"
+          }
+        },
+        {
+          "id": "SEC12.C07",
+          "text": "核对本次原始输出/文件/载荷/截图与断言；受控旧证据/缺证据/缺平台/计划样本不被误记通过或关闭；当前版本重测另留记录",
+          "kind": "execution",
+          "stage": "L3",
+          "source_ref": {
+            "document_id": "security-0.1",
+            "start_line": 30,
+            "end_line": 30,
+            "quote": "核对本次原始输出/文件/载荷/截图与断言；受控旧证据/缺证据/缺平台/计划样本不被误记通过或关闭；当前版本重测另留记录"
+          },
+          "applicability": "仅当本任务需要实际证明对应行为时；按原条款、任务要求及风险判断"
+        }
+      ]
+    }
+  ],
+  "coverage_manifest": {
+    "scope": "registered_rule_conditions",
+    "scope_note": "完整条款结论仅覆盖所选条款已登记且适用的条件；保存整份来源快照不表示全文全部治理要求已自动核查。",
+    "documents": [
+      {
+        "document_id": "technical-0.2",
+        "compiled_sections": [
+          {
+            "title": "4. 技术检查条款标题及对象表（TC01–TC15）",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 38,
+              "end_line": 54,
+              "quote": "| 检查 ID | 检查对象与问题 | 应得到的记录 | 主要依据 |"
+            },
+            "reason": "登记条款标题、检查对象及来源背景；具体满足条件由4.1表编译"
+          },
+          {
+            "title": "4.1 适用性与具体满足条件表（TC01–TC15）",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 62,
+              "end_line": 78,
+              "quote": "| ID | 适用性 | 具体满足条件 |"
+            },
+            "reason": "按具体满足条件的分号拆为49项，保留各条适用性；不把表外治理内容算已检查"
+          }
+        ],
+        "uncompiled_sections": [
+          {
+            "title": "1. 自检目的、三层检查与来源边界",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 5,
+              "end_line": 33,
+              "quote": "## 1. 自检要回答什么"
+            },
+            "reason": "通用自检目标、分层证据边界及来源约束已保存原文，尚未逐句编译为自动检查条件"
+          },
+          {
+            "title": "4. 技术检查通用状态口径",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 34,
+              "end_line": 37,
+              "quote": "## 4. 技术检查清单"
+            },
+            "reason": "状态、依据与占位值的通用治理约束尚未逐句编译为独立条件"
+          },
+          {
+            "title": "4.1 适用性裁剪与固定对象口径",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 55,
+              "end_line": 61,
+              "quote": "这里的来源编号见 参考资料索引〔原资料：技术SOP自检研究/参考资料/来源索引.md；未作为本模块运行依赖〕。它们支持设计方法，检查 ID 与处理规则是本项目建议，不是原资料的统一标准。"
+            },
+            "reason": "来源说明及固定对象/适用项/裁剪约束尚未作为独立通用条件核查"
+          },
+          {
+            "title": "4.1 分层结果与证据充分性说明",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 79,
+              "end_line": 84,
+              "quote": "每条检查按 L1/L2/L3 分别留结果；所需层次未完成时，不把其他层的满足当成整项满足。凭据检查的报告应脱敏，不能为了定位问题复制真实秘密。"
+            },
+            "reason": "表外分层判断、敏感信息及必须运行的证据约束尚未完整编译"
+          },
+          {
+            "title": "5. 问题台账、关闭、阻塞、重开、版本与恢复治理（含5.1–5.4）",
+            "source_ref": {
+              "document_id": "technical-0.2",
+              "start_line": 85,
+              "end_line": 149,
+              "quote": "## 5. 问题台账与关闭标准"
+            },
+            "reason": "完整问题生命周期和停止恢复治理未逐句编译；TC15等已登记条件不能代表本章全部完成"
+          }
+        ]
+      },
+      {
+        "document_id": "security-0.1",
+        "compiled_sections": [
+          {
+            "title": "2. 规则与适用性表（SEC01–SEC12）",
+            "source_ref": {
+              "document_id": "security-0.1",
+              "start_line": 17,
+              "end_line": 30,
+              "quote": "| ID | 适用性 | 设计满足条件 | L1 核查 | L2 内容复核 | L3 实际证据要求（需要时） | 缺口/失败的阻塞范围 |"
+            },
+            "reason": "设计满足按分号拆分；每条保留L1/L2及条件性L3条件，阻塞范围作为来源信息"
+          }
+        ],
+        "uncompiled_sections": [
+          {
+            "title": "1. 安全判定、对象与层次口径",
+            "source_ref": {
+              "document_id": "security-0.1",
+              "start_line": 7,
+              "end_line": 14,
+              "quote": "## 1. 判定口径"
+            },
+            "reason": "统一基线、对象、证据层次和声明边界尚未逐句编译为通用条件"
+          },
+          {
+            "title": "2. L3要求与不得降低核查层次的通用说明",
+            "source_ref": {
+              "document_id": "security-0.1",
+              "start_line": 31,
+              "end_line": 33,
+              "quote": "“L3要求”只是需要实际证明时的证据设计。文档形成阶段可先检L1/L2并保留L3待执行；进入对应实际任务前必须满足事先约定的必要证据与有效确认。不得检查失败后降低所需层次。"
+            },
+            "reason": "已为具体L3条件标注按需适用；本段其余阶段与证据治理尚未完整编译"
+          },
+          {
+            "title": "3. 默认受控用例设计（ST01–ST12）",
+            "source_ref": {
+              "document_id": "security-0.1",
+              "start_line": 34,
+              "end_line": 52,
+              "quote": "## 3. 默认受控用例设计"
+            },
+            "reason": "保留候选测试类别、操作和证据设计；尚未按当前任务自动生成和执行这些用例，也不将建议强加为全部任务要求"
+          },
+          {
+            "title": "4. 报告、量化与关闭",
+            "source_ref": {
+              "document_id": "security-0.1",
+              "start_line": 53,
+              "end_line": 67,
+              "quote": "## 4. 报告、量化与关闭"
+            },
+            "reason": "报告、固定分母、风险与关闭治理未逐句编译；局部条款核查不能推出完整文件合规"
+          }
+        ]
+      },
+      {
+        "document_id": "code-fix-0.1",
+        "compiled_sections": [
+          {
+            "title": "FIX01 有效要求、规则及对象版本是否明确？",
+            "source_ref": {
+              "document_id": "code-fix-0.1",
+              "start_line": 2,
+              "end_line": 19,
+              "quote": "  {\n    \"id\": \"FIX01\",\n    \"title\": \"有效要求、规则及对象版本是否明确？\",\n    \"criterion\": \"满足条件：全部必要基准明确，候选/历史授权/当前解释区分且复核绑定本轮；不满足条件：已证实基准或版本被错误替换且仍以其宣称符合要求；未核查条件：关键验收、范围、目标版本或有效决定缺失\",\n    \"required_evidence\": [\n      \"用户原话/有效决定引用\",\n      \"任务与验收清单\",\n      \"规则版本摘要\",\n      \"目标源码与环境身份\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC01\",\n      \"TC14\"\n    ],\n    \"recheck\": \"新增决定及对象差异，重新确认受影响基准和结论\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+            },
+            "reason": "编译满足条件、所需证据、复检及关闭条件；否定/未知分支保留为判定原文，人工要求单独标注能力边界"
+          },
+          {
+            "title": "FIX02 要求与实质改动是否双向对应？",
+            "source_ref": {
+              "document_id": "code-fix-0.1",
+              "start_line": 20,
+              "end_line": 36,
+              "quote": "  {\n    \"id\": \"FIX02\",\n    \"title\": \"要求与实质改动是否双向对应？\",\n    \"criterion\": \"满足条件：每个必要验收点有语义成立的改动或有效无需改动依据，每段实质变更有有效任务依据；不满足条件：明确漏实现，或已确认的范围被实质越出；未核查条件：只有平台/时间关系，或缺语义上下文及历史依据\",\n    \"required_evidence\": [\n      \"验收点ID\",\n      \"固定版本实质diff及必要上下文\",\n      \"双向关系及孤立清单\",\n      \"关联依据和人工复核\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC02\"\n    ],\n    \"recheck\": \"逐验收点重新绑定hunk及两端版本；解释孤立和范围变化\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+            },
+            "reason": "编译满足条件、所需证据、复检及关闭条件；否定/未知分支保留为判定原文，人工要求单独标注能力边界"
+          },
+          {
+            "title": "FIX03 修改是否修复原错误且保持必要边界？",
+            "source_ref": {
+              "document_id": "code-fix-0.1",
+              "start_line": 37,
+              "end_line": 58,
+              "quote": "  {\n    \"id\": \"FIX03\",\n    \"title\": \"修改是否修复原错误且保持必要边界？\",\n    \"criterion\": \"满足条件：原错误因果链被修改，适用合同/负面/兼容边界无已知未处置反例；运行性结论另需实际证据；不满足条件：固定对象和前提下存在可复现或静态可成立的错误路径；未核查条件：只有局部diff、触发条件未知、关键上下文或必要实证缺失\",\n    \"required_evidence\": [\n      \"原错误触发\",\n      \"变更前后代码\",\n      \"必要调用/数据/状态路径\",\n      \"相关合同及边界\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC04\",\n      \"TC05\",\n      \"TC06\",\n      \"TC07\",\n      \"TC09\",\n      \"TC11\"\n    ],\n    \"recheck\": \"对原反例及受影响边界重新检查；按必要性取得运行证据\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+            },
+            "reason": "编译满足条件、所需证据、复检及关闭条件；否定/未知分支保留为判定原文，人工要求单独标注能力边界"
+          },
+          {
+            "title": "FIX04 测试断言是否验证要求及必要负面/回归？",
+            "source_ref": {
+              "document_id": "code-fix-0.1",
+              "start_line": 59,
+              "end_line": 76,
+              "quote": "  {\n    \"id\": \"FIX04\",\n    \"title\": \"测试断言是否验证要求及必要负面/回归？\",\n    \"criterion\": \"满足条件：断言能区分原错误与正确行为，必要负面/回归有验证方法，范围经复核；不满足条件：断言明确没有验证原要求，或必要边界被证实遗漏；未核查条件：只有文件/名称/计数而无断言上下文；关键跳过适用性未知\",\n    \"required_evidence\": [\n      \"测试源码及配置\",\n      \"验收点到断言映射\",\n      \"前置/负例/回归设计\",\n      \"mock与skip说明\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC13\",\n      \"TC12\"\n    ],\n    \"recheck\": \"查看新版测试和断言差异，不用执行全绿替代设计复核\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+            },
+            "reason": "编译满足条件、所需证据、复检及关闭条件；否定/未知分支保留为判定原文，人工要求单独标注能力边界"
+          },
+          {
+            "title": "FIX05 必需运行是否在对应版本和环境成立？",
+            "source_ref": {
+              "document_id": "code-fix-0.1",
+              "start_line": 77,
+              "end_line": 94,
+              "quote": "  {\n    \"id\": \"FIX05\",\n    \"title\": \"必需运行是否在对应版本和环境成立？\",\n    \"criterion\": \"满足条件：每个必验行为有正确版本/环境的有效通过结果；跳过有有效替代；交付绑定足够；不满足条件：实际必验断言失败，或可核实的必要交付条件不成立；未核查条件：仅作者陈述、缺日志、版本/环境不匹配或用mock支持真实声明\",\n    \"required_evidence\": [\n      \"实际命令和完整输出\",\n      \"受测版本/补丁/测试设计\",\n      \"环境和真实/mock分类\",\n      \"必要产物与最终实例身份\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC01\",\n      \"TC14\"\n    ],\n    \"recheck\": \"当前受测对象的原始执行与身份绑定，不继承旧版本同名结果\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  },"
+            },
+            "reason": "编译满足条件、所需证据、复检及关闭条件；否定/未知分支保留为判定原文，人工要求单独标注能力边界"
+          },
+          {
+            "title": "FIX06 原问题及影响范围是否复检并满足关闭条件？",
+            "source_ref": {
+              "document_id": "code-fix-0.1",
+              "start_line": 95,
+              "end_line": 111,
+              "quote": "  {\n    \"id\": \"FIX06\",\n    \"title\": \"原问题及影响范围是否复检并满足关闭条件？\",\n    \"criterion\": \"满足条件：当前必验项与问题处置满足关闭门槛，原失败和影响范围复检、独立复核齐全；不满足条件：已证实仍有阻塞反例或缺必要复检/确认却宣称关闭；未核查条件：修复说明存在但复检、版本绑定、关键补证或独立复核不足\",\n    \"required_evidence\": [\n      \"原失败证据\",\n      \"修改版本及影响分析\",\n      \"原问题及回归复检\",\n      \"补证单处置和独立关闭复核\"\n    ],\n    \"version\": \"本地基线 0.2 / 代码修复补充 0.1\",\n    \"source_rules\": [\n      \"TC15\"\n    ],\n    \"recheck\": \"追加新轮次并复核完整关闭清单；新反例重开，旧失败不删除\",\n    \"closure_policy\": \"满足当前必验清单、版本、复检及独立人工复核门槛；风险接受不能转满足\"\n  }"
+            },
+            "reason": "编译满足条件、所需证据、复检及关闭条件；否定/未知分支保留为判定原文，人工要求单独标注能力边界"
+          }
+        ],
+        "uncompiled_sections": []
+      },
+      {
+        "document_id": "code-fix-guidance-0.1",
+        "compiled_sections": [],
+        "uncompiled_sections": [
+          {
+            "title": "1. 审计对象与流程",
+            "source_ref": {
+              "document_id": "code-fix-guidance-0.1",
+              "start_line": 5,
+              "end_line": 10,
+              "quote": "## 1. 审计对象与流程"
+            },
+            "reason": "背景审计说明原文供参考；未将本节全部流程及治理要求编译为自动核查条件，不作为独立规则文档选择"
+          },
+          {
+            "title": "2. 六项检查",
+            "source_ref": {
+              "document_id": "code-fix-guidance-0.1",
+              "start_line": 11,
+              "end_line": 21,
+              "quote": "## 2. 六项检查"
+            },
+            "reason": "背景审计说明原文供参考；未将本节全部流程及治理要求编译为自动核查条件，不作为独立规则文档选择"
+          },
+          {
+            "title": "3. 判定与证据边界",
+            "source_ref": {
+              "document_id": "code-fix-guidance-0.1",
+              "start_line": 22,
+              "end_line": 27,
+              "quote": "## 3. 判定与证据边界"
+            },
+            "reason": "背景审计说明原文供参考；未将本节全部流程及治理要求编译为自动核查条件，不作为独立规则文档选择"
+          },
+          {
+            "title": "4. 最小产出与复核",
+            "source_ref": {
+              "document_id": "code-fix-guidance-0.1",
+              "start_line": 28,
+              "end_line": 34,
+              "quote": "## 4. 最小产出与复核"
+            },
+            "reason": "背景审计说明原文供参考；未将本节全部流程及治理要求编译为自动核查条件，不作为独立规则文档选择"
+          }
+        ]
+      }
+    ]
+  }
+}
