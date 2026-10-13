@@ -30,7 +30,7 @@ EXTRACT_SYSTEM = '''只提取本批原Agent陈述，不核真假、不看实现�
 “可能由X引起，因为Y未设置”须区分hedged因果与明确断言的事实前提：同一完整statement_id可分别登记cause_hypothesis/diagnosis与effective_state/fact，claim_target.property分别写明因果假设、确定前提。完整原句均保留。“可能Y未设置”只有hedged假设，不得截掉可能而生成fact。不得因标题/目标或实现结果补写确定前提。
 一句含“文件已更新；准备运行以验证修复”时分别提取fact局部编辑事实和验证计划，不能提取“问题已修好/测试通过”。actual_state用于实际业务执行、测试结果或整项交付完成；局部文件更新或编辑事实标fact，不因已过去时升级为业务完成状态。代码块/工具调用是建议操作，不是已执行事实；只有调用且无陈述可no_claim。一般事实、原因猜测和计划分别保留；hedged诊断不能加强成事实。
 claims分类至少一个claims项；no_claim和uncertain的claims=[]。不得用省略较早诊断来代表全文复核，也不从目标、标题或引用补写命题。
-格式：{"sources":[{"evidence_id":"清单ID","classification":"claims|no_claim|uncertain","reason":"具体分类依据/纯意图排除理由","claims":[{"statement_id":"本来源原句ID","claim_type":"fact|diagnosis|prediction|plan|actual_state","claim_target":{"object":"原语境对象","property":"原语境属性或确定前提","scope":"effective_state|local_structure|cause_hypothesis|plan_intent|observed_event|other"}}]}]}。'''
+格式：{"sources":[{"evidence_id":"清单ID","classification":"claims|no_claim|uncertain","reason":"具体分类依据/纯意图排除理由","claims":[{"statement_id":"本来源原句ID","claim_type":"fact|diagnosis|prediction|plan|actual_state","claim_target":{"object":"原语境对象","property":"原语境属性或确定前提","scope":"effective_state|local_structure|cause_hypothesis|plan_intent|observed_event|other","state_assertion":null,"source_extent":null,"edit_target":null}}]}]}。上述null仅示意普通事实；涉及初始化、整文件量词或明确编辑目标时须按下述语义填写对应对象。'''
 EXTRACT_SYSTEM += '\n' + CITATION_SYSTEM_PROMPT
 EXTRACT_SYSTEM += '''\n每个claim_target还必须给state_assertion字段：非初始化语义为null；实例属性正常初始化的命题为{"kind":"normal_initialization","attribute":"原句逐字属性标识符","predicate":"assigned|unassigned","strength":"asserted|hypothetical"}。只从所选完整原句判此字段，不看实现，也不从后续代码块补属性名。normal_initialization仅指正常完成构造/初始化链时该实例属性被赋值，不代表值非空或业务请求成功；实际运行观察另核。明确__init__未初始化某属性属于此语义，不能填null；原句只限定直接赋值则保持local_structure。确定未设置前提用asserted；可能未设置用hypothetical，不可删去可能。程序将保守核同观察版本的完整构造/继承调用链；缺链或动态行为不会得到确定结论。'''
 EXTRACT_SYSTEM += '''\nclaim_target另给source_extent：普通单点/局部/正面存在事实为null；命题断言整个文件不存在某定义/内容时为{"kind":"whole_file_absence","path":"原句逐字文件名或路径"}，穷尽整个文件的仅有/全部内容时kind=whole_file_exhaustive。不得把整文件不存在缩成当前展示片段没看到，也不把普通否定/失败一律登记为整文件否定。
@@ -137,13 +137,19 @@ def statement_choices(package, source_ids):
     return choices
 
 
-def extract_response(value, sources, task, package, *, strict_state=False):
+def _extraction_rows(value, sources):
     rows = value.get('sources') if isinstance(value, dict) else None
     expected = {source['evidence_id'] for source in sources}
     if (not isinstance(rows, list) or len(rows) != len(expected)
             or any(not isinstance(row, dict) or not isinstance(row.get('evidence_id'), str) for row in rows)
             or {row['evidence_id'] for row in rows} != expected):
         raise ValueError('主张提取须完整且唯一覆盖本批原Agent来源。')
+    return rows
+
+
+def extract_response(value, sources, task, package, *, strict_state=False):
+    rows = _extraction_rows(value, sources)
+    expected = {source['evidence_id'] for source in sources}
     output = []
     choices = {item['statement_id']: item for item in statement_choices(package, expected)}
     for row in rows:
@@ -998,6 +1004,44 @@ def _scope_batch(response, claims, candidates, task, package):
     return {'rows': checked, 'errors': errors}
 
 
+def _extract_batch(sources, task, package, request, call, stage, directory):
+    """Keep validated sources only after a complete envelope; retry pending sources once."""
+    accepted, pending, errors = {}, list(sources), {}
+    for attempt in range(2):
+        source_ids = {source['evidence_id'] for source in pending}
+        payload = {'source_inventory': pending, 'statement_choices': statement_choices(package, source_ids),
+                   'evidence': [item for item in request['evidence'] if item['id'] in source_ids]}
+
+        def validate(value):
+            rows = {row['evidence_id']: row for row in _extraction_rows(value, pending)}
+            valid, invalid = {}, {}
+            for source in pending:
+                eid = source['evidence_id']
+                try:
+                    valid[eid] = extract_response({'sources': [rows[eid]]}, [source], task, package,
+                                                  strict_state=True)[0]
+                except (ValueError, KeyError, TypeError) as exc:
+                    invalid[eid] = eid + ': ' + str(exc)
+            return valid, invalid
+
+        name = stage + ('-retry' if attempt else '')
+        value, error, _ = call(name, EXTRACT_SYSTEM, payload, validate, attempts=1,
+                              initial_feedback=list(errors.values()), final_failure=False)
+        if value is None:
+            errors = {source['evidence_id']: error or '主张提取未完成。' for source in pending}
+        else:
+            valid, errors = value
+            accepted.update(valid)
+        save_json(directory / (name + '.sources-validation.json'),
+                  {'retained_source_ids': list(accepted), 'pending_errors': errors})
+        pending = [source for source in pending if source['evidence_id'] not in accepted]
+        if not pending:
+            break
+    return [accepted.get(source['evidence_id']) or {
+                'evidence_id': source['evidence_id'], 'classification': 'uncertain',
+                'reason': errors[source['evidence_id']], 'claims': []} for source in sources], list(dict.fromkeys(errors.values()))
+
+
 def review_claim_scope(task, package, condition, request, call, stage, directory, stage_callback):
     """Both stages share the caller's retry budget and raw request/response retention."""
     from .sop_audit import _condition_response
@@ -1005,18 +1049,11 @@ def review_claim_scope(task, package, condition, request, call, stage, directory
     reviews, extraction_errors = [], []
     for index, start in enumerate(range(0, len(inventory), SOURCE_BATCH), 1):
         sources = inventory[start:start + SOURCE_BATCH]
-        source_ids = {source['evidence_id'] for source in sources}
-        payload = {'source_inventory': sources, 'statement_choices': statement_choices(package, source_ids),
-                   'evidence': [item for item in request['evidence'] if item['id'] in source_ids]}
         stage_callback('逐源提取原Agent命题与语气 · ' + str(index))
-        value, error, _ = call(stage + '-extract-' + str(index), EXTRACT_SYSTEM, payload,
-                              lambda response: extract_response(response, sources, task, package, strict_state=True))
-        if value is None:
-            extraction_errors.append(error)
-            reviews.extend({'evidence_id': source['evidence_id'], 'classification': 'uncertain',
-                            'reason': error, 'claims': []} for source in sources)
-        else:
-            reviews.extend(value)
+        value, errors = _extract_batch(sources, task, package, request, call,
+                                      stage + '-extract-' + str(index), directory)
+        extraction_errors.extend(errors)
+        reviews.extend(value)
     for source in reviews:
         for claim in source['claims']:
             observation = freeze_initialization_observation(claim, task, package)

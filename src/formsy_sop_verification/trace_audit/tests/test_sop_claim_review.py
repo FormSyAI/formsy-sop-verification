@@ -144,7 +144,7 @@ class ClaimStageTests(unittest.TestCase):
 
     def test_extraction_failure_retains_full_inventory_and_no_success(self):
         row = review_claim_scope(self.task, self.package, self.condition,
-              model_input(self.package, [self.task]), lambda *args: (None, 'budget exhausted', False),
+              model_input(self.package, [self.task]), lambda *args, **kwargs: (None, 'budget exhausted', False),
               'claims', self.directory, lambda _: None)
         basis = row['atomic_checks'][0]['semantic_basis']
         self.assertEqual(row['result'], UNKNOWN)
