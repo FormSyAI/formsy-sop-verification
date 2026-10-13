@@ -71,6 +71,26 @@ class BareReferenceDiagnosticsTests(unittest.TestCase):
         for refs in ([], [{'quote_id': self.ids['S'][0]}]):
             self.assertEqual(self.diagnose({'source_refs': refs}), [])
 
+    def test_selector_only_retry_accepts_visible_selectors_and_rejects_even_exact_full_refs(self):
+        qid = self.ids['S'][0]
+        exact = {'evidence_id': 'S', 'start_line': 1, 'end_line': 1, 'quote': 'def first():'}
+        validate_quote_id_retry({'source_refs': [exact]}, self.package)
+        for value in ({'source_refs': []}, {'source_refs': [qid]},
+                      {'source_refs': [{'quote_id': qid}]}, {'source_quote_ids': [qid]}):
+            with self.subTest(value=value):
+                validate_quote_id_retry(value, self.package, available_evidence_ids=self.visible,
+                                        selector_only=True)
+        for value in ({'source_refs': [exact]}, {'proof': {'counterexample_refs': [exact]}}):
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, '禁止手写完整引用'):
+                validate_quote_id_retry(value, self.package, selector_only=True)
+
+    def test_selector_only_does_not_accept_hidden_stale_or_mixed_selectors(self):
+        qid = self.ids['S'][0]
+        for refs in ([self.ids['H'][0]], ['Q-stale'], [qid, qid], [qid, {'quote_id': qid}], ['S']):
+            with self.subTest(refs=refs), self.assertRaises(ValueError):
+                validate_quote_id_retry({'source_refs': refs}, self.package,
+                                        available_evidence_ids=self.visible, selector_only=True)
+
     def test_valid_bare_qids_do_not_fill_or_bypass_observation_version(self):
         row = {'claim_id': 'CL1', 'relation': 'supported', 'comparison_type': 'fact',
                'comparison_scope': 'same_property', 'observation_commit_ids': [],

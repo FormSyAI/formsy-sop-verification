@@ -249,6 +249,27 @@ class LocalFullAuditTests(unittest.TestCase):
             following = jobs.submit({"title": "next fixture"})
             self.assertEqual(self.terminal(jobs, following["id"])["status"], "completed")
 
+    def test_failure_directory_stat_error_keeps_start_failure_and_releases_slot(self):
+        original = RuntimeError("private original thread failure")
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=lambda *_, **__: {}, prepare=lambda _: None)
+            with patch("threading.Thread.start", side_effect=original), \
+                 patch.object(Path, "is_dir", side_effect=PermissionError("private directory stat failure")):
+                with self.assertRaises(RuntimeError) as caught:
+                    jobs.submit({"title": "fixture"})
+            self.assertIs(caught.exception, original)
+            failed = next(iter(jobs.jobs.values()))
+            self.assertEqual(failed["status"], "failed")
+            error = failed["error"]
+            self.assertEqual(error["error_category"], "start")
+            self.assertEqual(error["exception_type"], "RuntimeError")
+            self.assertEqual(error["recording_error"]["error_category"], "storage")
+            self.assertEqual(error["recording_error"]["exception_type"], "PermissionError")
+            self.assertEqual(error["recording_error"]["phase"], "store")
+            self.assertNotIn("private", json.dumps(error))
+            following = jobs.submit({"title": "next fixture"})
+            self.assertEqual(self.terminal(jobs, following["id"])["status"], "completed")
+
 
 if __name__ == "__main__":
     unittest.main()

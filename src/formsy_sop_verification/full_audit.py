@@ -22,6 +22,8 @@ from .trace_audit.model_client import ModelOutputError, redact, redact_value, sa
 
 ENGINE_ID = "traceaudit-r11"
 ROOT = Path(__file__).resolve().parent / "trace_audit"
+MODEL_EVIDENCE_BOUNDARY = """所有输出字段（含reason、summary、impact、counterexample、test_design_reason）均须区分静态源码推导、用户历史报错、未认证上传日志与已验证运行。普通上传日志只可写“上传日志记载……”并说明执行未验证；路径、version_id、来源标签和通过/失败计数不赋予运行信任。仅程序已验证并绑定目标版本的program_run_verification（verified=true）或独立运行映射阶段的candidate_runs可作为实际执行依据。
+原用户报错链和异常名与冻结目标源码的静态预测分开说明；源码推导写“静态路径可导致”，不能写“已复现”。原交付测试的断言覆盖须依据同版本测试源码；外部测试或其日志不能单独证明原交付测试已覆盖或未覆盖。"""
 KNOWN_LIMITATIONS = [
     "r11 TC14: some whole-file claims remain uncertain; attribute/path scope errors are unresolved.",
     "r11 SEC06: a valid citation does not establish every fact in the accompanying reason.",
@@ -128,21 +130,22 @@ class _ClientAdapter:
         path = Path(directory) / (stage + ".error.json")
         # Call numbers and the new empty attempt directory make these unique.
         # Preserve an existing diagnostic if an external caller reuses a path.
-        if not path.exists():
-            try:
+        try:
+            if not path.exists():
                 code = exc.code if isinstance(exc, AuditFailure) else details.get("provider_code", "full_audit_failed")
                 _store(path, {"code": code, **details}, stage)
-            except AuditFailure as storage:
-                recording = failure_details(storage, stage=stage)
-                details["recording_error"] = recording
-                exc.failure_details = details
-                self.failure_diagnostics.append(recording)
+        except (AuditFailure, OSError) as storage:
+            recording = failure_details(storage, stage=stage, phase="store")
+            details["recording_error"] = recording
+            exc.failure_details = details
+            self.failure_diagnostics.append(recording)
         return details
 
     def complete(self, system, payload, directory, stage):
         if self.calls >= self.limit:
             raise AuditFailure("full_audit_call_budget_exhausted", failure_stage=stage, phase="prepare")
         self.calls += 1
+        system = system + "\n" + MODEL_EVIDENCE_BOUNDARY
         artifact_stage = f"{stage}.call-{self.calls:03d}"
         self.current_stage = artifact_stage
         phase = "prepare"
@@ -386,13 +389,19 @@ def run_full_audit(payload, *, directory, client=None, max_sop_calls=64,
         if isinstance(exc, OSError) and phase == "store":
             code = "full_audit_storage_failed"
         safe = AuditFailure(code, **details)
-        failure = {"code": "full_audit_failed", "report_preserved": (directory / "report.json").exists(),
+        failure = {"code": "full_audit_failed", "report_preserved": None,
                    **safe.failure_details}
+        try:
+            failure["report_preserved"] = (directory / "report.json").exists()
+        except OSError as storage:
+            recording = failure_details(storage, stage=stage, phase="store")
+            safe.failure_details["recording_error"] = recording
+            failure["recording_error"] = recording
         path = directory / "failure.json"
-        if not path.exists():
-            try:
+        try:
+            if not path.exists():
                 _store(path, failure, stage)
-            except AuditFailure as storage:
-                safe.failure_details["recording_error"] = failure_details(storage, stage=stage)
-                safe = AuditFailure(safe.code, **safe.failure_details)
+        except (AuditFailure, OSError) as storage:
+            safe.failure_details["recording_error"] = failure_details(storage, stage=stage, phase="store")
+        safe = AuditFailure(safe.code, **safe.failure_details)
         raise safe from None

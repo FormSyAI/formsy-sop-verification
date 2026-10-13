@@ -421,7 +421,8 @@ class ScopeConsistencyTests(unittest.TestCase):
             with self.subTest(relation=relation):
                 def call(stage, system, payload, validator, **kwargs):
                     if 'scope_candidates' in payload:
-                        self.assertEqual(kwargs, {'attempts': 1})
+                        self.assertEqual(kwargs['attempts'], 1)
+                        self.assertFalse(kwargs['final_failure'])
                         return None, 'scope budget exhausted', False
                     value = ({'sources': self.sources()} if 'source_inventory' in payload
                              else self.compare(payload['frozen_claims'], relation))
@@ -430,7 +431,8 @@ class ScopeConsistencyTests(unittest.TestCase):
                     model_input(self.package, [self.task]), call, 'failed-' + relation,
                     self.directory, lambda _: None)
                 self.assertEqual(row['result'], UNKNOWN)
-                self.assertEqual(row['analysis_stage_errors'], ['scope budget exhausted'])
+                self.assertTrue(row['analysis_stage_errors'])
+                self.assertTrue(all('scope budget exhausted' in error for error in row['analysis_stage_errors']))
                 self.assertEqual(row['atomic_checks'][0]['semantic_basis']['claims'][0]['relation'], 'uncertain')
 
     def test_comparison_and_review_receive_no_other_assistant_diagnostics_or_audit_outcomes(self):
@@ -447,7 +449,7 @@ class ScopeConsistencyTests(unittest.TestCase):
             else:
                 self.assertEqual(set(payload), {'fixed_task', 'evidence', 'commits',
                     'program_run_verification', 'frozen_claims', 'prior_tool_observations',
-                    'original_statement_context', 'visible_source_extents'}
+                    'original_statement_context', 'visible_source_extents', 'output_contract'}
                     | ({'scope_candidates'} if 'scope_candidates' in payload else set()))
                 self.assertNotIn('DIAGNOSTIC_ONLY_THE_SUBCLASS_COUNTS', json.dumps(payload))
                 self.assertTrue(all(item['kind'] != 'assistant' for item in payload['evidence']))
@@ -1118,7 +1120,7 @@ class ComparisonIsolationTests(unittest.TestCase):
                 'comparison_scope': 'same_property', 'observation_commit_ids': [],
                 'source_refs': [ref(oid, text)], 'reason': 'The original event is located by its original prior tool.'}
 
-    def run_batch(self, respond, *, hidden=()):
+    def run_batch(self, respond, *, hidden=(), scope=False):
         from ..reference_repair import repair_references
         from ..sop_claim_review import _compare_batch, SOURCE_KINDS
         request = model_input(self.package, [self.task])
@@ -1140,7 +1142,133 @@ class ComparisonIsolationTests(unittest.TestCase):
             except (ValueError, KeyError, TypeError) as exc:
                 return None, str(exc), False
 
-        return _compare_batch(self.claims, self.task, self.package, truth, call, 'compare', self.directory)
+        return _compare_batch(self.claims, self.task, self.package, truth, call,
+                              'scope' if scope else 'compare', self.directory,
+                              scope_candidates={c['id']: self.row(c) for c in self.claims} if scope else None)
+
+    def test_compare_contract_uses_validator_fields_on_initial_call_and_retry(self):
+        from ..sop_claim_review import COMPARISON_FIELDS, COMPARISON_OPTIONAL_FIELDS, COMPARISON_SCOPES
+        def respond(attempt, payload):
+            contract = payload['output_contract']
+            self.assertEqual(set(contract['required_fields']), COMPARISON_FIELDS)
+            self.assertEqual(set(contract['optional_fields']), COMPARISON_OPTIONAL_FIELDS)
+            self.assertEqual(set(contract['comparison_scope']), COMPARISON_SCOPES)
+            self.assertNotIn('cause_hypothesis', contract['comparison_scope'])
+            self.assertIn('observation_commit_ids', contract['required_fields'])
+            self.assertNotIn('observation_come_ids', contract['required_fields'])
+            rows = [self.row(c) for c in payload['frozen_claims']]
+            if attempt == 1:
+                rows[-1]['comparison_scope'] = 'cause_hypothesis'
+            return {'comparisons': rows}
+        rows, errors = self.run_batch(respond)
+        self.assertEqual(errors, [])
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'supported'])
+        self.assertEqual([c['id'] for c in self.calls[1]['frozen_claims']], ['C2'])
+        self.assertEqual(self.calls[0]['output_contract'], self.calls[1]['output_contract'])
+
+    def test_compare_retry_keeps_extra_misspelled_field_invalid(self):
+        def respond(attempt, payload):
+            rows = [self.row(c) for c in payload['frozen_claims']]
+            if attempt == 1:
+                rows[-1]['comparison_scope'] = 'cause_hypothesis'
+            else:
+                rows[0].update(relation='uncertain', observation_come_ids=[])
+            return {'comparisons': rows}
+        rows, errors = self.run_batch(respond)
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'uncertain'])
+        self.assertEqual(len(errors), 1)
+        self.assertIn("extra=['observation_come_ids']", errors[0])
+        self.assertEqual(len(self.calls), 2)
+
+    def test_scope_retries_only_bad_field_row_and_retains_valid_sibling(self):
+        def respond(attempt, payload):
+            self.assertIn('scope_consistency', payload['output_contract']['required_fields'])
+            self.assertEqual([c['claim_id'] for c in payload['scope_candidates']],
+                             [c['id'] for c in payload['frozen_claims']])
+            rows = [{**self.row(c), 'scope_consistency': 'same_scope'} for c in payload['frozen_claims']]
+            if attempt == 1:
+                rows[-1]['observation_come_ids'] = []
+            return {'scope_reviews': rows}
+        rows, errors = self.run_batch(respond, scope=True)
+        self.assertEqual(errors, [])
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'supported'])
+        self.assertEqual([c['id'] for c in self.calls[1]['frozen_claims']], ['C2'])
+        self.assertEqual([c['claim_id'] for c in self.calls[1]['scope_candidates']], ['C2'])
+        retained = json.loads((self.directory / 'scope-retry.rows-validation.json').read_text())
+        self.assertEqual(retained['accepted_claim_ids'], ['C1', 'C2'])
+        self.assertEqual(retained['pending_errors'], {})
+
+    def test_scope_repeated_bad_enum_stays_explicit_unknown_without_coercion(self):
+        def respond(attempt, payload):
+            rows = [{**self.row(c), 'scope_consistency': 'same_scope'} for c in payload['frozen_claims']]
+            rows[-1]['comparison_scope'] = 'effective_state'
+            return {'scope_reviews': rows}
+        rows, errors = self.run_batch(respond, scope=True)
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'uncertain'])
+        self.assertEqual(rows[0]['source_refs'], self.row(self.claims[0])['source_refs'])
+        self.assertEqual(rows[1]['source_refs'], self.row(self.claims[1])['source_refs'])
+        self.assertEqual(len(errors), 1)
+        self.assertIn('C2', errors[0])
+        self.assertIn('same_property|different_property|unknown', errors[0])
+        self.assertEqual(len(self.calls), 2)
+
+    def test_scope_missing_or_duplicate_envelope_cannot_donate_valid_row(self):
+        for duplicate in (False, True):
+            with self.subTest(duplicate=duplicate):
+                self.calls.clear()
+                def respond(attempt, payload):
+                    rows = [{**self.row(c), 'scope_consistency': 'same_scope'} for c in payload['frozen_claims']]
+                    if attempt == 1:
+                        return {'scope_reviews': [rows[0], rows[0]] if duplicate else rows[:1]}
+                    rows[0]['relation'] = 'uncertain'
+                    return {'scope_reviews': rows}
+                rows, errors = self.run_batch(respond, scope=True)
+                self.assertEqual(errors, [])
+                self.assertEqual([row['relation'] for row in rows], ['uncertain', 'supported'])
+                self.assertEqual(len(self.calls[1]['frozen_claims']), 2)
+
+    def test_scope_bad_retry_envelope_cannot_erase_retained_sibling(self):
+        def respond(attempt, payload):
+            rows = [{**self.row(c), 'scope_consistency': 'same_scope'} for c in payload['frozen_claims']]
+            if attempt == 1:
+                rows[-1]['observation_come_ids'] = []
+            else:
+                rows *= 2
+            return {'scope_reviews': rows}
+        rows, errors = self.run_batch(respond, scope=True)
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'uncertain'])
+        self.assertEqual(rows[0]['source_refs'], self.row(self.claims[0])['source_refs'])
+        self.assertEqual(len(errors), 1)
+        self.assertIn('完整且唯一', errors[0])
+        self.assertEqual([c['id'] for c in self.calls[1]['frozen_claims']], ['C2'])
+
+    def test_scope_retry_rejects_inexact_reference_instead_of_repairing_it(self):
+        def respond(attempt, payload):
+            rows = [{**self.row(c), 'scope_consistency': 'same_scope'} for c in payload['frozen_claims']]
+            if attempt == 1:
+                rows[-1]['source_refs'] = ['Q-missing']
+            else:
+                rows[0]['source_refs'][0].update(start_line=2, end_line=2)
+            return {'scope_reviews': rows}
+        rows, errors = self.run_batch(respond, scope=True)
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'uncertain'])
+        self.assertEqual(len(errors), 1)
+        self.assertIn('不自动纠错', errors[0])
+
+    def test_scope_retry_must_retract_reason_when_replacing_rejected_quote(self):
+        from ..reference_repair import _quote_choices
+        quote_id = next(oid for oid, source in _quote_choices(self.package).items()
+                        if source['evidence_id'] == 'OBS2')
+        def respond(attempt, payload):
+            rows = [{**self.row(c), 'scope_consistency': 'same_scope'} for c in payload['frozen_claims']]
+            rows[-1]['reason'] = 'The update includes DEMO_SECRET.'
+            rows[-1]['source_refs'] = ([ref('OBS2', "token = 'DEMO_SECRET'")] if attempt == 1
+                                      else [{'quote_id': quote_id}])
+            return {'scope_reviews': rows}
+        rows, errors = self.run_batch(respond, scope=True)
+        self.assertEqual([row['relation'] for row in rows], ['supported', 'uncertain'])
+        self.assertEqual(len(errors), 1)
+        self.assertIn('旧字面事实', errors[0])
 
     def test_invalid_scope_only_retries_its_claim_without_coercion_or_sibling_loss(self):
         def respond(attempt, payload):
@@ -1353,7 +1481,7 @@ class ComparisonIsolationTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, '完整且唯一'):
                 _scope_batch({'scope_reviews': bad}, self.claims, candidates, self.task, self.package)
 
-    def test_real_scope_path_keeps_valid_sibling_with_one_call_and_explicit_local_error(self):
+    def test_real_scope_path_recovers_only_failed_row_within_two_calls(self):
         rule = next(r for r in load_catalog(Path(__file__).resolve().parents[1])['rules'] if r['id'] == 'TC14')
         condition = next(c for c in rule['conditions'] if c['id'] == 'TC14.C02')
         calls = []
@@ -1367,24 +1495,29 @@ class ComparisonIsolationTests(unittest.TestCase):
                     'property': x['proposition'], 'scope': 'effective_state', 'state_assertion': None}}]}
                     for x in choices]}
             else:
-                rows = [{**self.row(self.claims[n]), 'claim_id': claim['id']}
-                        for n, claim in enumerate(payload['frozen_claims'])]
+                rows = [{**self.row(next(c for c in self.claims if c['proposition'] == claim['proposition'])),
+                         'claim_id': claim['id']} for claim in payload['frozen_claims']]
                 if 'scope_candidates' in payload:
-                    self.assertEqual(kwargs, {'attempts': 1})
+                    self.assertEqual(kwargs['attempts'], 1)
+                    self.assertFalse(kwargs['final_failure'])
                     rows = [{**r, 'scope_consistency': 'same_scope'} for r in rows]
-                    rows[-1]['source_refs'] = [ref('NONEXISTENT', 'File updated.')]
+                    if not stage.endswith('-retry'):
+                        rows[-1]['source_refs'] = [ref('NONEXISTENT', 'File updated.')]
+                    else:
+                        self.assertEqual(len(payload['frozen_claims']), 1)
+                        self.assertEqual(len(payload['scope_candidates']), 1)
                     value = {'scope_reviews': rows}
                 else:
                     value = {'comparisons': rows}
-                    kwargs['before_repair'](value)
+                kwargs['before_repair'](value)
             return validator(value), None, False
         answer = review_claim_scope(self.task, self.package, condition, model_input(self.package, [self.task]),
                                     call, 'actual-scope', self.directory, lambda _: None)
         claims = answer['atomic_checks'][0]['semantic_basis']['claims']
-        self.assertEqual([c['relation'] for c in claims], ['supported', 'uncertain'])
-        self.assertEqual(answer['result'], UNKNOWN)
-        self.assertEqual(len(answer['analysis_stage_errors']), 1)
-        self.assertEqual(len(calls), 3, 'One extraction, one comparison, one scope call; no added retry.')
+        self.assertEqual([c['relation'] for c in claims], ['supported', 'supported'])
+        self.assertEqual(answer['result'], PASS)
+        self.assertEqual(answer['analysis_stage_errors'], [])
+        self.assertEqual(len(calls), 4, 'One extraction, one comparison, at most two scope calls.')
 
 
 class WholeFileCoverageTests(unittest.TestCase):
@@ -1579,6 +1712,30 @@ class WholeFileCoverageTests(unittest.TestCase):
                                 [self.claim], {'C': row}, self.task, self.package)[0]
         self.assertEqual(result['relation'], 'uncertain')
 
+    def test_scope_cannot_borrow_full_source_coverage_while_citing_partial_tool(self):
+        self.display(100)
+        candidate = self.row()
+        candidate['reason'] = 'The complete 349-line file was checked and contains no Config class.'
+        checked = self.checked(candidate)
+        self.assertEqual(checked['relation'], 'uncertain')
+        malformed = {**candidate, 'scope_consistency': 'same_scope',
+                     'source_coverage': [{'evidence_id': 'FULL', 'start_line': 1, 'end_line': 349}]}
+        before = copy.deepcopy(malformed)
+        with self.assertRaisesRegex(ValueError, 'source_coverage须绑定source_refs'):
+            scope_response({'scope_reviews': [malformed]}, [self.claim], {'C': checked},
+                           self.task, self.package)
+        self.assertEqual(malformed, before)
+        partial = {**candidate, 'scope_consistency': 'same_scope',
+                   'source_coverage': [{'evidence_id': 'OBS', 'start_line': 2, 'end_line': 101}]}
+        self.assertEqual(scope_response({'scope_reviews': [partial]}, [self.claim], {'C': checked},
+                                       self.task, self.package)[0]['relation'], 'uncertain')
+        corrected = {**self.row('FULL', [[1, 349]]), 'scope_consistency': 'same_scope'}
+        result = scope_response({'scope_reviews': [corrected]}, [self.claim], {'C': checked},
+                                self.task, self.package)[0]
+        self.assertEqual(result['relation'], 'supported')
+        self.assertEqual(result['source_coverage_check']['complete_evidence_ids'], ['FULL'])
+        self.assertEqual(result['source_refs'], corrected['source_refs'])
+
     def test_global_inventory_predicate_requires_frozen_extent_but_local_failure_does_not(self):
         inventory = [{'evidence_id': 'A'}]
         choice = statement_choices(self.package, {'A'})[0]
@@ -1618,7 +1775,9 @@ class WholeFileCoverageTests(unittest.TestCase):
             ('The error indicates that the `lexicon.config.sources` module is not found.', 'lexicon.config.sources模块'),
             ('The error indicates that the `lexicon.config.sources` module is not found.', 'lexicon.config.sources'),
             ('The module `lexicon.config.sources` is not found.', 'lexicon.config.sources'),
-            ('lexicon.config.sources模块未找到。', 'lexicon.config.sources')]
+            ('lexicon.config.sources模块未找到。', 'lexicon.config.sources'),
+            ('The module `config.py` is not found.', 'config.py'),
+            ('The `config.py` module is not found.', 'config.py module')]
         for sentence, subject in samples:
             with self.subTest(sentence=sentence):
                 next(e for e in self.package['evidence'] if e['id'] == 'A')['content'] = sentence
@@ -1645,6 +1804,21 @@ class WholeFileCoverageTests(unittest.TestCase):
                     'kind': 'whole_file_absence', 'path': subject})
                 self.assertEqual(frozen['proposition'], sentence)
                 self.assertEqual(frozen['claim_target']['source_extent']['path'], subject)
+
+    def test_module_label_does_not_exempt_explicit_file_content_absence(self):
+        for sentence, subject in (
+                ('The module `config.py` contains no definitions.', 'config.py'),
+                ('The `config.py` module contains no sources attribute.', 'config.py'),
+                ('The `config.py` module does not contain a ConfigSource definition.', 'config.py module'),
+                ('The `config.py` module lacks a ConfigSource definition.', 'config.py')):
+            for scope in ('effective_state', 'observed_event'):
+                with self.subTest(sentence=sentence, subject=subject, scope=scope):
+                    with self.assertRaisesRegex(ValueError, 'source_extent'):
+                        self.extract_sentence(sentence, subject=subject, scope=scope)
+                    frozen = self.extract_sentence(sentence, subject=subject, scope=scope,
+                        extent={'kind': 'whole_file_absence', 'path': 'config.py'})
+                    self.assertEqual(frozen['proposition'], sentence)
+                    self.assertEqual(frozen['claim_target']['source_extent']['path'], 'config.py')
 
     def test_mislabelled_observed_scope_cannot_bypass_real_whole_file_absence_extent(self):
         choice = statement_choices(self.package, {'A'})[0]

@@ -92,7 +92,7 @@ report = run_full_audit(
 `stage_callback` 接收阶段字符串，不能执行材料中的命令，也不能发起额外模型调用。
 默认环境型 DeepSeek client 只使用 `DEEPSEEK_API_KEY` / `DEEPSEEK_MODEL`，不读取任何
 `.env`、`.env.local`、旧 AuditService 历史或 `.trusted-runners.json`。
-预算最多为 SOP 阶段 64 次、全流程合计 80 次；网络 socket 操作超时为 55 秒、请求上限 4 MiB、响应上限 1 MiB。
+预算最多为 SOP 阶段 64 次、全流程合计 80 次；网络 socket 操作超时为 180 秒、请求上限 4 MiB、响应上限 1 MiB。
 全部阶段及其恢复共用总预算；固定官方端点，禁 HTTP 重定向，每个预算单位至多发送一次 HTTP 请求。
 认证/余额/网络错误不当作格式错误自动重试；输出协议错误沿用原有有界恢复逻辑。
 

@@ -13,7 +13,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from formsy_sop_verification.full_audit import (_ClientAdapter, _EnvironmentFullClient, _NoRedirects,
-    catalog_summary, prepare_full, run_full_audit)
+    MODEL_EVIDENCE_BOUNDARY, catalog_summary, prepare_full, run_full_audit)
 from formsy_sop_verification.model_client import ProviderError
 from formsy_sop_verification.failure_reporting import AuditFailure, PROVIDER_TIMEOUT_SECONDS
 from formsy_sop_verification.trace_audit.tests.test_engine import scripted_result, synthetic_payload
@@ -56,6 +56,32 @@ class FullAuditTests(unittest.TestCase):
         self.default_source = patch("formsy_sop_verification.full_audit.default_catalog", side_effect=lambda *_: copy.deepcopy(source))
         self.default_source.start()
         self.addCleanup(self.default_source.stop)
+
+    def test_shared_evidence_boundary_is_sent_and_recorded_without_rewriting_candidates(self):
+        calls = []
+        candidate = {"reason": "未认证上传日志记载失败；执行未验证。"}
+
+        class Client:
+            def complete(self, system, payload):
+                calls.append((system, copy.deepcopy(payload)))
+                return candidate
+
+        payload = {"program_run_verification": [], "evidence": [{"content": "2 failed"}]}
+        before = copy.deepcopy(payload)
+        with tempfile.TemporaryDirectory() as root:
+            adapter = _ClientAdapter(Client(), 2, lambda stage: None)
+            for index, stage in enumerate(("analysis", "sop-condition"), 1):
+                result = adapter.complete("Original stage instructions", payload, root, stage)
+                self.assertEqual(result, candidate)
+                saved = json.loads((Path(root) / f"{stage}.call-{index:03d}.request.json").read_text())
+                self.assertEqual(saved["system"], calls[-1][0])
+                self.assertEqual(saved["payload"], before)
+                self.assertTrue(calls[-1][0].endswith(MODEL_EVIDENCE_BOUNDARY))
+                self.assertTrue(calls[-1][0].startswith("Original stage instructions\n"))
+            with self.assertRaisesRegex(ValueError, "full_audit_call_budget_exhausted"):
+                adapter.complete("Original stage instructions", payload, root, "third")
+        self.assertEqual(len(calls), 2)
+        self.assertEqual(payload, before)
 
     def test_catalog_and_freeze_are_offline_and_preserve_complete_reference(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("no network")), \
@@ -584,6 +610,46 @@ class FullAuditTests(unittest.TestCase):
                 adapter.complete("synthetic", {}, root, "analysis-1")
             self.assertEqual(path.read_text(), '{"prior":"retained"}')
             self.assertEqual(adapter.failure_diagnostics[-1]["error_category"], "rate_limit")
+
+    def test_diagnostic_stat_failures_preserve_the_original_provider_error(self):
+        original_exists = Path.exists
+        for status, code, category in ((401, "provider_authentication_failed", "authentication"),
+                                       (402, "provider_quota_exhausted", "quota")):
+            for name in (".error.json", "report.json", "failure.json"):
+                class Failing(OfflineClient):
+                    def complete(self, system, payload):
+                        self.calls += 1
+                        raise ProviderError(code, http_status=status, phase="connect", exception_type="HTTPError")
+                def exists(path):
+                    matches = path.name.endswith(name) if name == ".error.json" else path.name == name
+                    if matches:
+                        raise PermissionError("synthetic-key private-source stat failure")
+                    return original_exists(path)
+                with self.subTest(status=status, name=name), tempfile.TemporaryDirectory() as root:
+                    client = Failing()
+                    with patch.object(Path, "exists", autospec=True, side_effect=exists), \
+                         self.assertRaisesRegex(AuditFailure, "^" + code + "$") as caught:
+                        run_full_audit(synthetic_payload(), directory=root, client=client)
+                    details = caught.exception.failure_details
+                    self.assertEqual(details["provider_code"], code)
+                    self.assertEqual(details["http_status"], status)
+                    self.assertEqual(details["error_category"], category)
+                    self.assertEqual(details["exception_type"], "HTTPError")
+                    self.assertEqual(details["recording_error"]["error_category"], "storage")
+                    self.assertEqual(details["recording_error"]["exception_type"], "PermissionError")
+                    self.assertEqual(details["recording_error"]["phase"], "store")
+                    self.assertEqual(client.calls, 1)
+                    self.assertNotIn("synthetic-key", json.dumps(details))
+                    self.assertNotIn("private-source", json.dumps(details))
+                    failure_path = Path(root) / "failure.json"
+                    if name == "failure.json":
+                        self.assertFalse(failure_path.exists())
+                    else:
+                        saved = json.loads(failure_path.read_text())
+                        self.assertEqual(saved["provider_code"], code)
+                        self.assertEqual(saved["recording_error"]["exception_type"], "PermissionError")
+                        if name == "report.json":
+                            self.assertIsNone(saved["report_preserved"])
 
     def test_model_output_exception_text_and_custom_code_do_not_enter_feedback_or_diagnostics(self):
         class Failing(OfflineClient):

@@ -18,13 +18,31 @@ CITATION_RETRY_PROMPT = ('本次引用重试优先从本阶段numbered_lines目�
     '须重新判断相关reason中的事实，目录文本不支持旧主张时改为未核查并使用空refs；不得机械换引文保留旧reason。')
 
 
-def validate_quote_id_retry(value, package, *, available_evidence_ids=None):
+SELECTOR_ONLY_RETRY_PROMPT = ('本次SOP引用重试只允许当前可见numbered_lines中的独立{"quote_id":"Q-..."}、'
+    '全部为裸Q-ID字符串的*_refs、compact *_quote_ids或空引用数组；不同格式不得混用。'
+    '禁止手写evidence_id/start_line/end_line/quote完整引用，即使原文正确也拒绝；原样选择Q-ID，由程序展开。'
+    'Q-ID保留其真实来源和版本，不把历史助手/工具片段说成最终源码；须撤回无支持的旧事实并重判缺口，不能只换引文保留旧reason。')
+
+
+def model_reference_feedback(value):
+    """Project feedback without rejected quote text; preserve original diagnostics and anchors."""
+    if isinstance(value, dict):
+        return {key: model_reference_feedback(item) for key, item in value.items()
+                if key not in {'rejected_quote', 'rejected_quote_truncated'}}
+    if isinstance(value, list):
+        return [model_reference_feedback(item) for item in value]
+    return value
+
+
+def validate_quote_id_retry(value, package, *, available_evidence_ids=None, selector_only=False):
     """Restrict failed citation retries before expansion; never choose evidence for a claim."""
     evidence = {item['id']: item for item in package['evidence']
                 if available_evidence_ids is None or item['id'] in available_evidence_ids}
     fields = {'evidence_id', 'start_line', 'end_line', 'quote'}
 
     def exact_reference(ref, path):
+        if selector_only:
+            raise ValueError(path + ': SOP引用重试仅允许可见Q-ID选择器或空引用，禁止手写完整引用。')
         if (set(ref) != fields or not isinstance(ref['evidence_id'], str)
                 or ref['evidence_id'] not in evidence
                 or _selected_text(ref, evidence[ref['evidence_id']]) is None):

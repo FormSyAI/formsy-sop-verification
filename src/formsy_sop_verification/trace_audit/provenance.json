@@ -41,8 +41,10 @@
     {
       "path": "reference_repair.py",
       "upstream_sha256": "9dfb826d078266003099ca6f32587578c21ee764e31f4eee66feb80c8158cd2b",
-      "packaged_sha256": "9dfb826d078266003099ca6f32587578c21ee764e31f4eee66feb80c8158cd2b",
-      "adaptations": []
+      "packaged_sha256": "3a43e1cad8a437c3b915689a584827fdbb37bf3ecf2488ad21c04858a1b75501",
+      "adaptations": [
+        "local selector-only SOP citation recovery and deep-copied model feedback projection; raw diagnostics and reason anchors retained"
+      ]
     },
     {
       "path": "audit_policy.py",
@@ -69,9 +71,11 @@
     {
       "path": "sop_audit.py",
       "upstream_sha256": "f4ab4b36c30ee73905d47013456153db9aadba449c40c21507a35e6767cf9c08",
-      "packaged_sha256": "e2dddf8f13c71c029e25133c9c89df75a17a282458e85a3db987131059d891ab",
+      "packaged_sha256": "bb01fbb488abd3bd09a8afdb40afa3f57ec85c51a2f5941aefe281ea8143f4a8",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local exact citation recovery instruction is shared by row and inner retries; validators and budgets unchanged",
+        "local aligned selector-only SOP citation retries; first-pass and other callers remain compatible"
       ]
     },
     {
@@ -91,10 +95,12 @@
     {
       "path": "sop_claim_review.py",
       "upstream_sha256": "1fc0fac86b6df3139fc9ee3789858a06b2b9e9e848696d747e86da3aa7bfea29",
-      "packaged_sha256": "aa53d0a195ea3c8e8e5dff65bc563eed286a84421768cfd97475d4508a7420a0",
+      "packaged_sha256": "0590bc36f81a055bf78e2271bbb6a9587b951c7f540f21fcbea2f93654911d42",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
-        "local bounded per-source recovery, explicit module scope, and concise mutually exclusive claim extraction"
+        "local bounded per-source recovery, explicit module scope, and concise mutually exclusive claim extraction",
+        "local same-source citation coverage guidance and module lookup versus file contents validation",
+        "local shared comparison output contract and bounded failed-claim scope recovery without changing validation or budgets"
       ]
     },
     {
@@ -202,9 +208,10 @@
     {
       "path": "tests/test_bare_reference_diagnostics.py",
       "upstream_sha256": "633280783836be0dc4e1f7b06f7ae84e2da529392f423330958428fb864b9715",
-      "packaged_sha256": "2d0f92ef09b4d086c2154af7f52cdd9b877b875c2f66404b54bdb6b4b9175d21",
+      "packaged_sha256": "278f6215803bea7be7aa6d317d667ffc6f44617f3d0934e8e943ca0949475ea3",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local strict visible selector-only retry and original diagnostic preservation regressions"
       ]
     },
     {
@@ -250,9 +257,11 @@
     {
       "path": "tests/test_reference_reason_recovery.py",
       "upstream_sha256": "855d9edab985a2d9995aab5726bb3b3f9394c6496af27736bacd070c50a57311",
-      "packaged_sha256": "5650c32a53a5c7112d2985b0670b884e1de002798b240a2323a281c3d69eb130",
+      "packaged_sha256": "6eb6050e3609cf19e148f7668e7a11fa24e57530a01f280eb7e8f185b4a75bd3",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local strict full citation rejection and bounded outer row citation retry regression",
+        "local SOP selector-only recovery, sibling retention and bounded call regressions"
       ]
     },
     {
@@ -291,10 +300,12 @@
     {
       "path": "tests/test_sop_claim_review.py",
       "upstream_sha256": "7fd3f16e4e5725f72d48ea2bc2a19ff248f957d2461b58b094ea9562c024890f",
-      "packaged_sha256": "3426e72c136d3faebe1c5d69878e4416423cd8e1a62d703f1cd6f4db95fa8dea",
+      "packaged_sha256": "bea5384e619698492d19cc5cfbd08e914e643823ca3e49fb37a3bcbd75c65c15",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
-        "local module-scope regression and extraction callback compatibility"
+        "local module-scope regression and extraction callback compatibility",
+        "local module content absence and same-source whole-file coverage regressions",
+        "local comparison contract and bounded scope recovery with strict envelope and citation regressions"
       ]
     },
     {

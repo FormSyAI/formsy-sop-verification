@@ -7,9 +7,10 @@ from pathlib import Path
 
 from .model_client import ModelOutputError, redact, save_json
 from .audit_policy import target_source_index
-from .reference_repair import (CITATION_SYSTEM_PROMPT, CITATION_RETRY_PROMPT, attach_quote_ids,
+from .reference_repair import (CITATION_SYSTEM_PROMPT, attach_quote_ids,
                               reference_diagnostics, repair_references, validate_quote_id_retry,
-                              validate_retry_reason_consistency)
+                              validate_retry_reason_consistency, SELECTOR_ONLY_RETRY_PROMPT,
+                              model_reference_feedback)
 from .run_evidence import execution_review_candidates
 from .sop_contracts import VERSION, ensure_contracts, rule_audit_scope
 from .sop_judgments import atomic_response, apply_atomic_gates, acceptance_consistency, sync_execution_checks, closure_prerequisites
@@ -551,12 +552,16 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
             try:
                 model_payload = attach_quote_ids({**payload, 'validation_feedback': feedback,
                     **({'reference_feedback': diagnostics, 'citation_retry': {
-                        'mode': 'exact_visible_citations', 'instruction': CITATION_RETRY_PROMPT}} if diagnostics else {})}, package)
+                        'mode': 'visible_quote_selectors_only', 'instruction': SELECTOR_ONLY_RETRY_PROMPT}} if diagnostics else {})}, package)
+                if 'reference_feedback' in model_payload:
+                    # Only the model-facing projection omits rejected text; internal/disk records stay exact.
+                    model_payload['reference_feedback'] = model_reference_feedback(model_payload['reference_feedback'])
                 for item in model_payload.get('evidence', []):
                     # SOP sees the complete numbered original once; frozen evidence remains untouched.
                     if 'numbered_lines' in item:
                         item.pop('content', None)
-                value = client.complete(system + ("\n" + CITATION_RETRY_PROMPT if diagnostics else ""),
+                retry = model_payload.get('citation_retry')
+                value = client.complete(system + ("\n" + retry['instruction'] if retry else ""),
                                         model_payload, directory, name)
             except ModelOutputError as exc:
                 feedback = [redact(str(exc))[:600]]
@@ -570,7 +575,7 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
                 try:
                     if diagnostics:
                         validate_quote_id_retry(value, package, available_evidence_ids=
-                                                {item['id'] for item in payload.get('evidence', [])})
+                                                {item['id'] for item in payload.get('evidence', [])}, selector_only=True)
                     if before_repair is not None:
                         before_repair(value)
                     value, repairs = repair_references(value, package, tasks, available_evidence_ids=
@@ -606,7 +611,7 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
                 if isinstance(row, dict) and references.get(row.get(id_key)):
                     try:
                         validate_quote_id_retry(row, package, available_evidence_ids=
-                                                {item['id'] for item in payload.get('evidence', [])})
+                                                {item['id'] for item in payload.get('evidence', [])}, selector_only=True)
                     except (ValueError, KeyError, TypeError) as exc:
                         raw_errors[row[id_key]] = str(exc)
 
@@ -641,9 +646,9 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
             checked, error, truncated = call(name, system, {**payload, request_key: pending,
                                   'reference_feedback': [{id_key: cid, 'references': details}
                                                          for cid, details in references.items() if details],
-                                  **({'citation_retry': {'mode': 'exact_visible_citations',
+                                  **({'citation_retry': {'mode': 'visible_quote_selectors_only',
                                       'condition_ids': [cid for cid, details in references.items() if details],
-                                      'instruction': CITATION_RETRY_PROMPT}} if any(references.values()) else {})},
+                                      'instruction': SELECTOR_ONLY_RETRY_PROMPT}} if any(references.values()) else {})},
                                   validate_rows, attempts=1, initial_feedback=feedback, final_failure=False,
                                   before_repair=check_retry_quotes)
             if truncated and len(pending) > 1 and calls < max_calls:

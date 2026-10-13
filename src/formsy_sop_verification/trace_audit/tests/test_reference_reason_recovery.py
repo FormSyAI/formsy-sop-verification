@@ -1,11 +1,13 @@
 """Rejected citation facts must be rejudged, not hidden by a valid replacement quote."""
 import copy
+import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from ..reference_repair import (attach_quote_ids, reference_diagnostics, repair_references,
-                              validate_quote_id_retry, validate_retry_reason_consistency)
+from ..reference_repair import (SELECTOR_ONLY_RETRY_PROMPT, attach_quote_ids, reference_diagnostics, repair_references,
+                              validate_quote_id_retry, validate_retry_reason_consistency, model_reference_feedback)
 from ..sop_audit import audit_sop
 from .test_sop_audit import Client, default_response, fixtures, ref
 
@@ -32,6 +34,15 @@ class RetryReasonConsistencyTests(unittest.TestCase):
         local = copy.deepcopy(self.old)
         local['reason'] = '原引用不合法，但没有声称该字面事实。'
         self.assertEqual(reference_diagnostics(local, self.package)[0]['rejected_reason_anchors'], [])
+
+    def test_model_feedback_projection_removes_rejected_text_without_changing_diagnostics(self):
+        original = [{'condition_id': 'C1', 'references': copy.deepcopy(self.diagnostics)}]
+        before = copy.deepcopy(original)
+        projected = model_reference_feedback(original)
+        self.assertNotIn('rejected_quote', str(projected))
+        self.assertEqual(projected[0]['references'][0]['rejected_reason_anchors'], ['DEMO_TOKEN'])
+        self.assertEqual(projected[0]['references'][0]['choices'], self.diagnostics[0]['choices'])
+        self.assertEqual(original, before)
 
     def test_valid_replacement_quote_cannot_preserve_old_fact_even_if_result_unknown(self):
         row = {'result': '未核查', 'reason': '范围未核查；目标代码仍使用 DEMO_TOKEN。',
@@ -101,7 +112,7 @@ class SopReasonRecoveryTests(unittest.TestCase):
         first = self.catalog['rules'][0]['conditions'][0]
         self.catalog['rules'][0]['conditions'] = [first, {**first, 'id': 'FIX03.C02'}]
 
-    def retry(self, retained):
+    def retry(self, retained, *, repeat_quote=False):
         calls = []
         def respond(payload):
             value = default_response(payload)
@@ -115,12 +126,25 @@ class SopReasonRecoveryTests(unittest.TestCase):
             else:
                 self.assertEqual([c['id'] for c in payload['conditions']], ['FIX03.C02'])
                 self.assertIn('DEMO_TOKEN', str(payload['reference_feedback']))
+                self.assertNotIn('rejected_quote', str(payload['reference_feedback']))
+                self.assertEqual(payload['citation_retry']['mode'], 'visible_quote_selectors_only')
                 row.update(result='未核查', gap_type='evidence_missing', acceptance_ids=[],
                     reason='仍显示 DEMO_TOKEN，范围未知。' if retained else '旧事实缺少可见来源，范围仍缺证据。')
+                source = next(item for item in payload['evidence'] if item['id'] == 'S')
+                row['evidence_refs'] = [{'quote_id': source['numbered_lines'][0]['quote_id']}]
+                if repeat_quote:
+                    row['evidence_refs'] = [ref('S', "marker = 'DEMO_TOKEN'")]
             return value
-        with tempfile.TemporaryDirectory() as directory:
+        client = Client(respond)
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+                client, 'complete', wraps=client.complete) as complete:
             report = audit_sop(copy.deepcopy(self.result), self.package, self.catalog,
-                               Client(respond), Path(directory))
+                               client, Path(directory))
+            diagnostics = json.loads(next(Path(directory).glob('*.rows-validation.json')).read_text())
+            self.assertIn("marker = 'DEMO_TOKEN'", str(diagnostics))
+        systems = [call.args[0] for call in complete.call_args_list if 'conditions' in call.args[1]]
+        self.assertNotIn(SELECTOR_ONLY_RETRY_PROMPT, systems[0])
+        self.assertIn(SELECTOR_ONLY_RETRY_PROMPT, systems[1])
         self.assertEqual(len(calls), 2, 'Reason checks reuse the existing two-call row budget.')
         rows = {r['condition_id']: r for r in report['sop_condition_checks']}
         self.assertEqual(rows['FIX03.C01']['result'], '满足')
@@ -140,6 +164,13 @@ class SopReasonRecoveryTests(unittest.TestCase):
         self.assertEqual(row['analysis_status'], 'completed')
         self.assertTrue(report['sop_coverage']['analysis_complete'])
 
+    def test_repeating_absent_quote_after_row_feedback_still_fails_exact_citations(self):
+        report, row = self.retry(True, repeat_quote=True)
+        self.assertEqual(row['result'], '未核查')
+        self.assertEqual(row['analysis_status'], 'failed')
+        self.assertIn('禁止手写完整引用', row['reason'])
+        self.assertFalse(report['sop_coverage']['analysis_complete'])
+
     def test_shared_inner_retry_also_requires_rejudged_reasons_with_no_added_calls(self):
         self.package['audit_context'] = {'profile': 'code_fix'}
         for retained in (True, False):
@@ -153,7 +184,10 @@ class SopReasonRecoveryTests(unittest.TestCase):
                     refs = [ref('U', "token = 'DEMO_TOKEN'")]
                     if len(calls) == 2:
                         self.assertIn('DEMO_TOKEN', str(payload['reference_feedback']))
-                        refs = [ref('U', '保留零值')]
+                        self.assertNotIn('rejected_quote', str(payload['reference_feedback']))
+                        self.assertEqual(payload['citation_retry']['mode'], 'visible_quote_selectors_only')
+                        user = next(item for item in payload['evidence'] if item['id'] == 'U')
+                        refs = [{'quote_id': user['numbered_lines'][0]['quote_id']}]
                         if not retained:
                             reason = '旧事实无用户来源，阶段范围仍不确定。'
                     return {'reviewed_source_ids': payload['source_inventory'], 'intents': [

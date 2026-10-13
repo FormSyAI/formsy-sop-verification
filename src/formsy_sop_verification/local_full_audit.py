@@ -54,11 +54,11 @@ class FullAuditJobs:
             failure = {"code": "full_audit_start_failed", **failure_details(exc, stage=stage, phase=phase)}
             if stage == "job_start":
                 failure["error_category"] = "start"
-            if directory.is_dir():
-                try:
+            try:
+                if directory.is_dir():
                     private_json(directory / "failure.json", failure)
-                except Exception as recording_exc:
-                    failure["recording_error"] = failure_details(recording_exc, stage="job_failure_write", phase="store")
+            except Exception as recording_exc:
+                failure["recording_error"] = failure_details(recording_exc, stage="job_failure_write", phase="store")
             with self.lock:
                 if job_id in self.jobs:
                     self.jobs[job_id].update(status="failed", progress="后台线程未能启动", error=failure)
