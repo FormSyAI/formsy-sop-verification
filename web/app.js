@@ -136,6 +136,36 @@ const jobLabels = {
   completed: "作业已返回",
   failed: "作业失败",
 };
+const failureCategoryNames = {
+  configuration: "模型配置不可用",
+  authentication: "模型认证失败",
+  quota: "模型额度不足",
+  rate_limit: "模型请求限流",
+  http: "模型服务 HTTP 错误",
+  timeout: "模型请求超时",
+  connection: "模型连接失败",
+  read_incomplete: "模型响应读取不完整",
+  output: "模型输出不合要求",
+  validation: "审计校验失败",
+  budget: "审计调用预算耗尽",
+  storage: "记录保存失败",
+  internal_unknown: "程序内部错误，原因尚未确定",
+  start: "后台任务启动失败",
+};
+
+function failureDetailsHtml(failure) {
+  if (!failure || typeof failure !== "object" || Array.isArray(failure)) return "";
+  const category = typeof failure.error_category === "string"
+    ? (Object.hasOwn(failureCategoryNames, failure.error_category) ? failureCategoryNames[failure.error_category] : "未分类错误")
+    : null;
+  return [
+    ["错误类别", category],
+    ["失败阶段", failure.failure_stage],
+    ["异常类型", failure.exception_type],
+    ["模型服务代码", failure.provider_code],
+  ].filter(([, value]) => typeof value === "string" && value)
+    .map(([label, value]) => `<p>${label}：${escapeHtml(value)}</p>`).join("");
+}
 
 function setFullError(message = "") {
   $("full-error").textContent = message;
@@ -1940,11 +1970,12 @@ function renderFull() {
   const heading = `<div class="report-heading"><div><div class="step-label">完整审计 · 模型候选</div><h2>${escapeHtml(round.report?.title ?? round.request?.title ?? "完整审计")}</h2><p class="report-subtitle">人工未复核 · 正式未关闭 · ${round.imported ? "导入本地报告，不代表本次模型执行" : escapeHtml(round.id)}</p></div>${history}</div>`;
   if (!round.report) {
     $("full-report").innerHTML =
-      `${heading}<div class="notice ${round.status === "failed" ? "error" : ""}"><strong>${escapeHtml(jobLabels[round.status] ?? "作业状态未知")}</strong><p>${escapeHtml(round.error?.message ?? round.progress ?? "")}</p>${round.error?.code ? `<p>错误代码：${escapeHtml(round.error.code)}</p>` : ""}${["queued", "running"].includes(round.status) ? `<p>停止查看进度不会取消后台任务，也不会再次发送材料。</p><div class="job-actions"><button type="button" class="button secondary" data-full-poll>${fullState.polling ? "停止查看进度" : "继续查看进度"}</button></div>` : "<p>本轮失败已保留；不自动重试。旧报告可从历史轮次回看。</p>"}</div>`;
+      `${heading}<div class="notice ${round.status === "failed" ? "error" : ""}"><strong>${escapeHtml(jobLabels[round.status] ?? "作业状态未知")}</strong><p>${escapeHtml(round.error?.message ?? round.progress ?? "")}</p>${round.error?.code ? `<p>错误代码：${escapeHtml(round.error.code)}</p>` : ""}${failureDetailsHtml(round.error)}${round.error?.recording_error ? `<div><p>失败记录保存异常；原始故障仍保留。</p>${failureDetailsHtml(round.error.recording_error)}</div>` : ""}${["queued", "running"].includes(round.status) ? `<p>停止查看进度不会取消后台任务，也不会再次发送材料。</p><div class="job-actions"><button type="button" class="button secondary" data-full-poll>${fullState.polling ? "停止查看进度" : "继续查看进度"}</button></div>` : "<p>本轮失败已保留；不自动重试。旧报告可从历史轮次回看。</p>"}</div>`;
     return;
   }
   const report = round.report,
     model = report.model_snapshot ?? {};
+  const diagnostics = array(model.failure_diagnostics).filter((item) => item && typeof item === "object" && !Array.isArray(item));
   const sections = [
     ["overview", "概览"],
     ["tasks", "任务与要求"],
@@ -1959,6 +1990,7 @@ function renderFull() {
     <section id="overview-section" class="full-report-section"><h2>概览</h2>
     ${model.execution_mode === "offline_fake" ? '<div class="notice"><strong>离线模拟结果</strong>完整引擎使用离线 fake client，没有向真实模型发送请求。</div>' : ""}
     <div class="notice warning"><strong>候选结果 · 人工未复核 · 正式未关闭</strong><p>${model.model_invoked ? `报告记录 ${escapeHtml(model.provider ?? "DeepSeek")} / ${escapeHtml(model.model)}，真实 HTTP 请求 ${escapeHtml(model.api_request_count)} 次。` : "报告未记录真实模型调用。"} 材料来源未经平台身份认证，业务测试未由本工具执行。</p><p id="candidate-banner"></p></div>
+    ${diagnostics.length ? `<details class="notice warning"><summary>${diagnostics.length} 条调用异常记录（可能包含已恢复尝试）</summary>${diagnostics.map((item) => `<div>${failureDetailsHtml(item)}</div>`).join("")}</details>` : ""}
     <p id="schema-label" class="muted"></p><div id="legacy-banner" hidden></div><div id="metrics" class="metrics"></div><div id="current-audit-scope" class="card scope-panel"></div><div id="review-status" class="review-grid"></div><div id="summary-content" class="card scope-panel"></div><div id="report-warnings" class="notice warning" hidden></div><div id="delta-content" class="card scope-panel" hidden></div>
     <details class="card report-identity"><summary>本轮来源、规则版本与分析限制</summary>${ruleSummaryHtml(reportRuleSummary(report))}<p>审计 ID：${escapeHtml(report.audit_id ?? round.id)}</p><p>输入摘要：<code>${escapeHtml(report.integration?.input_sha256 ?? "未提供")}</code></p><p>真实 HTTP 请求：${escapeHtml(model.api_request_count ?? 0)}；总调用预算：${escapeHtml(model.max_total_calls ?? "未提供")}。</p><ul>${array(
       report.integration?.known_limitations,

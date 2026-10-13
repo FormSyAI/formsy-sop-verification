@@ -13,6 +13,7 @@ import urllib.request
 import uuid
 
 from .core import MAX_INPUT_BYTES, decode_json
+from .failure_reporting import AuditFailure, PROVIDER_TIMEOUT_SECONDS, failure_details
 from .model_client import ProviderError
 from .rule_sources import default_catalog, validate_upload
 from .trace_audit import audit_engine, audit_policy, sop_audit, sop_catalog
@@ -101,6 +102,14 @@ def prepare_full(payload):
     return package
 
 
+def _store(path, value, stage, **details):
+    try:
+        save_json(path, value)
+    except OSError as exc:
+        raise AuditFailure("full_audit_storage_failed", failure_stage=stage, phase="store",
+                           exception_type=type(exc).__name__, **details) from None
+
+
 class _ClientAdapter:
     """Apply one shared call budget and unique artifacts to every upstream stage."""
 
@@ -110,27 +119,68 @@ class _ClientAdapter:
         self.calls = 0
         self.limit = max_total_calls
         self.stage_callback = stage_callback
+        self.failure_diagnostics = []
+        self.current_stage = "prepare"
+
+    def _record_failure(self, exc, directory, stage):
+        details = failure_details(exc, stage=stage)
+        self.failure_diagnostics.append(details)
+        path = Path(directory) / (stage + ".error.json")
+        # Call numbers and the new empty attempt directory make these unique.
+        # Preserve an existing diagnostic if an external caller reuses a path.
+        if not path.exists():
+            try:
+                code = exc.code if isinstance(exc, AuditFailure) else details.get("provider_code", "full_audit_failed")
+                _store(path, {"code": code, **details}, stage)
+            except AuditFailure as storage:
+                recording = failure_details(storage, stage=stage)
+                details["recording_error"] = recording
+                exc.failure_details = details
+                self.failure_diagnostics.append(recording)
+        return details
 
     def complete(self, system, payload, directory, stage):
         if self.calls >= self.limit:
-            raise ValueError("full_audit_call_budget_exhausted")
+            raise AuditFailure("full_audit_call_budget_exhausted", failure_stage=stage, phase="prepare")
         self.calls += 1
         artifact_stage = f"{stage}.call-{self.calls:03d}"
-        self.stage_callback("model:" + stage)
-        save_json(Path(directory) / (artifact_stage + ".request.json"),
-                  {"provider": "DeepSeek", "model": self.model, "system": system, "payload": payload})
+        self.current_stage = artifact_stage
+        phase = "prepare"
         try:
+            self.stage_callback("model:" + stage)
+            phase = "store"
+            _store(Path(directory) / (artifact_stage + ".request.json"),
+                   {"provider": "DeepSeek", "model": self.model, "system": system, "payload": payload},
+                   artifact_stage)
+            phase = "connect"
             result = (self.client.complete(system, payload, directory, artifact_stage)
                       if isinstance(self.client, _EnvironmentFullClient)
                       else self.client.complete(system, payload))
-        except ProviderError as exc:
-            save_json(Path(directory) / (artifact_stage + ".error.json"), {"code": exc.code})
+            phase = "store"
+            result = redact_value(result, (getattr(self.client, "key", ""),))
+            _store(Path(directory) / (artifact_stage + ".response.json"), result, artifact_stage)
+            return result
+        except ModelOutputError as exc:
+            if not hasattr(exc, "failure_details"):
+                exc.failure_details = failure_details(ProviderError("provider_invalid_candidate",
+                    failure_stage=artifact_stage, phase="parse", exception_type="ModelOutputError"))
+            details = self._record_failure(exc, directory, artifact_stage)
+            output = ModelOutputError(details.get("provider_code", "provider_invalid_candidate"),
+                                      truncated=exc.truncated)
+            output.failure_details = details
+            raise output from None
+        except AuditFailure as exc:
+            details = self._record_failure(exc, directory, artifact_stage)
             if exc.code in {"provider_invalid_json", "provider_invalid_candidate", "provider_incomplete_output"}:
-                raise ModelOutputError(exc.code, truncated=exc.code == "provider_incomplete_output") from None
-            raise ValueError(exc.code) from None
-        result = redact_value(result, (getattr(self.client, "key", ""),))
-        save_json(Path(directory) / (artifact_stage + ".response.json"), result)
-        return result
+                output = ModelOutputError(exc.code, truncated=exc.code == "provider_incomplete_output")
+                output.failure_details = details
+                raise output from None
+            raise AuditFailure(exc.code, **details) from None
+        except Exception as exc:
+            safe = AuditFailure("full_audit_internal_unknown", failure_stage=artifact_stage, phase=phase,
+                                exception_type=type(exc).__name__)
+            self._record_failure(safe, directory, artifact_stage)
+            raise safe from None
 
 
 class _NoRedirects(urllib.request.HTTPRedirectHandler):
@@ -166,11 +216,16 @@ class _EnvironmentFullClient:
                 artifact["envelope"] = redact_value(decode_json(raw), (self.key,))
             except (ValueError, UnicodeError, RecursionError):
                 pass
-        save_json(Path(directory) / (stage + ".provider-response.json"), artifact)
+        details = {"response_saved": False, "response_partial": transport_incomplete,
+                   "captured_bytes": artifact["captured_bytes"]}
+        if http_status is not None:
+            details["http_status"] = http_status
+        _store(Path(directory) / (stage + ".provider-response.json"), artifact, stage, **details)
+        return {**details, "response_saved": True}
 
     def complete(self, system, payload, directory, stage):
         if not self.key:
-            raise ProviderError("provider_not_configured")
+            raise ProviderError("provider_not_configured", failure_stage=stage, phase="prepare")
         body = {"model": self.model, "messages": [
                     {"role": "system", "content": system},
                     {"role": "user", "content": json.dumps(redact_value(payload, (self.key,)), ensure_ascii=False)}],
@@ -178,52 +233,72 @@ class _EnvironmentFullClient:
                 "temperature": 0, "max_tokens": 10000, "stream": False}
         serialized = json.dumps(body, ensure_ascii=False, allow_nan=False).encode("utf-8")
         if len(serialized) > self.MAX_REQUEST_BYTES:
-            raise ProviderError("provider_request_too_large")
-        save_json(Path(directory) / (stage + ".provider-request.json"), body)
+            raise ProviderError("provider_request_too_large", failure_stage=stage, phase="prepare")
+        _store(Path(directory) / (stage + ".provider-request.json"), body, stage)
         request = urllib.request.Request("https://api.deepseek.com/chat/completions",
                     data=serialized, headers={"Authorization": "Bearer " + self.key,
                                               "Content-Type": "application/json"})
         self.request_count += 1
         http_status = None
         failure_code = "provider_network_or_timeout"
+        phase = "connect"
         try:
             try:
-                with self.opener.open(request, timeout=55) as response:
+                with self.opener.open(request, timeout=PROVIDER_TIMEOUT_SECONDS) as response:
                     http_status = 200
+                    phase = "read"
                     raw = response.read(self.MAX_RESPONSE_BYTES + 1)
             except urllib.error.HTTPError as exc:
                 http_status = exc.code
                 failure_code = {401: "provider_authentication_failed", 402: "provider_quota_exhausted",
                                 429: "provider_rate_limited"}.get(exc.code, "provider_http_error")
+                phase = "read"
                 raw = exc.read(self.MAX_RESPONSE_BYTES + 1)
         except http.client.IncompleteRead as exc:
-            self._response(exc.partial, directory, stage, http_status=http_status, transport_incomplete=True)
-            raise ProviderError(failure_code) from None
-        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException):
-            raise ProviderError(failure_code) from None
-        self._response(raw, directory, stage, http_status=http_status)
+            details = self._response(exc.partial, directory, stage, http_status=http_status, transport_incomplete=True)
+            raise ProviderError(failure_code, failure_stage=stage, phase=phase,
+                exception_type="IncompleteRead", transport_issue="read_incomplete",
+                **({"error_category": "read_incomplete"} if failure_code == "provider_network_or_timeout" else {}),
+                **details) from None
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException) as exc:
+            issue = "timeout" if isinstance(exc, TimeoutError) or (
+                isinstance(exc, urllib.error.URLError) and isinstance(exc.reason, TimeoutError)) else "connection"
+            raise ProviderError(failure_code, failure_stage=stage, phase=phase,
+                exception_type=type(exc).__name__, transport_issue=issue, response_saved=False,
+                response_partial=False, **({"http_status": http_status} if http_status is not None else {}),
+                **({"error_category": issue} if failure_code == "provider_network_or_timeout" else {})) from None
+        except Exception as exc:
+            raise AuditFailure("full_audit_internal_unknown", failure_stage=stage, phase=phase,
+                exception_type=type(exc).__name__, response_saved=False, response_partial=False,
+                **({"http_status": http_status} if http_status is not None else {})) from None
+        details = self._response(raw, directory, stage, http_status=http_status)
         if http_status != 200:
-            raise ProviderError(failure_code)
+            raise ProviderError(failure_code, failure_stage=stage, phase="read", exception_type="HTTPError", **details)
         if len(raw) > self.MAX_RESPONSE_BYTES:
-            raise ProviderError("provider_response_too_large")
+            raise ProviderError("provider_response_too_large", failure_stage=stage, phase="parse", **details)
+        def output_error(code, *, truncated=False):
+            error = ModelOutputError(code, truncated=truncated)
+            error.failure_details = failure_details(ProviderError(code, failure_stage=stage, phase="parse",
+                exception_type="ModelOutputError", **details))
+            return error
         try:
             value = decode_json(raw)
         except (ValueError, UnicodeError, RecursionError):
-            raise ModelOutputError("provider_invalid_json") from None
+            raise output_error("provider_invalid_json") from None
         choice = value.get("choices") if isinstance(value, dict) else None
         if not isinstance(choice, list) or not choice or not isinstance(choice[0], dict):
-            raise ModelOutputError("provider_invalid_candidate")
+            raise output_error("provider_invalid_candidate")
         if choice[0].get("finish_reason") != "stop":
-            raise ModelOutputError("provider_incomplete_output", truncated=choice[0].get("finish_reason") == "length")
+            raise output_error("provider_incomplete_output", truncated=choice[0].get("finish_reason") == "length")
         message = choice[0].get("message")
         if not isinstance(message, dict) or not isinstance(message.get("content"), str):
-            raise ModelOutputError("provider_invalid_candidate")
+            raise output_error("provider_invalid_candidate")
         try:
             candidate = decode_json(message["content"].encode("utf-8"))
         except (ValueError, UnicodeError, RecursionError):
-            raise ModelOutputError("provider_invalid_candidate") from None
+            raise output_error("provider_invalid_candidate") from None
         if not isinstance(candidate, dict):
-            raise ModelOutputError("provider_invalid_candidate")
+            raise output_error("provider_invalid_candidate")
         return candidate
 
 
@@ -255,13 +330,18 @@ def run_full_audit(payload, *, directory, client=None, max_sop_calls=64,
     directory.chmod(0o700)
     callback = stage_callback or (lambda stage: None)
     adapter = _ClientAdapter(client, max_total_calls, callback)
-    save_json(directory / "input.json", package)
+    stage, phase = "prepare", "store"
     try:
+        _store(directory / "input.json", package, stage)
+        stage, phase = "analyze", "engine"
         callback("输入已冻结；参考规则不代表项目历史生效 SOP")
         candidate = audit_engine.analyze(package, adapter, directory, callback)
+        stage = "apply_policy"
         candidate = audit_policy.apply_policy(candidate, package)
+        stage = "audit_sop"
         candidate = sop_audit.audit_sop(candidate, package, package["sop_catalog"], adapter,
                                         directory, stage_callback=callback, max_calls=max_sop_calls)
+        stage, phase = "report_build", "report"
         frozen_tasks = directory / "frozen-tasks.json"
         exclusions = decode_json(frozen_tasks.read_bytes()).get("excluded_candidates", []) if frozen_tasks.exists() else []
         report = {
@@ -282,6 +362,8 @@ def run_full_audit(payload, *, directory, client=None, max_sop_calls=64,
                                "model": adapter.model, "model_invoked": not injected and client.request_count > 0,
                                "api_request_count": 0 if injected else client.request_count,
                                "stage_call_count": adapter.calls, "max_total_calls": max_total_calls,
+                               # Attempt history includes output errors recovered by bounded retries.
+                               "failure_diagnostics": copy.deepcopy(adapter.failure_diagnostics),
                                "execution_mode": "offline_fake" if injected else "model"},
             "integration": {"engine": ENGINE_ID, "input_sha256": package["integration_input_sha256"],
                             "reference_only": True, "trusted_runner_supported": False,
@@ -292,10 +374,25 @@ def run_full_audit(payload, *, directory, client=None, max_sop_calls=64,
             displayed["original_sha256"] = original["original_sha256s"][0] if len(original["original_sha256s"]) == 1 else None
             displayed["display_sha256"] = audit_engine.sha(displayed["content"])
             displayed["display_redacted"] = any(value != displayed["display_sha256"] for value in original["original_sha256s"])
-        save_json(directory / "report.json", published)
+        stage, phase = "report_write", "store"
+        _store(directory / "report.json", published, stage)
         callback("候选报告已生成；分析完成、业务结果与正式关闭分别判断")
         return published
-    except Exception:
-        # Caller receives the actual exception; artifacts do not echo private source text.
-        save_json(directory / "failure.json", {"code": "full_audit_failed", "report_preserved": False})
-        raise
+    except Exception as exc:
+        if stage in {"analyze", "audit_sop"} and adapter.current_stage != "prepare":
+            stage = adapter.current_stage
+        details = failure_details(exc, stage=stage, phase=phase)
+        code = getattr(exc, "code", "full_audit_internal_unknown")
+        if isinstance(exc, OSError) and phase == "store":
+            code = "full_audit_storage_failed"
+        safe = AuditFailure(code, **details)
+        failure = {"code": "full_audit_failed", "report_preserved": (directory / "report.json").exists(),
+                   **safe.failure_details}
+        path = directory / "failure.json"
+        if not path.exists():
+            try:
+                _store(path, failure, stage)
+            except AuditFailure as storage:
+                safe.failure_details["recording_error"] = failure_details(storage, stage=stage)
+                safe = AuditFailure(safe.code, **safe.failure_details)
+        raise safe from None

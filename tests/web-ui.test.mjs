@@ -384,6 +384,54 @@ test("provider failure preserves the round and reveals fallback without a second
   assert.equal(ui.registry.get("full-mode").value, "offline");
   assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 1);
 });
+test("failed job shows safe classification and recording failure without another submission", () => {
+  const ui = setup();
+  configure(ui);
+  ui.run(`fullState.rounds=[{id:'failed-job',status:'failed',progress:'model:analysis.call-001',error:${json({
+    code: "full_audit_failed", message: "完整审计未完成", error_category: "internal_unknown",
+    failure_stage: "model:analysis.call-001", exception_type: "KeyError", phase: "engine", transport_retry: false,
+    recording_error: { error_category: "storage", failure_stage: "job_failure_write", exception_type: "OSError" },
+  })}}];fullState.active=0;renderFull()`);
+  const output = ui.registry.get("full-report").innerHTML;
+  assert.match(output, /错误代码：full_audit_failed/);
+  assert.match(output, /错误类别：程序内部错误，原因尚未确定/);
+  assert.match(output, /失败阶段：model:analysis.call-001/);
+  assert.match(output, /异常类型：KeyError/);
+  assert.match(output, /失败记录保存异常；原始故障仍保留/);
+  assert.match(output, /错误类别：记录保存失败/);
+  assert.match(output, /失败阶段：job_failure_write/);
+  assert.match(output, /不自动重试/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+test("safe diagnostic rendering ignores arbitrary message fields and escapes displayed values", () => {
+  const ui = setup();
+  const output = ui.run(`failureDetailsHtml(${json({
+    error_category: "timeout", failure_stage: "<stage>", exception_type: "TimeoutError",
+    provider_code: "provider_network_or_timeout", message: "private exception body", traceback: "private stack",
+  })})`);
+  assert.match(output, /错误类别：模型请求超时/);
+  assert.match(output, /失败阶段：&lt;stage&gt;/);
+  assert.match(output, /模型服务代码：provider_network_or_timeout/);
+  assert.doesNotMatch(output, /private|<stage>/);
+});
+test("completed reports show recovered call diagnostics without changing the final job state", () => {
+  const ui = setup();
+  const value = structuredClone(report);
+  value.model_snapshot.failure_diagnostics = [{
+    error_category: "read_incomplete", failure_stage: "sop-T1-TC14.C01.call-023",
+    exception_type: "IncompleteRead", phase: "read", response_partial: true,
+    message: "private transport text", traceback: "private stack",
+  }];
+  showReport(ui, value);
+  const output = ui.registry.get("full-report").innerHTML;
+  assert.match(output, /调用异常记录（可能包含已恢复尝试）/);
+  assert.match(output, /错误类别：模型响应读取不完整/);
+  assert.match(output, /失败阶段：sop-T1-TC14.C01.call-023/);
+  assert.doesNotMatch(output, /private transport|private stack/);
+  assert.equal(ui.run("fullState.rounds[0].status"), "completed");
+  assert.match(ui.registry.get("sop-coverage-summary").textContent, /部分条件分析失败/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
 test("rule upload freezes offline and permits custom when default source is unavailable", async () => {
   const ui = setup();
   configure(ui);

@@ -6,12 +6,11 @@ import urllib.error
 import urllib.request
 
 from .legacy_evidence import redact
+from .failure_reporting import AuditFailure
 
 
-class ProviderError(ValueError):
-    def __init__(self, code):
-        super().__init__(code)
-        self.code = code
+class ProviderError(AuditFailure):
+    pass
 
 
 class DeepSeekClient:

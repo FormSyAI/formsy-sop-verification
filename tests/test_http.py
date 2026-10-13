@@ -152,6 +152,17 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual((submitted[0], submitted[2]), (202, queued))
             jobs.submit.assert_called_once_with(demo)
             self.assertEqual(self.call("/api/full-audits/123")[2], queued)
+            failed = {"id": "123", "status": "failed", "progress": "model:analysis-1.call-001", "error": {
+                "code": "full_audit_failed", "message": "Fixed safe message", "provider_code": "provider_network_or_timeout",
+                "error_category": "timeout", "failure_stage": "analysis-1.call-001", "exception_type": "TimeoutError",
+                "phase": "read", "transport_retry": False,
+                "recording_error": {"error_category": "storage", "failure_stage": "job_failure_write",
+                                    "exception_type": "OSError", "phase": "store", "transport_retry": False},
+            }}
+            jobs.get.return_value = failed
+            polled = self.call("/api/full-audits/123")
+            self.assertEqual(polled[0], 200)
+            self.assertEqual(polled[2], failed)
             jobs.get.return_value = None
             self.assertEqual(self.call("/api/full-audits/missing")[0], 404)
             jobs.submit.side_effect = RuntimeError("busy")

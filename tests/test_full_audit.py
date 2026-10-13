@@ -15,6 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from formsy_sop_verification.full_audit import (_ClientAdapter, _EnvironmentFullClient, _NoRedirects,
     catalog_summary, prepare_full, run_full_audit)
 from formsy_sop_verification.model_client import ProviderError
+from formsy_sop_verification.failure_reporting import AuditFailure, PROVIDER_TIMEOUT_SECONDS
 from formsy_sop_verification.trace_audit.tests.test_engine import scripted_result, synthetic_payload
 from formsy_sop_verification.trace_audit.tests.test_requirement_isolation import support_for
 from formsy_sop_verification.trace_audit.model_client import ModelOutputError
@@ -214,6 +215,11 @@ class FullAuditTests(unittest.TestCase):
                                 for path in Path(root).glob("*.provider-response.json")))
             self.assertTrue(any(json.loads(path.read_text()).get("code") == "provider_network_or_timeout"
                                 for path in Path(root).glob("*.error.json")))
+            diagnostic = report["model_snapshot"]["failure_diagnostics"][-1]
+            self.assertEqual(diagnostic["error_category"], "read_incomplete")
+            self.assertTrue(diagnostic["failure_stage"].endswith(f".call-{wire.call_count:03d}"))
+            self.assertTrue(diagnostic["response_partial"])
+            self.assertTrue(diagnostic["response_saved"])
 
     def test_invalid_request_missing_user_and_missing_config_fail_before_output(self):
         for mutate in [lambda payload: payload.update(mode="model"),
@@ -315,8 +321,10 @@ class FullAuditTests(unittest.TestCase):
                 self.assertEqual(artifact["truncated"], len(partial) > _EnvironmentFullClient.MAX_RESPONSE_BYTES)
                 self.assertNotIn("envelope", artifact)
                 self.assertNotIn("synthetic-key", json.dumps(artifact))
-                self.assertEqual(json.loads((Path(root) / "interrupted.call-001.error.json").read_text()),
-                                 {"code": "provider_network_or_timeout"})
+                diagnostic = json.loads((Path(root) / "interrupted.call-001.error.json").read_text())
+                self.assertEqual(diagnostic["code"], "provider_network_or_timeout")
+                self.assertEqual(diagnostic["error_category"], "read_incomplete")
+                self.assertEqual(diagnostic["captured_bytes"], min(len(partial), _EnvironmentFullClient.MAX_RESPONSE_BYTES))
                 self.assertFalse((Path(root) / "interrupted.call-001.response.json").exists())
                 self.assertEqual((adapter.calls, adapter.client.request_count, transport.call_count), (1, 1, 1))
 
@@ -331,8 +339,10 @@ class FullAuditTests(unittest.TestCase):
                 adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
                 with self.assertRaisesRegex(ValueError, "provider_network_or_timeout"):
                     adapter.complete("synthetic", {}, root, "http-error")
-                self.assertEqual(json.loads((Path(root) / "http-error.call-001.error.json").read_text()),
-                                 {"code": "provider_network_or_timeout"})
+                diagnostic = json.loads((Path(root) / "http-error.call-001.error.json").read_text())
+                self.assertEqual(diagnostic["code"], "provider_network_or_timeout")
+                self.assertEqual(diagnostic["error_category"], "connection")
+                self.assertEqual(diagnostic["phase"], "connect" if opening else "read")
                 self.assertEqual(transport.call_count, 1)
 
         with tempfile.TemporaryDirectory() as root, \
@@ -369,15 +379,259 @@ class FullAuditTests(unittest.TestCase):
                                 for call in transport.call_args_list))
 
     def test_http_error_artifact_storage_failure_is_not_mislabeled_as_network(self):
+        from formsy_sop_verification.full_audit import save_json as real_save
+        def failing_save(path, value):
+            if str(path).endswith(".provider-response.json"):
+                raise OSError("synthetic storage failure")
+            return real_save(path, value)
         with tempfile.TemporaryDirectory() as root, \
              patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
              patch("urllib.request.OpenerDirector.open", side_effect=urllib.error.HTTPError(
                  "https://api.deepseek.com/chat/completions", 402, "quota", {}, io.BytesIO(b"{}"))), \
-             patch.object(_EnvironmentFullClient, "_response", side_effect=OSError("synthetic storage failure")):
+             patch("formsy_sop_verification.full_audit.save_json", side_effect=failing_save):
             adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
-            with self.assertRaisesRegex(OSError, "synthetic storage failure"):
+            with self.assertRaisesRegex(AuditFailure, "full_audit_storage_failed") as caught:
                 adapter.complete("synthetic", {}, root, "storage")
-            self.assertFalse((Path(root) / "storage.call-001.error.json").exists())
+            self.assertEqual(caught.exception.failure_details["error_category"], "storage")
+            self.assertEqual(caught.exception.failure_details["http_status"], 402)
+            self.assertFalse(caught.exception.failure_details["response_saved"])
+            self.assertTrue((Path(root) / "storage.call-001.error.json").exists())
+
+    def test_transport_timeout_connection_and_read_failures_are_safe_and_do_not_retry(self):
+        class Interrupted:
+            def __init__(self, error): self.error = error
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): raise self.error
+        cases = [
+            (True, TimeoutError("synthetic-key private-source"), "timeout"),
+            (True, urllib.error.URLError(TimeoutError("synthetic-key private-source")), "timeout"),
+            (False, TimeoutError("synthetic-key private-source"), "timeout"),
+            (True, urllib.error.URLError(ConnectionResetError("synthetic-key private-source")), "connection"),
+            (False, http.client.RemoteDisconnected("synthetic-key private-source"), "connection"),
+        ]
+        for opening, error, category in cases:
+            with self.subTest(opening=opening, error=type(error).__name__), tempfile.TemporaryDirectory() as root, \
+                 patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+                 patch("urllib.request.OpenerDirector.open") as transport:
+                if opening:
+                    transport.side_effect = error
+                else:
+                    transport.return_value = Interrupted(error)
+                adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+                with self.assertRaisesRegex(AuditFailure, "^provider_network_or_timeout$") as caught:
+                    adapter.complete("synthetic", {}, root, "analysis-1")
+                details = caught.exception.failure_details
+                self.assertEqual(details["error_category"], category)
+                self.assertEqual(details["failure_stage"], "analysis-1.call-001")
+                self.assertEqual(details["phase"], "connect" if opening else "read")
+                self.assertEqual(details["provider_code"], "provider_network_or_timeout")
+                self.assertFalse(details["transport_retry"])
+                self.assertFalse(details["response_saved"])
+                self.assertNotIn("synthetic-key", json.dumps(details))
+                self.assertNotIn("private-source", json.dumps(details))
+                self.assertEqual(transport.call_count, 1)
+                self.assertEqual(transport.call_args.kwargs["timeout"], 180)
+                self.assertEqual(PROVIDER_TIMEOUT_SECONDS, 180)
+
+    def test_http_status_keeps_primary_classification_when_error_body_is_interrupted(self):
+        class Interrupted:
+            def read(self, size): raise http.client.IncompleteRead(b'{"error":', 100)
+            def close(self): pass
+        for status, category, code in [(401, "authentication", "provider_authentication_failed"),
+                (402, "quota", "provider_quota_exhausted"), (429, "rate_limit", "provider_rate_limited"),
+                (307, "http", "provider_http_error"), (500, "http", "provider_http_error")]:
+            for partial in (False, True):
+                with self.subTest(status=status, partial=partial), tempfile.TemporaryDirectory() as root, \
+                     patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+                     patch("urllib.request.OpenerDirector.open", side_effect=urllib.error.HTTPError(
+                         "https://api.deepseek.com/chat/completions", status, "synthetic-key private-source", {},
+                         Interrupted() if partial else io.BytesIO(b'{"error":"synthetic-key"}'))) as transport:
+                    adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+                    with self.assertRaises(AuditFailure) as caught:
+                        adapter.complete("synthetic", {}, root, "analysis-1")
+                    details = caught.exception.failure_details
+                    self.assertEqual(str(caught.exception), code)
+                    self.assertEqual(details["error_category"], category)
+                    self.assertEqual(details["http_status"], status)
+                    self.assertEqual(details["response_partial"], partial)
+                    self.assertTrue(details["response_saved"])
+                    if partial:
+                        self.assertEqual(details["transport_issue"], "read_incomplete")
+                    self.assertEqual(transport.call_count, 1)
+                    artifact = json.loads(next(Path(root).glob("*.provider-response.json")).read_text())
+                    self.assertNotIn("synthetic-key", json.dumps(artifact))
+
+    def test_storage_failures_are_not_transport_failures_even_for_socket_error_types(self):
+        from formsy_sop_verification.full_audit import save_json as real_save
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): return b'{"choices":[{"finish_reason":"stop","message":{"content":"{}"}}]}'
+        for suffix in (".provider-request.json", ".provider-response.json"):
+            for error in (PermissionError("private-source"), TimeoutError("private-source"), ConnectionResetError("private-source")):
+                def failing_save(path, value):
+                    if str(path).endswith(suffix): raise error
+                    return real_save(path, value)
+                with self.subTest(suffix=suffix, error=type(error).__name__), tempfile.TemporaryDirectory() as root, \
+                     patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+                     patch("urllib.request.OpenerDirector.open", return_value=Response()) as transport, \
+                     patch("formsy_sop_verification.full_audit.save_json", side_effect=failing_save):
+                    adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+                    with self.assertRaisesRegex(AuditFailure, "^full_audit_storage_failed$") as caught:
+                        adapter.complete("synthetic", {}, root, "analysis-1")
+                    details = caught.exception.failure_details
+                    self.assertEqual(details["error_category"], "storage")
+                    self.assertEqual(details["phase"], "store")
+                    self.assertEqual(details["exception_type"], type(error).__name__)
+                    self.assertNotIn("private-source", json.dumps(details))
+                    self.assertEqual(transport.call_count, 0 if suffix == ".provider-request.json" else 1)
+
+    def test_output_retry_history_survives_real_offline_pipeline_without_marking_it_fatal(self):
+        scripted = OfflineClient()
+        first = True
+        class Response:
+            def __init__(self, body): self.body = body
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): return self.body
+        def transport(request, **kwargs):
+            nonlocal first
+            if first:
+                first = False
+                return Response(b'{bad-json')
+            body = json.loads(request.data)
+            candidate = scripted.complete(body["messages"][0]["content"], json.loads(body["messages"][1]["content"]))
+            return Response(json.dumps({"choices": [{"finish_reason": "stop", "message": {
+                "content": json.dumps(candidate)}}]}).encode())
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+             patch("urllib.request.OpenerDirector.open", side_effect=transport) as wire:
+            report = run_full_audit(synthetic_payload(), directory=root, max_sop_calls=8)
+            history = report["model_snapshot"]["failure_diagnostics"]
+            self.assertEqual(len(history), 1)
+            self.assertEqual(history[0]["error_category"], "output")
+            self.assertEqual(history[0]["failure_stage"], "task-extraction-1.call-001")
+            self.assertEqual(history[0]["phase"], "parse")
+            self.assertTrue(history[0]["response_saved"])
+            self.assertIsNone(report["sop_coverage"]["provider_failure"])
+            self.assertEqual(len(report["checks"]), 6)
+            self.assertEqual(report["model_snapshot"]["api_request_count"], wire.call_count)
+            self.assertTrue((Path(root) / "task-extraction-1.call-001.provider-response.json").exists())
+            self.assertTrue((Path(root) / "task-extraction-2.call-002.provider-response.json").exists())
+
+    def test_unexpected_client_and_engine_exceptions_never_expose_exception_text(self):
+        class Unexpected(OfflineClient):
+            def complete(self, system, payload):
+                raise RuntimeError("synthetic-key private-source")
+        for engine_failure in (False, True):
+            client = OfflineClient() if engine_failure else Unexpected()
+            with self.subTest(engine_failure=engine_failure), tempfile.TemporaryDirectory() as root:
+                failure_patch = patch("formsy_sop_verification.full_audit.audit_policy.apply_policy",
+                    side_effect=AttributeError("synthetic-key private-source")) if engine_failure else patch(
+                    "urllib.request.urlopen", side_effect=AssertionError("offline only"))
+                with failure_patch, self.assertRaisesRegex(AuditFailure, "^full_audit_internal_unknown$") as caught:
+                    run_full_audit(synthetic_payload(), directory=root, client=client)
+                details = caught.exception.failure_details
+                self.assertEqual(details["error_category"], "internal_unknown")
+                self.assertEqual(details["failure_stage"], "apply_policy" if engine_failure else "task-extraction-1.call-001")
+                failure = json.loads((Path(root) / "failure.json").read_text())
+                self.assertEqual(failure["failure_stage"], details["failure_stage"])
+                self.assertNotIn("synthetic-key", json.dumps(failure))
+                self.assertNotIn("private-source", json.dumps(failure))
+
+    def test_diagnostic_write_failures_preserve_the_original_provider_failure(self):
+        from formsy_sop_verification.full_audit import save_json as real_save
+        class Failing(OfflineClient):
+            def complete(self, system, payload):
+                self.calls += 1
+                raise ProviderError("provider_authentication_failed", http_status=401,
+                    phase="connect", exception_type="HTTPError")
+        for suffix in (".error.json", "failure.json"):
+            def failing_save(path, value):
+                if str(path).endswith(suffix):
+                    raise PermissionError("synthetic-key private-source")
+                return real_save(path, value)
+            with self.subTest(suffix=suffix), tempfile.TemporaryDirectory() as root, \
+                 patch("formsy_sop_verification.full_audit.save_json", side_effect=failing_save):
+                client = Failing()
+                with self.assertRaisesRegex(AuditFailure, "^provider_authentication_failed$") as caught:
+                    run_full_audit(synthetic_payload(), directory=root, client=client)
+                details = caught.exception.failure_details
+                self.assertEqual(details["error_category"], "authentication")
+                self.assertEqual(details["failure_stage"], "task-extraction-1.call-001")
+                self.assertEqual(details["http_status"], 401)
+                self.assertEqual(details["recording_error"]["error_category"], "storage")
+                self.assertEqual(details["recording_error"]["exception_type"], "PermissionError")
+                self.assertEqual(details["recording_error"]["phase"], "store")
+                self.assertNotIn("synthetic-key", json.dumps(details))
+                self.assertNotIn("private-source", json.dumps(details))
+                self.assertEqual(client.calls, 1)
+                if suffix == ".error.json":
+                    saved = json.loads((Path(root) / "failure.json").read_text())
+                    self.assertEqual(saved["error_category"], "authentication")
+                    self.assertEqual(saved["recording_error"]["error_category"], "storage")
+
+    def test_existing_diagnostic_is_not_overwritten(self):
+        class Failing(OfflineClient):
+            def complete(self, system, payload):
+                raise ProviderError("provider_rate_limited")
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "analysis-1.call-001.error.json"
+            path.write_text('{"prior":"retained"}')
+            adapter = _ClientAdapter(Failing(), 8, lambda stage: None)
+            with self.assertRaisesRegex(AuditFailure, "provider_rate_limited"):
+                adapter.complete("synthetic", {}, root, "analysis-1")
+            self.assertEqual(path.read_text(), '{"prior":"retained"}')
+            self.assertEqual(adapter.failure_diagnostics[-1]["error_category"], "rate_limit")
+
+    def test_model_output_exception_text_and_custom_code_do_not_enter_feedback_or_diagnostics(self):
+        class Failing(OfflineClient):
+            def complete(self, system, payload):
+                error = ModelOutputError("synthetic-key private-source", truncated=True)
+                error.code = "synthetic-key private-source"
+                raise error
+        with tempfile.TemporaryDirectory() as root:
+            adapter = _ClientAdapter(Failing(), 8, lambda stage: None)
+            with self.assertRaisesRegex(ModelOutputError, "^provider_invalid_candidate$") as caught:
+                adapter.complete("synthetic", {}, root, "analysis-1")
+            self.assertTrue(caught.exception.truncated)
+            diagnostic = json.loads((Path(root) / "analysis-1.call-001.error.json").read_text())
+            self.assertEqual(diagnostic["code"], "provider_invalid_candidate")
+            self.assertNotIn("synthetic-key", json.dumps(diagnostic))
+            self.assertNotIn("private-source", json.dumps(diagnostic))
+
+    def test_unknown_read_exception_and_interrupted_http_error_keep_their_phase_and_primary_cause(self):
+        class Interrupted:
+            def __init__(self, error): self.error = error
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): raise self.error
+            def close(self): pass
+        cases = [
+            (Interrupted(RuntimeError("synthetic-key private-source")), None, "full_audit_internal_unknown", "internal_unknown"),
+            (None, urllib.error.HTTPError("https://api.deepseek.com/chat/completions", 402,
+                "synthetic-key private-source", {}, Interrupted(TimeoutError("private-source"))),
+                "provider_quota_exhausted", "quota"),
+        ]
+        for response, error, code, category in cases:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as root, \
+                 patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+                 patch("urllib.request.OpenerDirector.open", return_value=response, side_effect=error) as transport:
+                adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+                with self.assertRaises(AuditFailure) as caught:
+                    adapter.complete("synthetic", {}, root, "analysis-1")
+                self.assertEqual(str(caught.exception), code)
+                details = caught.exception.failure_details
+                self.assertEqual(details["error_category"], category)
+                self.assertEqual(details["phase"], "read")
+                if error:
+                    self.assertEqual(details["http_status"], 402)
+                    self.assertEqual(details["transport_issue"], "timeout")
+                self.assertFalse(details["response_saved"])
+                self.assertNotIn("synthetic-key", json.dumps(details))
+                self.assertNotIn("private-source", json.dumps(details))
+                self.assertEqual(transport.call_count, 1)
 
     def test_quota_network_and_redirect_errors_stop_without_whole_run_retry(self):
         for error, expected in [

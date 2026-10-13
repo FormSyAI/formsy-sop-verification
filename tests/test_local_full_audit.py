@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from formsy_sop_verification.local_full_audit import FullAuditJobs
+from formsy_sop_verification import local_full_audit
+from formsy_sop_verification.failure_reporting import AuditFailure
 
 
 class LocalFullAuditTests(unittest.TestCase):
@@ -96,8 +98,131 @@ class LocalFullAuditTests(unittest.TestCase):
             job = jobs.submit({"title": "synthetic quota fixture"})
             result = self.terminal(jobs, job["id"])
             self.assertEqual(result["error"]["provider_code"], "provider_quota_exhausted")
+            self.assertEqual(result["error"]["code"], "full_audit_failed")
+            self.assertEqual(result["error"]["error_category"], "quota")
             self.assertEqual(result["status"], "failed")
             self.assertEqual(calls, [1])
+
+    def test_internal_failure_keeps_safe_model_stage_and_progress(self):
+        def run(*_, stage_callback, **__):
+            stage_callback("model:requirement-review-1.call-002")
+            raise KeyError("private source text and secret value")
+
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            job = jobs.submit({"title": "fixture"})
+            result = self.terminal(jobs, job["id"])
+            self.assertEqual(result["progress"], "model:requirement-review-1.call-002")
+            error = result["error"]
+            self.assertEqual(error["code"], "full_audit_failed")
+            self.assertEqual(error["error_category"], "internal_unknown")
+            self.assertEqual(error["failure_stage"], result["progress"])
+            self.assertEqual(error["exception_type"], "KeyError")
+            self.assertFalse(error["transport_retry"])
+            saved = json.loads((Path(root) / job["id"] / "failure.json").read_text())
+            self.assertEqual(saved, error)
+            self.assertNotIn("private source", json.dumps(result))
+
+    def test_failure_stage_and_progress_do_not_include_dynamic_task_titles(self):
+        def run(*_, stage_callback, **__):
+            stage_callback("选择任务适用的原SOP条款：private task title")
+            raise ValueError("private exception message")
+
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            job = jobs.submit({"title": "fixture"})
+            result = self.terminal(jobs, job["id"])
+            self.assertEqual(result["progress"], "选择任务适用的原SOP条款")
+            self.assertEqual(result["error"]["failure_stage"], "job_run")
+            self.assertNotIn("private", json.dumps(result))
+            self.assertNotIn("private", (Path(root) / job["id"] / "failure.json").read_text())
+
+    def test_typed_engine_failure_preserves_original_stage_and_transport_details(self):
+        def run(*_, stage_callback, **__):
+            stage_callback("model:analysis-1.call-003")
+            raise AuditFailure("provider_network_or_timeout", error_category="timeout",
+                               failure_stage="requirement-review-1.call-002", exception_type="TimeoutError",
+                               phase="read", response_saved=True, response_partial=True, captured_bytes=7)
+
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            job = jobs.submit({"title": "fixture"})
+            error = self.terminal(jobs, job["id"])["error"]
+            self.assertEqual(error["code"], "full_audit_failed")
+            self.assertEqual(error["provider_code"], "provider_network_or_timeout")
+            self.assertEqual(error["failure_stage"], "requirement-review-1.call-002")
+            self.assertEqual(error["error_category"], "timeout")
+            self.assertEqual(error["exception_type"], "TimeoutError")
+            self.assertEqual(error["phase"], "read")
+            self.assertTrue(error["response_saved"])
+            self.assertTrue(error["response_partial"])
+            self.assertEqual(error["captured_bytes"], 7)
+
+    def test_unlisted_exception_class_name_is_not_exposed(self):
+        class PrivateCustomerException(Exception):
+            pass
+
+        def run(*_, **__):
+            raise PrivateCustomerException("private error body")
+
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            job = jobs.submit({"title": "fixture"})
+            error = self.terminal(jobs, job["id"])["error"]
+            self.assertEqual(error["exception_type"], "UnexpectedError")
+            self.assertNotIn("PrivateCustomer", json.dumps(error))
+            self.assertNotIn("private error", json.dumps(error))
+
+    def test_report_write_failure_is_classified_as_storage(self):
+        original = local_full_audit.private_json
+
+        def save(path, value):
+            if path.name == "report.json":
+                raise PermissionError("private output path")
+            original(path, value)
+
+        with tempfile.TemporaryDirectory() as root, patch.object(local_full_audit, "private_json", side_effect=save):
+            jobs = FullAuditJobs(root, runner=lambda *_, **__: {"candidate": True}, prepare=lambda _: None)
+            job = jobs.submit({"title": "fixture"})
+            error = self.terminal(jobs, job["id"])["error"]
+            self.assertEqual(error["code"], "full_audit_failed")
+            self.assertEqual(error["error_category"], "storage")
+            self.assertEqual(error["failure_stage"], "job_report_write")
+            self.assertEqual(error["exception_type"], "PermissionError")
+            self.assertEqual(error["phase"], "store")
+            self.assertNotIn("private", json.dumps(error))
+            self.assertEqual(json.loads((Path(root) / job["id"] / "failure.json").read_text()), error)
+
+    def test_failure_record_write_error_does_not_replace_the_original_failure(self):
+        calls = []
+        original = local_full_audit.private_json
+
+        def run(*_, stage_callback, **__):
+            calls.append(1)
+            stage_callback("model:analysis-1.call-001")
+            raise KeyError("private first error")
+
+        def save(path, value):
+            if path.name == "failure.json":
+                raise OSError("private recording path")
+            original(path, value)
+
+        with tempfile.TemporaryDirectory() as root, patch.object(local_full_audit, "private_json", side_effect=save):
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            job = jobs.submit({"title": "fixture"})
+            result = self.terminal(jobs, job["id"])
+            error = result["error"]
+            self.assertEqual(calls, [1])
+            self.assertEqual(error["code"], "full_audit_failed")
+            self.assertEqual(error["error_category"], "internal_unknown")
+            self.assertEqual(error["failure_stage"], "model:analysis-1.call-001")
+            self.assertEqual(error["exception_type"], "KeyError")
+            self.assertEqual(error["recording_error"]["error_category"], "storage")
+            self.assertEqual(error["recording_error"]["failure_stage"], "job_failure_write")
+            self.assertEqual(error["recording_error"]["exception_type"], "OSError")
+            self.assertEqual(result["progress"], "model:analysis-1.call-001")
+            self.assertNotIn("private", json.dumps(result))
+            self.assertFalse((Path(root) / job["id"] / "failure.json").exists())
 
     def test_prepare_rejects_before_a_job_is_started(self):
         def reject(_):
@@ -118,6 +243,8 @@ class LocalFullAuditTests(unittest.TestCase):
                     jobs.submit({"title": "fixture"})
             failed = next(iter(jobs.jobs.values()))
             self.assertEqual(failed["status"], "failed")
+            self.assertEqual(failed["error"]["error_category"], "start")
+            self.assertEqual(failed["error"]["failure_stage"], "job_start")
             self.assertTrue((Path(root) / failed["id"] / "failure.json").is_file())
             following = jobs.submit({"title": "next fixture"})
             self.assertEqual(self.terminal(jobs, following["id"])["status"], "completed")
