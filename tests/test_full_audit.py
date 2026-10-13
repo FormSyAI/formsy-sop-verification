@@ -1,5 +1,6 @@
 """Offline integration of the packaged engine, its adapter and explicit CLI."""
 import copy
+import http.client
 import io
 import json
 from pathlib import Path
@@ -173,6 +174,47 @@ class FullAuditTests(unittest.TestCase):
             self.assertTrue((Path(root) / "report.json").exists())
             self.assertTrue(any(Path(root).glob("*.error.json")))
 
+    def test_http_read_interruption_in_sop_preserves_partial_report_and_stops_transport(self):
+        scripted = OfflineClient()
+        stopped = False
+
+        class Response:
+            def __init__(self, candidate=None, interrupted=False):
+                self.candidate, self.interrupted = candidate, interrupted
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size):
+                if self.interrupted:
+                    raise http.client.IncompleteRead(b'{"choices":[', 100)
+                return json.dumps({"choices": [{"finish_reason": "stop", "message": {
+                    "content": json.dumps(self.candidate)}}]}).encode()
+
+        def transport(request, **kwargs):
+            nonlocal stopped
+            self.assertFalse(stopped, "No provider calls after an interrupted SOP response")
+            body = json.loads(request.data)
+            payload = json.loads(body["messages"][1]["content"])
+            if "candidate_rules" in payload:
+                stopped = True
+                return Response(interrupted=True)
+            return Response(scripted.complete(body["messages"][0]["content"], payload))
+
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+             patch("urllib.request.OpenerDirector.open", side_effect=transport) as wire:
+            report = run_full_audit(synthetic_payload(), directory=root)
+            self.assertTrue(stopped)
+            self.assertFalse(report["sop_coverage"]["analysis_complete"])
+            self.assertEqual(len(report["sop_condition_checks"]), 144)
+            self.assertTrue(any(item["kind"] == "provider_failure"
+                                for item in report["sop_coverage"]["failures"]))
+            self.assertEqual(report["model_snapshot"]["api_request_count"], wire.call_count)
+            self.assertTrue((Path(root) / "report.json").exists())
+            self.assertTrue(any(json.loads(path.read_text()).get("transport_incomplete")
+                                for path in Path(root).glob("*.provider-response.json")))
+            self.assertTrue(any(json.loads(path.read_text()).get("code") == "provider_network_or_timeout"
+                                for path in Path(root).glob("*.error.json")))
+
     def test_invalid_request_missing_user_and_missing_config_fail_before_output(self):
         for mutate in [lambda payload: payload.update(mode="model"),
                        lambda payload: payload.update(audit_context={"profile": "other"}),
@@ -249,6 +291,63 @@ class FullAuditTests(unittest.TestCase):
             self.assertEqual(artifact["captured_bytes"], 1024 * 1024)
             self.assertFalse((Path(root) / "oversized.call-001.response.json").exists())
 
+    def test_interrupted_http_response_keeps_partial_evidence_and_never_retries(self):
+        class Interrupted:
+            def __init__(self, error): self.error = error
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size): raise self.error
+            def close(self): pass
+
+        partials = [b'{"token":"synthetic-key",', b"x" * (_EnvironmentFullClient.MAX_RESPONSE_BYTES + 1)]
+        for partial in partials:
+            with self.subTest(size=len(partial)), tempfile.TemporaryDirectory() as root, \
+                 patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+                 patch("urllib.request.OpenerDirector.open", return_value=Interrupted(
+                     http.client.IncompleteRead(partial, 100))) as transport:
+                adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+                with self.assertRaisesRegex(ValueError, "provider_network_or_timeout"):
+                    adapter.complete("synthetic", {}, root, "interrupted")
+                artifact = json.loads((Path(root) / "interrupted.call-001.provider-response.json").read_text())
+                self.assertTrue(artifact["transport_incomplete"])
+                self.assertEqual(artifact["http_status"], 200)
+                self.assertEqual(artifact["captured_bytes"], min(len(partial), _EnvironmentFullClient.MAX_RESPONSE_BYTES))
+                self.assertEqual(artifact["truncated"], len(partial) > _EnvironmentFullClient.MAX_RESPONSE_BYTES)
+                self.assertNotIn("envelope", artifact)
+                self.assertNotIn("synthetic-key", json.dumps(artifact))
+                self.assertEqual(json.loads((Path(root) / "interrupted.call-001.error.json").read_text()),
+                                 {"code": "provider_network_or_timeout"})
+                self.assertFalse((Path(root) / "interrupted.call-001.response.json").exists())
+                self.assertEqual((adapter.calls, adapter.client.request_count, transport.call_count), (1, 1, 1))
+
+        for opening in [True, False]:
+            with self.subTest(opening=opening), tempfile.TemporaryDirectory() as root, \
+                 patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+                 patch("urllib.request.OpenerDirector.open") as transport:
+                if opening:
+                    transport.side_effect = http.client.HTTPException("synthetic-key must never appear")
+                else:
+                    transport.return_value = Interrupted(http.client.HTTPException("synthetic-key must never appear"))
+                adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+                with self.assertRaisesRegex(ValueError, "provider_network_or_timeout"):
+                    adapter.complete("synthetic", {}, root, "http-error")
+                self.assertEqual(json.loads((Path(root) / "http-error.call-001.error.json").read_text()),
+                                 {"code": "provider_network_or_timeout"})
+                self.assertEqual(transport.call_count, 1)
+
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+             patch("urllib.request.OpenerDirector.open", side_effect=urllib.error.HTTPError(
+                 "https://api.deepseek.com/chat/completions", 402, "quota", {},
+                 Interrupted(http.client.IncompleteRead(b'{"error":', 100)))) as transport:
+            adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+            with self.assertRaisesRegex(ValueError, "provider_quota_exhausted"):
+                adapter.complete("synthetic", {}, root, "quota-interrupted")
+            artifact = json.loads((Path(root) / "quota-interrupted.call-001.provider-response.json").read_text())
+            self.assertEqual(artifact["http_status"], 402)
+            self.assertTrue(artifact["transport_incomplete"])
+            self.assertEqual(transport.call_count, 1)
+
     def test_actual_transport_budget_includes_all_recovery_calls_and_blocks_redirects(self):
         class Response:
             def __enter__(self): return self
@@ -268,6 +367,17 @@ class FullAuditTests(unittest.TestCase):
             self.assertEqual((adapter.calls, client.request_count, transport.call_count), (80, 80, 80))
             self.assertTrue(all(call.args[0].full_url == "https://api.deepseek.com/chat/completions"
                                 for call in transport.call_args_list))
+
+    def test_http_error_artifact_storage_failure_is_not_mislabeled_as_network(self):
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key"}), \
+             patch("urllib.request.OpenerDirector.open", side_effect=urllib.error.HTTPError(
+                 "https://api.deepseek.com/chat/completions", 402, "quota", {}, io.BytesIO(b"{}"))), \
+             patch.object(_EnvironmentFullClient, "_response", side_effect=OSError("synthetic storage failure")):
+            adapter = _ClientAdapter(_EnvironmentFullClient(), 8, lambda stage: None)
+            with self.assertRaisesRegex(OSError, "synthetic storage failure"):
+                adapter.complete("synthetic", {}, root, "storage")
+            self.assertFalse((Path(root) / "storage.call-001.error.json").exists())
 
     def test_quota_network_and_redirect_errors_stop_without_whole_run_retry(self):
         for error, expected in [

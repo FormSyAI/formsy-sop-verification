@@ -63,6 +63,13 @@ python3 -I scripts/verify.py < examples/offline-request.json
 
 精确输入输出、引用格式和模式见[worker 契约](docs/worker-contract.md)。输入最多 2 MiB、400 份证据、32 万字符；超限明确拒绝。
 
+主站任务页可直接复用整个右侧工作台。运行本机服务时用
+`python3 -I scripts/serve.py --port 8769 --embed-origin http://127.0.0.1:4175`，
+再为 Web 本地预览配置 `--workbench-url http://127.0.0.1:8769/`。
+嵌入模式使用 `?embed=1&parent_origin=...` 隐藏独立页导航与顶栏；七区块、上传、模型配置和证据弹窗共用现成代码。
+窗口消息仅传高度、滚动位置和可见区域，校验来源，不传任务材料、报告或密钥，也不自动启动模型。
+默认禁止被嵌入；`--embed-origin` 仅接受带端口的明确 HTTP loopback 来源。
+
 ## 模型与部署
 
 原 4 项集成的部署基线：Server `345d833a3933ba6193993f0913782989e51a1523`（[PR #25](https://github.com/FormSyAI/formsy-server/pull/25)），Web `ff020f76e32275b1d4bd7449e3cad286ae6d92d4`（[PR #6](https://github.com/FormSyAI/formsy-web/pull/6)），worker `2328953cd9eefec02c6c09df7fbb9f3aaf6395e8`。本轮主站 UI 与只读预览更新见 [PR #7](https://github.com/FormSyAI/formsy-web/pull/7)；完整审计与自定义 SOP 接口尚未接入共享服务。
@@ -83,6 +90,8 @@ FORMSY_SOP_VERIFICATION_MODEL=deepseek-flash
 密钥由部署环境提供。worker 不自动读取当前工作目录或其他仓库的配置。Server 使用固定解释器和脚本启动隔离子进程，不执行来源或模型返回的命令。
 
 快速 worker 采用有界的单次请求。完整审计使用本地异步作业，SOP 阶段最多 64 次、全流程最多 80 次模型请求（含有界恢复）；模型失败保留明确失败状态，不自动重跑整轮，不推断业务通过。停止查看进度不会取消后台作业，进程重启后需要导入磁盘上保留的报告回放。接入正式 FormSy 任务页需部署匹配的 Server/Web 变更；独立本地页面可以单独运行。
+
+HTTP 响应读取中断会保存固定错误码；若有部分响应，另存有界、脱敏且标记 `transport_incomplete` 的原始记录，不作为完整候选解析。已知 HTTP 错误状态仍保留，不因错误响应正文中断而误标。此处理不重试请求，也不能还原修复前未记录的异常原因。
 
 部署前备份数据库并核对 SQLx `0025` 无冲突，保留原 Compose project、配置文件、卷、OAuth 和密钥，不执行 `down -v`。迁移后不含 `0025` 的旧 Server 镜像会报 `VersionMissing(25)`，不能直接回滚；停用 worker 或恢复完整备份的步骤见[管理员说明](docs/server-connection.md#5-停用与回滚)。
 

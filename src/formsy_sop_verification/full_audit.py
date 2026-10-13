@@ -4,6 +4,7 @@ from collections import Counter
 import copy
 from datetime import datetime, timezone
 import hashlib
+import http.client
 import json
 import os
 from pathlib import Path
@@ -151,14 +152,16 @@ class _EnvironmentFullClient:
         self.request_count = 0
         self.opener = urllib.request.build_opener(_NoRedirects())
 
-    def _response(self, raw, directory, stage, *, http_status=200):
+    def _response(self, raw, directory, stage, *, http_status=200, transport_incomplete=False):
         text = raw[:self.MAX_RESPONSE_BYTES].decode("utf-8", errors="replace")
         artifact = {"http_status": http_status, "raw_text": redact(text, (self.key,)),
                     "received_sha256": "sha256:" + hashlib.sha256(raw).hexdigest(),
                     "captured_bytes": min(len(raw), self.MAX_RESPONSE_BYTES),
                     "truncated": len(raw) > self.MAX_RESPONSE_BYTES}
+        if transport_incomplete:
+            artifact["transport_incomplete"] = True
         # Preserve the complete bounded envelope even when candidate JSON is invalid.
-        if len(raw) <= self.MAX_RESPONSE_BYTES:
+        if not transport_incomplete and len(raw) <= self.MAX_RESPONSE_BYTES:
             try:
                 artifact["envelope"] = redact_value(decode_json(raw), (self.key,))
             except (ValueError, UnicodeError, RecursionError):
@@ -181,17 +184,26 @@ class _EnvironmentFullClient:
                     data=serialized, headers={"Authorization": "Bearer " + self.key,
                                               "Content-Type": "application/json"})
         self.request_count += 1
+        http_status = None
+        failure_code = "provider_network_or_timeout"
         try:
-            with self.opener.open(request, timeout=55) as response:
-                raw = response.read(self.MAX_RESPONSE_BYTES + 1)
-        except urllib.error.HTTPError as exc:
-            raw = exc.read(self.MAX_RESPONSE_BYTES + 1)
-            self._response(raw, directory, stage, http_status=exc.code)
-            raise ProviderError({401: "provider_authentication_failed", 402: "provider_quota_exhausted",
-                                 429: "provider_rate_limited"}.get(exc.code, "provider_http_error")) from None
-        except (urllib.error.URLError, TimeoutError, OSError):
-            raise ProviderError("provider_network_or_timeout") from None
-        self._response(raw, directory, stage)
+            try:
+                with self.opener.open(request, timeout=55) as response:
+                    http_status = 200
+                    raw = response.read(self.MAX_RESPONSE_BYTES + 1)
+            except urllib.error.HTTPError as exc:
+                http_status = exc.code
+                failure_code = {401: "provider_authentication_failed", 402: "provider_quota_exhausted",
+                                429: "provider_rate_limited"}.get(exc.code, "provider_http_error")
+                raw = exc.read(self.MAX_RESPONSE_BYTES + 1)
+        except http.client.IncompleteRead as exc:
+            self._response(exc.partial, directory, stage, http_status=http_status, transport_incomplete=True)
+            raise ProviderError(failure_code) from None
+        except (urllib.error.URLError, TimeoutError, OSError, http.client.HTTPException):
+            raise ProviderError(failure_code) from None
+        self._response(raw, directory, stage, http_status=http_status)
+        if http_status != 200:
+            raise ProviderError(failure_code)
         if len(raw) > self.MAX_RESPONSE_BYTES:
             raise ProviderError("provider_response_too_large")
         try:

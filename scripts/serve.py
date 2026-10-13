@@ -106,7 +106,18 @@ def save_record(directory, request, report):
     return record
 
 
-def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_jobs=None):
+def loopback_origin(value):
+    parsed = urlsplit(value)
+    if (parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost"}
+            or parsed.username or parsed.password or parsed.path or parsed.query or parsed.fragment
+            or parsed.port is None or not 1 <= parsed.port <= 65535
+            or value != f"http://{parsed.hostname}:{parsed.port}"):
+        raise ValueError("embed_origin_must_be_an_explicit_loopback_origin")
+    return value
+
+
+def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_jobs=None, embed_origin=None):
+    frame_ancestors = loopback_origin(embed_origin) if embed_origin else "'none'"
     root = Path(root).resolve()
     demo = load_demo(root, demo_report)
     web = (root / "web").resolve()
@@ -139,7 +150,7 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_j
             self.send_header("Referrer-Policy", "no-referrer")
             self.send_header("Content-Security-Policy", "default-src 'self'; connect-src 'self'; "
                              "img-src 'self' data:; style-src 'self'; script-src 'self'; "
-                             "frame-ancestors 'none'; base-uri 'none'; form-action 'self'")
+                             f"frame-ancestors {frame_ancestors}; base-uri 'none'; form-action 'self'")
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
@@ -326,11 +337,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--port", type=int, default=8769)
     parser.add_argument("--demo-report", type=Path)
+    parser.add_argument("--embed-origin", help="Allow this exact local FormSy preview origin to embed the UI.")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("port must be between 1 and 65535")
     try:
-        server = make_server(port=args.port, demo_report=args.demo_report)
+        server = make_server(port=args.port, demo_report=args.demo_report, embed_origin=args.embed_origin)
     except (OSError, ValueError, KeyError, TypeError):
         parser.exit(2, "Could not load matched demo files or bind the loopback port.\n")
     print(f"Local candidate review: http://127.0.0.1:{server.server_port}", flush=True)

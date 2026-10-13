@@ -62,6 +62,25 @@ class HTTPTests(unittest.TestCase):
             verify.assert_not_called()
         self.assertFalse(self.records.exists())
 
+    def test_embedding_defaults_to_blocked_and_allows_only_an_explicit_local_origin(self):
+        status, headers, _ = self.call("/")
+        self.assertEqual(status, 200)
+        self.assertIn("frame-ancestors 'none'", headers["Content-Security-Policy"])
+        for value in ["https://example.com", "http://127.0.0.1", "http://127.0.0.1:4175/",
+                      "http://127.0.0.1:4175\n", "http://localhost:4175?x=1", "http://user@localhost:4175"]:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                local_server.make_server(port=0, embed_origin=value)
+        with patch.object(local_server, "ThreadingHTTPServer") as server:
+            local_server.make_server(port=0, embed_origin="http://127.0.0.1:4175")
+            handler = server.call_args.args[1]
+            response = Mock()
+            response.command = "HEAD"
+            handler.reply(response, 200, b"")
+            csp = next(call.args[1] for call in response.send_header.call_args_list
+                       if call.args[0] == "Content-Security-Policy")
+            self.assertIn("frame-ancestors http://127.0.0.1:4175;", csp)
+            self.assertIn("connect-src 'self'", csp)
+
     def test_offline_round_uses_real_core_and_saves_private_append_only_records(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("no network")):
             first = self.call(body=json.dumps({"request": self.payload}).encode())
