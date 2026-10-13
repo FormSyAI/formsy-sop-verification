@@ -32,9 +32,10 @@
     {
       "path": "audit_engine.py",
       "upstream_sha256": "e5a53136d7c478cc3061718f240dbe08815e6565558a552166ed26e3ac2ff143",
-      "packaged_sha256": "0cf06e4afd40faf9f6cd2ae5ae58eceb8c4c8869eff9b33af51fb5e31497de40",
+      "packaged_sha256": "83fd736e7886ab8c1c9cc24248e5039f941ac463ce259a969b34d0886159b160",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local shared extraction prompt keeps unverified causal background out of goals and acceptance points, including negated reextraction phrasing; validators and budgets unchanged"
       ]
     },
     {
@@ -273,9 +274,10 @@
     {
       "path": "tests/test_requirement_summary.py",
       "upstream_sha256": "465b210125cafa834bcc644f2498571966b14a15b406cbe5ee65667f1b465827",
-      "packaged_sha256": "a64db596790d89e49a27acc590f88b92646a013fe40a9ee88b5e0aadecbafc34",
+      "packaged_sha256": "086914b6b9941e7581336df155f566f8b90105fbd3f4db0d0782e121718c6f49",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local replay of original and negated causal diagnosis rejects inconsistent support booleans without freezing or adding attempts"
       ]
     },
     {

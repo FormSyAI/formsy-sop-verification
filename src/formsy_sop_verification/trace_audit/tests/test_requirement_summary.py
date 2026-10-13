@@ -159,6 +159,52 @@ class RequirementSummaryTests(unittest.TestCase):
         self.assertEqual(frozen['support_review']['tasks'][0]['summary_checks'][1]['field'], 'goal')
         self.assertTrue(all(value == before for value, before in responses))
 
+    def test_negated_diagnosis_on_recheck_still_stops_before_freeze(self):
+        raw = synthetic_payload()
+        raw['trace']['messages'] = [{'role': 'user', 'content': ORIGINAL_ISSUE}]
+        package = engine.normalize(raw, RULES)
+        user = next(item for item in package['evidence'] if item['kind'] == 'user_requirement')
+        stages, responses = [], []
+        causes = ['因输出为字符串导致 TypeError。', '而不是因输出为字符串触发 TypeError。']
+        test = self
+
+        class Client:
+            def complete(client, system, payload, directory, stage):
+                stages.append(stage)
+                cause = causes[int('-recheck-' in stage)]
+                if stage.startswith('task-extraction'):
+                    test.assertIn('title、goal及acceptance_points.requirement', system)
+                    test.assertIn('不能只替换因果词、添加否定词', system)
+                    if '-recheck-' in stage:
+                        test.assertIn(causes[0], '\n'.join(payload['requirement_support_feedback']))
+                    value = baseline_for(package)
+                    task = value['tasks'][0]
+                    task['goal'] = '默认TABLE应正确完成；' + cause
+                    task['acceptance_points'][0]['requirement'] = '默认TABLE应正确完成。'
+                    task['requirement_refs'].append(reference(user, 3))
+                else:
+                    test.assertTrue(stage.startswith('requirement-review'))
+                    value = support_for(payload['candidate_tasks'])
+                    goal = value['tasks'][0]['summary_checks'][1]
+                    # Replay the real failure: the boolean claims support despite factualized fragments.
+                    goal.update(supported=True, reason='前半句是目标，后半句将用户猜测事实化，故不支持。',
+                        fragments=[{'text': '默认TABLE应正确完成；', 'source_class': 'reported_problem',
+                                    'presentation': 'requirement', 'source_refs': [reference(user)]},
+                                   {'text': cause, 'source_class': 'diagnostic_hypothesis',
+                                    'presentation': 'asserted_fact', 'source_refs': [reference(user, 3)]}])
+                responses.append((value, copy.deepcopy(value)))
+                return value
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, '无法建立受用户原话支持的任务基准'):
+                engine.analyze(package, Client(), directory)
+            self.assertFalse((Path(directory) / 'frozen-tasks.json').exists())
+            for suffix in ('', '-recheck'):
+                self.assertTrue((Path(directory) / ('requirement-review' + suffix + '.validation.json')).exists())
+        self.assertEqual(stages, ['task-extraction-1', 'requirement-review-1',
+                                  'task-extraction-recheck-1', 'requirement-review-recheck-1'])
+        self.assertTrue(all(value == before for value, before in responses))
+
 
 if __name__ == '__main__':
     unittest.main()
