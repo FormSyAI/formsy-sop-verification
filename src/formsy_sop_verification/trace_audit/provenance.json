@@ -90,9 +90,10 @@
     {
       "path": "sop_claim_review.py",
       "upstream_sha256": "1fc0fac86b6df3139fc9ee3789858a06b2b9e9e848696d747e86da3aa7bfea29",
-      "packaged_sha256": "44be44152c54785ec01b0e41aa1b02e4c07119de06b8ed4d5d31f246def2977f",
+      "packaged_sha256": "aa53d0a195ea3c8e8e5dff65bc563eed286a84421768cfd97475d4508a7420a0",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local bounded per-source recovery, explicit module scope, and concise mutually exclusive claim extraction"
       ]
     },
     {
@@ -114,9 +115,10 @@
     {
       "path": "sop_failures.py",
       "upstream_sha256": "4109750ab933899b76af61cbc6968fbe31db0c6b81f14b1fd8fcdf5d2218f63a",
-      "packaged_sha256": "8a555149bfa8b6cc6761cc756db0630547a3150a06785f6089095b3e7e277c3a",
+      "packaged_sha256": "34672a2e2c36125a55a7ce7772d52e372ca1b7ca1bdf565f5e4faf418d121341",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local prompt clarification of existing verified runtime evidence boundary; validators and budgets unchanged"
       ]
     },
     {
@@ -287,18 +289,28 @@
     {
       "path": "tests/test_sop_claim_review.py",
       "upstream_sha256": "7fd3f16e4e5725f72d48ea2bc2a19ff248f957d2461b58b094ea9562c024890f",
-      "packaged_sha256": "be122c30ea190cc20d2cf8aadfdfe70745facd4649b2818908a4bc31af3f9c50",
+      "packaged_sha256": "3426e72c136d3faebe1c5d69878e4416423cd8e1a62d703f1cd6f4db95fa8dea",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local module-scope regression and extraction callback compatibility"
       ]
     },
     {
       "path": "tests/test_sop_failures.py",
       "upstream_sha256": "aa1cc86cb1ee8c824dfe99731e053ec3e705574a2ed581b7d430944c6fe9c85f",
-      "packaged_sha256": "3f2d7745248833f028dac9662a170576fe07288cfc1ee4b57568450469095567",
+      "packaged_sha256": "79129ec274979e8bde8321ee8c10cf8aac5b52fdc54fee9dc4adbdc425784853",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local strict rejection and bounded recovery tests for unverified runtime log citations"
       ]
+    },
+    {
+      "path": "tests/test_claim_extract_recovery.py",
+      "upstream_sha256": null,
+      "adaptations": [
+        "local regression for source isolation, fail-closed envelopes, intent classification and bounded reasons"
+      ],
+      "packaged_sha256": "91d2047a4e8dda31eb5d4c6583163972106bba6d679831e31c5edfa0f336dd8c"
     }
   ]
 }

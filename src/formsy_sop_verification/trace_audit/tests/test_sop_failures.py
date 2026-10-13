@@ -126,7 +126,9 @@ class SopFailureReviewTests(unittest.TestCase):
 
         failures = []
         request = {'task': copy.deepcopy(self.task), 'evidence': copy.deepcopy(self.package['evidence']),
+                   'fixed_task': copy.deepcopy(self.task),
                    'affected_source_context_ids': list(source_context_ids),
+                   'program_run_verification': copy.deepcopy(self.package.get('run_verification', [])),
                    'candidate_rules': ['must be removed']}
         review_failures(rows, self.task, self.package, request, call, 'independent-counterexample', failures)
         return rows, failures
@@ -249,6 +251,48 @@ class SopFailureReviewTests(unittest.TestCase):
         self.package['run_verification'][0]['verified'] = False
         with self.assertRaises(ValueError):
             validate_review(answer, entry, self.task, self.package)
+
+    def test_untrusted_runtime_retry_can_retract_to_static_or_unknown(self):
+        self.package['run_verification'] = []
+        for relation, expected in [('direct_counterexample', FAIL), ('evidence_insufficient', UNKNOWN)]:
+            with self.subTest(relation=relation):
+                self.calls.clear()
+                entry = self.entry('FIX03.C01')
+                runtime = self.answer(entry, contrary='LOG', reason='The uploaded log proves an actual failure.')
+                corrected = self.answer(entry, relation=relation, reason=(
+                    'Static source comparison establishes the incompatible return and consumption.'
+                    if relation == 'direct_counterexample' else
+                    'No trusted run is available and the supplied sources do not establish the flow.'))
+                corrected['counterexample_refs'] = ([self.ref('S'), self.ref('CONSUMER')]
+                                                    if relation == 'direct_counterexample' else [])
+                corrected['observed'] = 'Static source evidence only; no actual execution is established.'
+                rows, failures = self.run_review([entry], responses=[
+                    {'reviews': [runtime]}, {'reviews': [corrected]}])
+                self.assertEqual(len(self.calls), 2)
+                self.assertEqual(self.calls[0][1]['program_run_verification'], [])
+                self.assertIn('已验签', self.calls[1][2]['initial_feedback'][0])
+                self.assertEqual(rows[0]['result'], expected)
+                self.assertEqual(entry[1]['failure_review']['status'], 'completed')
+                self.assertEqual(entry[1]['failure_review']['reason'], corrected['reason'])
+                self.assertNotIn('LOG', {r['evidence_id'] for r in entry[1]['failure_review']['counterexample_refs']})
+                self.assertNotEqual(rows[0]['result'], PASS)
+                self.assertFalse(failures)
+                self.assertEqual(self.package['run_verification'], [])
+                self.assertEqual(runtime['counterexample_refs'], [self.ref('LOG')])
+
+    def test_repeated_untrusted_runtime_cannot_be_promoted_by_claimed_provenance(self):
+        self.package['run_verification'] = []
+        next(e for e in self.package['evidence'] if e['id'] == 'LOG')['provenance'] = 'configured_runner_hmac'
+        entry = self.entry('FIX03.C01')
+        runtime = self.answer(entry, contrary='LOG')
+        rows, failures = self.run_review([entry], responses=[{'reviews': [runtime]}, {'reviews': [runtime]}])
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(rows[0]['result'], UNKNOWN)
+        self.assertEqual(entry[1]['failure_review']['status'], 'failed')
+        self.assertEqual(entry[1]['gap_type'], 'analysis_failed')
+        self.assertEqual(len(failures), 1)
+        self.assertIn('普通上传日志不足', failures[0]['reason'])
+        self.assertEqual(self.package['run_verification'], [])
 
     def test_state_transition_violation_does_not_require_a_completion_claim(self):
         entry = self.entry('SEC11.C04')

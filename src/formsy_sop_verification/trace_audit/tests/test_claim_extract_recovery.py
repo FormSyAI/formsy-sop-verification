@@ -111,6 +111,58 @@ class ClaimExtractionRecoveryTests(unittest.TestCase):
         self.assertEqual(len(errors), 1)
         self.assertEqual(len(self.calls), 2)
 
+    def test_empty_claims_error_allows_model_to_choose_no_claim_without_inventing_fact(self):
+        original = "Let's update the file.\n```\nedit 23:23\nself.domain = config.resolve('domain')\nend_of_edit\n```"
+        self.package['evidence'][-1]['content'] = original
+        self.request = model_input(self.package, [self.task])
+        def respond(payload, attempt):
+            value = self.response(payload)
+            row = next(row for row in value['sources'] if row['evidence_id'] == 'A11')
+            row.update(classification='claims' if attempt == 1 else 'no_claim',
+                       reason='Only future edit intent and suggested code, no execution claim.', claims=[])
+            return value
+        rows, errors = self.extract(respond)
+        self.assertEqual(errors, [])
+        self.assertEqual(rows[-1]['classification'], 'no_claim')
+        self.assertEqual(rows[-1]['claims'], [])
+        self.assertEqual([source['evidence_id'] for source in self.calls[1]['source_inventory']], ['A11'])
+        self.assertEqual(self.package['evidence'][-1]['content'], original)
+
+    def test_empty_claims_is_never_automatically_reclassified(self):
+        def respond(payload, attempt):
+            value = self.response(payload)
+            row = next(row for row in value['sources'] if row['evidence_id'] == 'A11')
+            row.update(classification='claims', claims=[])
+            return value
+        rows, errors = self.extract(respond)
+        self.assertEqual(rows[-1]['classification'], 'uncertain')
+        self.assertEqual(sum(row['classification'] == 'claims' for row in rows), 11)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('no_claim/uncertain', errors[0])
+
+    def test_overlong_reason_retries_only_that_source_and_never_truncates_evidence(self):
+        before = copy.deepcopy(self.package)
+        def respond(payload, attempt):
+            value = self.response(payload)
+            value['sources'][0]['reason'] = 'R' * (601 if attempt == 1 else 600)
+            return value
+        rows, errors = self.extract(respond)
+        self.assertEqual(errors, [])
+        self.assertEqual([source['evidence_id'] for source in self.calls[1]['source_inventory']], ['A0'])
+        self.assertEqual(rows[0]['reason'], 'R' * 600)
+        self.assertEqual(self.package, before)
+
+    def test_identical_statement_claim_is_rejected_instead_of_silently_deduplicated(self):
+        def respond(payload, attempt):
+            value = self.response(payload)
+            value['sources'][0]['claims'] *= 2
+            return value
+        rows, errors = self.extract(respond)
+        self.assertEqual(rows[0]['classification'], 'uncertain')
+        self.assertIn('重复登记相同命题', errors[0])
+        self.assertEqual([source['evidence_id'] for source in self.calls[1]['source_inventory']], ['A0'])
+        self.assertEqual(len(self.calls), 2)
+
 
 if __name__ == '__main__':
     unittest.main()

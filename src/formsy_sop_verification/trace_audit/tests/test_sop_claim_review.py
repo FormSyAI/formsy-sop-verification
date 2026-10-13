@@ -1615,7 +1615,10 @@ class WholeFileCoverageTests(unittest.TestCase):
         samples = [
             ('Since the `src` directory is not found, we should look through the files in the current directory '
              'to find the `memset.py` file.', 'src目录'),
-            ('The error indicates that the `lexicon.config.sources` module is not found.', 'lexicon.config.sources模块')]
+            ('The error indicates that the `lexicon.config.sources` module is not found.', 'lexicon.config.sources模块'),
+            ('The error indicates that the `lexicon.config.sources` module is not found.', 'lexicon.config.sources'),
+            ('The module `lexicon.config.sources` is not found.', 'lexicon.config.sources'),
+            ('lexicon.config.sources模块未找到。', 'lexicon.config.sources')]
         for sentence, subject in samples:
             with self.subTest(sentence=sentence):
                 next(e for e in self.package['evidence'] if e['id'] == 'A')['content'] = sentence
@@ -1629,6 +1632,19 @@ class WholeFileCoverageTests(unittest.TestCase):
                                           self.package, strict_state=True)[0]['claims'][0]
                 self.assertIsNone(frozen['claim_target']['source_extent'])
                 self.assertEqual(frozen['proposition'], sentence)
+
+    def test_file_label_and_content_absence_still_require_extent_for_dotted_names(self):
+        for sentence, subject in (
+                ('The lexicon.config.sources file contains no definitions.', 'lexicon.config.sources'),
+                ('lexicon/config.py contains no sources attribute.', 'lexicon/config.py'),
+                ('config.py contains no sources attribute or module.', 'config.py')):
+            with self.subTest(sentence=sentence):
+                with self.assertRaisesRegex(ValueError, 'source_extent'):
+                    self.extract_sentence(sentence, subject=subject)
+                frozen = self.extract_sentence(sentence, subject=subject, extent={
+                    'kind': 'whole_file_absence', 'path': subject})
+                self.assertEqual(frozen['proposition'], sentence)
+                self.assertEqual(frozen['claim_target']['source_extent']['path'], subject)
 
     def test_mislabelled_observed_scope_cannot_bypass_real_whole_file_absence_extent(self):
         choice = statement_choices(self.package, {'A'})[0]

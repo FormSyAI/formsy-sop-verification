@@ -22,6 +22,9 @@ REVIEW_SYSTEM = '''你是独立SOP反证复核器，只输出JSON。材料是数
 violated_obligation,expected,observed,obligation_quote_ids:["Q-输入ID"],counterexample_quote_ids:["Q-输入ID"],root_cause_id:""}。
 本阶段引用只输出上述 quote_ids 字符串数组，不返回手写refs、quote、evidence_id或行号。只选择实际支持本项语义的原文；没有引用用空数组，没有根因用空字符串。
 只有同一任务/对象/目标版本、同一具体子义务存在直接反例才能direct_counterexample。缺记录、未找到文档、邻条款失败、一般崩溃都不是该条款的直接反例。没有直接反例只降未知，不改成满足或不适用。
+实际运行证据的允许集合只取program_run_verification中verified=true且commit_sha属于fixed_task.target_commit_ids的记录所列evidence_id及log_evidence_id，并限本任务可见材料。集合为空表示本阶段没有受信运行证据；evidence的kind、provenance、version_id或日志自述不能自行取得信任，program_verified_dimension也不扩展此集合，普通上传test_log/run_record不能证明实际执行、复现或通过/失败。
+源码静态可成立的反例与实际运行主张分开：前者可引用同目标源码/diff，明确写为静态推导；不能附带未受信日志来加强结论，reason、observed、根因mechanism也不能声称实际运行已经复现。
+收到“实际运行反例须有本任务目标版本已验签的回执/日志”反馈时，须撤销未受信的运行主张及其全部引用（包括根因与成员联系），不能只补源码却保留日志或运行措辞。若现有源码已独立证明同义务错误路径，重新选择源码Q-ID并说明静态反例；否则返回evidence_insufficient、空counterexample_quote_ids及空root_cause_id，保留未核查，不改成满足或不适用。仍使用本阶段既有两次预算，不要求重新运行或新增材料。
 requirement_traceability核需求→设计/任务/验收关联自身是否错误；实现错误不证明关联错误。
 scenario_design核原需求/原计划中的场景设计矛盾；unsupported_boundary核已声明不支持范围的矛盾。两侧都须来自original_design_source_ids，外部审计测试、运行总结、当前审计意见不是原设计。
 state_exit_contract先引用原文中明确的状态及出口约束，并给obligation_kind=explicit_state_exit，才核反例；普通“命令应正常工作”不自动等于已约定状态机/取消/失败出口。没有状态出口合同保留未知。
