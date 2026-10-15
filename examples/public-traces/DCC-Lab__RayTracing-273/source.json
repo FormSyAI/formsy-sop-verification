@@ -1,0 +1,59 @@
+{
+  "instance_id": "DCC-Lab__RayTracing-273",
+  "repository": "DCC-Lab/RayTracing",
+  "repository_url": "https://github.com/DCC-Lab/RayTracing",
+  "trajectory_source": {
+    "dataset": "nebius/SWE-agent-trajectories",
+    "url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories",
+    "row_index": 1401,
+    "selected_generator": "swe-agent-llama-70b",
+    "native_messages": 41,
+    "license_review_snapshot_revision": "68195a1450865274106246d0d0296a1d6807b88e",
+    "dataset_last_modified_at_review": "2024-12-23T12:42:05.000Z"
+  },
+  "task_metadata_source": {
+    "dataset": "nebius/SWE-bench-extra",
+    "url": "https://huggingface.co/datasets/nebius/SWE-bench-extra",
+    "row_index": 167,
+    "task_created_at_as_recorded": "2020-06-15 18:27:04+00:00",
+    "license_review_snapshot_revision": "11dcbfb30e19552df2a2f8030bd764adc95c92a5",
+    "dataset_last_modified_at_review": "2025-05-28T16:27:57.000Z"
+  },
+  "code_source": {
+    "public_base_commit": "92c62c400ca31119d4896422f4fba2bd030d3739",
+    "derived_target_commit": "de862419ad05cb501f6d4edd2d7974171aac7ada",
+    "derived_tree": "310cbccd14b5d989395625339005706dbb7aee16",
+    "target_is_public_agent_commit": false,
+    "generated_patch_sha256": "8a99cd938bef7a364df2b31769bf6a9ce2c9f3c1240ee33b98d7e33d4c1876d1",
+    "derivation": "The frozen target is reconstructed from the public base and the selected agent-generated patch; it is not an upstream published commit or current execution receipt.",
+    "visible_target_source_file_count": 6,
+    "omitted_source_file_count": 360
+  },
+  "licenses": {
+    "trajectory_and_task_metadata": "CC-BY-4.0",
+    "repository_code": "MIT",
+    "code_license_declaration_url": "https://raw.githubusercontent.com/DCC-Lab/RayTracing/92c62c400ca31119d4896422f4fba2bd030d3739/LICENSE",
+    "full_mit_notice_source_url": "https://raw.githubusercontent.com/DCC-Lab/RayTracing/92c62c400ca31119d4896422f4fba2bd030d3739/LICENSE",
+    "full_mit_notice_sha256": "e4ca3b4bab3452889ab38249c31ad734a902f2d11bc57044ea380247c31d6222",
+    "notice_revision_note": "Full MIT notice copied from the exact public base commit.",
+    "generator_notice": "Dataset publisher requires compliance with the Llama 3.1 license; its license, policy and notice are retained in ../licenses."
+  },
+  "input": {
+    "file": "input.json",
+    "sha256": "85a2f2a985d78765688b90efc23f3ce4bdf9ae67ddd66b9dfc5a2e8fe544f10a",
+    "bytes": 302367,
+    "message_count": 40,
+    "material_count": 13
+  },
+  "preparation": {
+    "checked_at": "2026-10-14T13:15:34.331131+00:00",
+    "original_frozen_request_bytes_unchanged": true,
+    "native_message_payloads_preserved_verbatim_and_checked": true,
+    "changes_from_upstream_dataset": "Existing worker request maps native system/user wrapper to context and later ai/user to assistant/tool, adds the problem statement as the sole requirement, binds selected complete source files and reconstructed target. No new transformation was made when packaging this frozen input.",
+    "sample_code_or_tests_executed": false,
+    "precomputed_audit_report_included": false,
+    "historical_evaluator_is_dataset_material_not_current_execution": true,
+    "gold_reference_patch_excluded": true,
+    "oracle_test_patch_excluded": true
+  }
+}

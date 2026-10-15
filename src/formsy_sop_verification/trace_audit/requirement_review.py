@@ -15,14 +15,15 @@ SUMMARY_PRESENTATIONS = {'requirement', 'observation', 'hypothesis', 'workaround
 
 class RequirementSupportError(ValueError):
     """Valid review identified unsupported or omitted user requirements."""
-    def __init__(self, message, review):
+    def __init__(self, message, review, program_rejections=()):
         super().__init__(message)
         self.review = copy.deepcopy(review)
+        self.program_rejections = copy.deepcopy(list(program_rejections))
 
 
 class RequirementSummarySupportError(RequirementSupportError):
     """A program support gate rejected a summary, without editing the candidate."""
-    def __init__(self, issues, review):
+    def __init__(self, issues, review, program_rejections=()):
         self.issues = copy.deepcopy(issues)
         rejected = copy.deepcopy(review)
         by_field = {}
@@ -34,7 +35,7 @@ class RequirementSummarySupportError(RequirementSupportError):
             row['supported'] = False
             row['reason'] = '程序摘要支持门拒绝：' + '；'.join(dict.fromkeys(reasons)) + '；模型原理由：' + row['reason']
         super().__init__('需求摘要须依据用户原话重新提取，不能靠整句标签或改写语气放行：'
-                         + json.dumps(self.issues, ensure_ascii=False), rejected)
+                         + json.dumps(self.issues, ensure_ascii=False), rejected, program_rejections)
 
 
 # shortcut: Only explicit Chinese/English causal syntax is located here; other
@@ -150,8 +151,10 @@ def _summary_support_issues(row, task, evidence):
 
 class RequirementProvenanceError(ValueError):
     """A valid user quote requires a new candidate, never a silent baseline edit."""
-    def __init__(self, changes):
+    def __init__(self, changes, review, program_rejections):
         self.changes = copy.deepcopy(changes)
+        self.review = copy.deepcopy(review)
+        self.program_rejections = copy.deepcopy(program_rejections)
         super().__init__('支持依据超出候选任务或验收点requirement_refs；须重新提取并携带该用户原话，不能静默改基准。'
                          + json.dumps(self.changes, ensure_ascii=False))
 
@@ -159,17 +162,22 @@ REQUIREMENT_REVIEW_SYSTEM = '''独立复核候选需求，只依据全部用户�
 逐任务核title/goal、每个验收点的requirement及kind，并扫描全部用户消息找遗漏明确要求。标题和目标以待修行为为目标，背景须保持原话语气，不能把用户诊断写成已确认的内部根因。后续明确替代以最新原话为准。引用存在不等于语义支持，模型一致也不是事实证明。
 summary_checks须恰好逐一检查title和goal。按原候选文本连续切出不同言语行为的fragments，全部text按序拼接必须原样还原该字段，不能只检查正确的行为半句而省略原因半句；一段含待修目标和原因猜测时须拆开分类。每段先给source_class，再给候选实际表达的presentation=requirement|observation|hypothesis|workaround|asserted_fact|uncertain，并引用真实用户原话。这里检查的是候选实际语气，不是模型认为它本来应该表达的语气：用户“I think/可能/怀疑”的原因猜测，候选“因X导致”是asserted_fact，不能因前半句是修复目标就标requirement。摘要可按原语气保留观察、诊断或绕行背景，分别用observation、hypothesis、workaround；诊断事实化、把背景变成义务或不确定的段落使该字段supported=false，触发重新提取，不能静默改摘要。所有片段均保持来源分类与语气才可supported=true。
 summary_review_units是程序对显式因果句法的定位，不是用户意图或支持结论。每个causal_premise须独立成为一个fragment，引用所选原话中完整对应因果分句；不能只引“报错/命令/期望成功”来支持原因。来源的限定语即使不在quote子串内也不能剥离；仅有假设依据时须source_class=diagnostic_hypothesis、presentation=hypothesis，候选实际文本也保留限定语。明确请求/兼容边界中的因果条件仍可作为义务，用户无保留的事实说明可用observation/asserted_fact；不能仅因出现因果词就删需求。程序只定位已识别句法，其它事实和语气仍须独立逐段复核。
+每个fragment的source_refs必须单独闭合本段主张；原因句只在task.requirement_refs或相邻fragment被引用，不算当前因果片段的依据。同一材料ID不能自动借用未选行，必须在本片段明确选取完整原话；不得自动把邻片段引用迁入，不能只换分类标签来绕过来源缺口。
 先按原用户言语行为分类source_class，再决定supported，不得先相信候选措辞再给原话补义务：
 explicit_request=明确请求的行为、范围禁令或明确交付的测试；reported_problem=用户报告的待修行为，在原触发条件下应正确完成；compatibility_constraint=用户明确要求保留现有行为、不回退或兼容。只有这三类可supported=true。
+kind=test_delivery仅在用户明确要求新增、补齐或修改交付测试源码/断言时可supported=true，且source_class必须为explicit_request，reason须说明该交付意图。验收输入输出、断言示例、现有测试应计算出的期望值或允许修改测试，单独都不构成测试源码交付义务；这类待修行为仍按behavior核查。缺少明确交付意图时supported=false并保留具体不确定性，不能只改分类标签使候选通过。
 observation=当前发生了什么、另一模式的现状或示例结果；diagnostic_hypothesis=对原因、类型、内部实现的猜测；workaround=临时绕行；uncertain=支持关系不清楚。这四类supported=false，只能留作任务背景或推测。当前行为并不自动成为“必须保持”的兼容性义务，未禁止修改也不等于要求保持。
+用户用“正常例子，但另一个例子失败”对照说明问题时，正常例子是observation，不因它与修复有关就改成reported_problem或compatibility_constraint；只有明确保留请求才升级为兼容义务。复现代码与同段失败式或堆栈输入不一致时，分别按实际输入核支持，不能替换变量、入口或补假设强行对齐；未声明外部执行/后续动作是待修目标时，不把该动作新增为独立硬验收。reason须保留差异，不能以“用户要求保留”代替缺失的原话。
 用户报告错误允许提炼待修行为，不要求原话必须使用祈使句；但同一输入下的报错复现、原因猜测、内部类型和消费者描述不能重复成为独立硬验收。保持修复结果的不同实现仍允许，不强制某种数据结构或修改层。不能把仅更具体的诊断重新命名为另一个必须实现的行为。
-逐点对照同任务其它候选：同一触发、对象、预期结果已由另一点完整表达时，保留最贴近用户行为的规范点；重复点supported=false，duplicate_of填其acceptance_id，reason解释相同的行为及为何不是新边界。无重复填空字符串。规范点须supported=true且非重复，不能自指、成链、跨任务。不同明确输入/边界、范围禁令和测试交付必须保留；不同kind不能互相去重。
+逐点对照同任务其它候选：同一触发、对象、预期结果已由另一点完整表达时，保留最贴近用户行为的规范点；重复点supported=false，duplicate_of填其acceptance_id，reason解释相同的行为及为何不是新边界。无重复填空字符串。规范点须supported=true且非重复，不能自指、成链、跨任务。不同明确输入/边界、范围禁令和测试交付必须保留；不同kind不能互相去重。代码示例的变量/参数名相同与不同、输入值或调用方式不同，不能仅凭属于同一问题就称同一触发；不一致复现或正例可按原话分类为observation，但排除理由须说明实际差异，不能伪称重复以掩盖差异。
+自然语言与代码/注释对同一触发、对象及预期属性的复述仍是同一义务，来源行不同、命名更具体或重复解释计算过程不产生新验收点。supported=true的reason须对潜在复述说明不同输入、对象或预期属性在哪里，不能只分别复述各自引用；无法说明区别时按duplicate_of反馈合并，并保留规范点所需的全部原话依据。明确的一般规则与具体输入的整体返回行为可区分，不因同属一个修复就合并。
 source_refs必须引用真实用户原话且直接支持分类，后续用户明确说“保留刚才的现状”等可形成新的有效compatibility_constraint，须引用该明确反馈，不能只引用早先观察。不能以补丁未实现为由删除明确要求。
 supported=true的source_refs还必须被该候选验收点的requirement_refs覆盖：同材料、同所选行区间内的逐字子片段。若支持只来自候选未引的后续反馈，应反馈重新提取并携带该原话，复核不得静默替换冻结基准的来源。
 supported=true的summary_checks各片段source_refs也须在候选task.requirement_refs的同材料、同行区间、逐字子片段范围内；摘要不能绕过上述来源边界或仅凭同一用户消息ID扩到未选择的行。
 每个任务、验收点恰好一次，ID原样返回。supported必须JSON布尔值；reason说明语义依据。missing_requirements只列遗漏的三类义务并逐字引用，不能把观察、猜测或推荐补成遗漏要求。用户给出验收值不等于要求交付测试源码。
 严格字段格式：{"tasks":[{"task_id":"候选ID","supported":true,"reason":"任务依据","summary_checks":[{"field":"title","supported":true,"reason":"逐段语气依据","fragments":[{"text":"原候选标题完整片段","source_class":"reported_problem","presentation":"requirement","source_refs":[引用]}]},{"field":"goal","supported":true,"reason":"逐段语气依据","fragments":[{"text":"原候选目标完整片段","source_class":"reported_problem","presentation":"requirement","source_refs":[引用]}]}],"acceptance_points":[{"acceptance_id":"候选点ID","supported":true,"reason":"原话、分类及去重依据","source_class":"explicit_request|reported_problem|compatibility_constraint|observation|diagnostic_hypothesis|workaround|uncertain","source_refs":[引用],"duplicate_of":""}],"missing_requirements":[{"requirement":"遗漏明确要求","source_class":"explicit_request|reported_problem|compatibility_constraint","requirement_refs":[引用]}]}]}。没有遗漏用空列表，不输出任务修正版或审计结论，不添加其它字段。'''
 REQUIREMENT_REVIEW_SYSTEM += '\n' + CITATION_SYSTEM_PROMPT
+REQUIREMENT_REVIEW_SYSTEM += '\n当候选已选的requirement_refs足以直接支持待审内容时，source_refs从这些引用中选取最小充分子集，不额外补同义标题、连接句或邻近行。若已选来源确实不足，仍明确反馈重新提取，不能为了满足覆盖校验忽略真实缺口。'
 
 
 def _object(value, fields, label):
@@ -261,7 +269,7 @@ def validate_requirement_review(value, tasks, package, *, strict=True):
     expected = {task['id']: task for task in tasks}
     _coverage(value['tasks'], expected, 'task_id', '需求语义复核任务')
     evidence = {item['id']: item for item in package['evidence']}
-    provenance_changes, summary_issues = [], []
+    provenance_changes, summary_issues, delivery_issues = [], [], []
     for row in value['tasks']:
         _object(row, {'task_id', 'supported', 'reason', 'summary_checks', 'acceptance_points', 'missing_requirements'},
                 '需求语义复核任务')
@@ -288,7 +296,12 @@ def validate_requirement_review(value, tasks, package, *, strict=True):
             if point['supported'] and classification not in OBLIGATION_CLASSES:
                 raise ValueError('观察、诊断假设、绕行或不确定内容不能被升级为硬性要求。')
             if point['supported']:
-                candidate_refs = points[point['acceptance_id']].get('requirement_refs', [])
+                candidate = points[point['acceptance_id']]
+                if candidate.get('kind') == 'test_delivery' and classification != 'explicit_request':
+                    delivery_issues.append({'task_id': task_id, 'acceptance_id': point['acceptance_id'],
+                        'source_class': classification,
+                        'reason': '测试交付须有explicit_request明确交付意图；期望计算或行为问题不能升级为测试源码交付义务。'})
+                candidate_refs = candidate.get('requirement_refs', [])
                 _user_refs(candidate_refs, evidence, task_id)
                 if not _refs_covered(point['source_refs'], candidate_refs):
                     provenance_changes.append({'task_id': task_id,
@@ -316,8 +329,21 @@ def validate_requirement_review(value, tasks, package, *, strict=True):
                     or item['source_class'] not in OBLIGATION_CLASSES):
                 raise ValueError('不能将观察、诊断或绕行列为遗漏的硬性要求。')
             _user_refs(item['requirement_refs'], evidence, task_id)
+    program_rejections = ([{'kind': 'summary', **issue} for issue in summary_issues]
+                          + [{'kind': 'test_delivery', **issue} for issue in delivery_issues])
     if provenance_changes:
-        raise RequirementProvenanceError(provenance_changes)
+        raise RequirementProvenanceError(provenance_changes, value, program_rejections)
     if summary_issues:
-        raise RequirementSummarySupportError(summary_issues, value)
+        raise RequirementSummarySupportError(summary_issues, value, program_rejections)
+    if delivery_issues:
+        rejected = copy.deepcopy(value)
+        for task in rejected['tasks']:
+            reasons = [issue['acceptance_id'] + '：' + issue['reason'] for issue in delivery_issues
+                       if issue['task_id'] == task['task_id']]
+            if reasons:
+                # A classification conflict needs re-extraction, not silent point removal.
+                task['supported'] = False
+                task['reason'] = '程序测试交付支持门拒绝：' + '；'.join(reasons) + '；模型原理由：' + task['reason']
+        raise RequirementSupportError('测试交付来源分类不支持该义务；须重新依据用户原话提取：'
+                                      + json.dumps(delivery_issues, ensure_ascii=False), rejected, program_rejections)
     return copy.deepcopy(value)

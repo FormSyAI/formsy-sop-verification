@@ -112,6 +112,9 @@ const fullState = {
   library: null,
   uploaded: null,
   uploading: false,
+  loading: false,
+  demos: [],
+  demo: null,
   request: null,
   fileName: "",
   rounds: [],
@@ -133,6 +136,8 @@ const fullResults = {
 const jobLabels = {
   queued: "等待审计",
   running: "正在审计",
+  cancelling: "正在停止旧审计",
+  cancelled: "审计已停止",
   completed: "作业已返回",
   failed: "作业失败",
 };
@@ -161,6 +166,10 @@ function failureDetailsHtml(failure) {
   return [
     ["错误类别", category],
     ["失败阶段", failure.failure_stage],
+    ["HTTP 状态", Number.isInteger(failure.http_status) && failure.http_status >= 100 && failure.http_status <= 599
+      ? String(failure.http_status) : null],
+    ["请求阶段", ["prepare", "connect", "read", "parse", "store", "engine", "job", "report"].includes(failure.phase) ? failure.phase : null],
+    ["原始响应已保存", typeof failure.response_saved === "boolean" ? (failure.response_saved ? "是" : "否") : null],
     ["异常类型", failure.exception_type],
     ["模型服务代码", failure.provider_code],
   ].filter(([, value]) => typeof value === "string" && value)
@@ -306,7 +315,9 @@ function ruleSummaryHtml(summary) {
   if (!summary) return "<p>规则信息尚未读取。</p>";
   const source = summary.source ?? {};
   const custom = source.kind === "uploaded_rules";
-  return `<strong>${custom ? "已冻结自定义规则 JSON" : source.kind === "formsy_sop" ? "FormSyAI/formsy-sop 冻结版本" : "本轮报告规则快照"}</strong><p>${escapeHtml(summary.rule_count ?? "未提供")} 条规则 · ${escapeHtml(summary.condition_count ?? "未提供")} 个条件${summary.atomic_item_count != null ? ` · ${escapeHtml(summary.atomic_item_count)} 个原子义务` : ""}</p><p>${custom ? "上传原文摘要" : "Git 版本"}：<code>${escapeHtml(custom ? source.input_sha256 : (source.git_commit ?? "未提供"))}</code></p><p>规则目录摘要：<code>${escapeHtml(source.catalog_sha256 ?? "未提供")}</code> · 合同版本 ${escapeHtml(source.contract_version ?? "未提供")}</p>${array(
+  const interpretation = [source.release_id == null ? "" : `规则发布 ${escapeHtml(source.release_id)}`,
+    source.interpretation_revision == null ? "" : `判定口径 ${escapeHtml(source.interpretation_revision)}`].filter(Boolean).join(" · ");
+  return `<strong>${custom ? "已冻结自定义规则 JSON" : source.kind === "formsy_sop" ? "FormSyAI/formsy-sop 冻结版本" : "本轮报告规则快照"}</strong><p>${escapeHtml(summary.rule_count ?? "未提供")} 条规则 · ${escapeHtml(summary.condition_count ?? "未提供")} 个条件${summary.atomic_item_count != null ? ` · ${escapeHtml(summary.atomic_item_count)} 个原子义务` : ""}</p><p>${custom ? "上传原文摘要" : "Git 版本"}：<code>${escapeHtml(custom ? source.input_sha256 : (source.git_commit ?? "未提供"))}</code></p>${interpretation ? `<p>${interpretation}</p>` : ""}<p>规则目录摘要：<code>${escapeHtml(source.catalog_sha256 ?? "未提供")}</code> · 机器契约 ${escapeHtml(source.contract_version ?? "未提供")}</p>${array(
     summary.documents,
   )
     .map(
@@ -352,6 +363,7 @@ async function freezeRules(rules) {
       throw new Error("未收到明确的离线规则冻结记录，原有规则保留。");
     fullState.uploaded = data;
     $("full-sop-source").value = "uploaded";
+    $("full-consent").checked = false;
   } finally {
     fullState.uploading = false;
     fullControls();
@@ -362,7 +374,7 @@ function buildFullRequest() {
   if ($("full-sop-source").value === "uploaded") {
     if (!fullState.uploaded) throw new Error("请先上传并离线校验自定义规则。");
     request.rules = structuredClone(fullState.uploaded.rules);
-    request.sop_selection = { mode: "uploaded", document_ids: [] };
+    delete request.sop_selection;
   } else {
     if (!fullState.library?.source || fullState.library.default_available === false)
       throw new Error("默认 FormSy SOP 不可用；请选择并校验自定义规则，不会自动切换规则。");
@@ -372,9 +384,120 @@ function buildFullRequest() {
   assertFullRequest(request);
   return request;
 }
+const activeFullStatuses = ["queued", "running", "cancelling"];
+const terminalFullStatuses = ["completed", "failed", "cancelled"];
+let auditObjectView;
+function renderAuditObject() {
+  const content = $("full-object-content"), request = fullState.request;
+  const view = [request, fullState.fileName, fullState.demo];
+  if (auditObjectView?.every((value, index) => value === view[index])) return;
+  auditObjectView = view;
+  content.replaceChildren();
+  if (!request) {
+    content.append(node("p", "", "尚未载入审计材料。"));
+    return;
+  }
+  const declared = (value) => typeof value === "string" && value.trim() ? value : null;
+  appendField(content, "文件 / 载入来源", fullState.fileName || "未提供");
+  appendField(content, "输入标题", request.title);
+  if (fullState.demo) {
+    appendField(content, "公开示例 ID", fullState.demo.id);
+    appendField(content, "公开示例原文件 SHA256", fullState.demo.input_sha256);
+  }
+  const traceId = [request.trace?.trace_id, request.trace?.id].find((value) =>
+    declared(value) !== null || (typeof value === "number" && Number.isSafeInteger(value)));
+  appendField(content, "材料声明的 Trace ID", traceId === undefined ? "未提供" : String(traceId));
+  const repositories = [...new Set([declared(request.trace?.repository), ...request.commits.map((commit) => declared(commit.repository)),
+    declared(fullState.demo?.repository)].filter(Boolean))];
+  appendField(content, "材料声明的仓库", repositories.length ? repositories : "未提供");
+  appendField(content, "输入 Commit SHA", request.commits.length ? request.commits.map((commit) => commit.sha) : "未提供");
+  content.append(node("p", "", `${request.trace.messages.length} 条消息 · ${request.materials.length} 份材料 · ${request.commits.length} 个输入 Commit`));
+  const users = request.trace.messages.filter((message) => message.role === "user"),
+    original = users.map((message) => message.content).join("\n\n"),
+    details = node("details");
+  details.append(node("summary", "", `原用户请求 · ${users.length} 条`), node("pre", "", original.slice(0, 6000)));
+  if (original.length > 6000) details.append(node("p", "help", "仅预览前 6000 字符；完整原文保留在输入材料中。"));
+  content.append(details);
+  const trace = node("details");
+  trace.append(node("summary", "", `完整 Trace 消息正文 · ${request.trace.messages.length} 条`),
+    node("p", "help", "逐条显示消息角色与完整正文；不含 Commit 差异和其他材料。"));
+  request.trace.messages.forEach((message, index) => {
+    trace.append(node("h4", "", `第 ${index + 1} 条 · ${message.role}`), node("pre", "", message.content));
+  });
+  content.append(trace);
+}
+function renderDemoChoices() {
+  const select = $("full-demo-select");
+  select.replaceChildren();
+  const placeholder = node("option", "", fullState.demos.length ? "选择公开完整 Trace（仅载入）" : "暂无可载入的公开示例");
+  placeholder.value = "";
+  select.append(placeholder);
+  for (const demo of fullState.demos) {
+    const option = node("option", "", `${demo.title || demo.id} · ${demo.repository || "仓库未提供"}`);
+    option.value = demo.id;
+    select.append(option);
+  }
+  select.value = fullState.demo?.id || "";
+  $("full-demo-status").textContent = fullState.demos.length
+    ? `${fullState.demos.length} 份公开完整 Trace · 附许可证。选择仅载入材料，开始审计仍需单独确认。`
+    : "暂无可载入的公开示例；仍可使用安全合成示例或导入 JSON。";
+}
+function retainFullJob(result, expectedId) {
+  if (!result || typeof result.id !== "string" || !result.id || (expectedId && result.id !== expectedId) ||
+      ![...activeFullStatuses, ...terminalFullStatuses].includes(result.status) ||
+      (result.supersedes !== undefined && (!Array.isArray(result.supersedes) || result.supersedes.some((id) => typeof id !== "string" || !id || id === result.id))))
+    throw new Error("作业响应身份或状态不匹配。");
+  if (result.status === "completed") assertFullReport(result.report);
+  let round = fullState.rounds.find((entry) => !entry.imported && entry.id === result.id);
+  if (round && terminalFullStatuses.includes(round.status) && activeFullStatuses.includes(result.status)) return round;
+  if (round) Object.assign(round, result);
+  else {
+    round = { ...result };
+    fullState.rounds.push(round);
+  }
+  return round;
+}
+async function refreshSuperseded(round) {
+  for (const id of array(round.supersedes)) {
+    const previous = fullState.rounds.find((entry) => !entry.imported && entry.id === id);
+    if (previous && terminalFullStatuses.includes(previous.status)) continue;
+    try { retainFullJob(await api(`/api/full-audits/${encodeURIComponent(id)}`), id); }
+    catch { /* The old snapshot remains visible; a later poll can read the stop metadata. */ }
+  }
+}
+async function loadFullDemo(id) {
+  if (fullState.loading || fullState.submitting || fullState.uploading) return;
+  const selected = id ? fullState.demos.find((demo) => demo.id === id) : null;
+  $("full-consent").checked = false;
+  if (id && !selected) return setFullError("所选公开示例未列入已核验目录，原有材料保留。");
+  fullState.loading = true;
+  fullControls();
+  try {
+    const value = await api(id ? `/api/full-demo/${encodeURIComponent(id)}` : "/api/full-audit-demo"),
+      request = id ? value.request : value;
+    if (id && (value.demo?.id !== id || value.demo.input_sha256 !== selected.input_sha256))
+      throw new Error("示例身份或输入摘要与目录不一致。");
+    assertFullRequest(request);
+    fullState.request = request;
+    fullState.demo = id ? value.demo : null;
+    fullState.fileName = id ? `公开示例：${selected.title || id}` : "完整审计安全合成示例";
+    $("full-consent").checked = false;
+    $("full-demo-select").value = id;
+    setFullError();
+  } catch (error) {
+    $("full-demo-select").value = fullState.demo?.id || "";
+    setFullError(`示例未载入：${error.message} 原有材料与报告保留。`);
+  } finally {
+    fullState.loading = false;
+    fullControls();
+  }
+}
 function fullControls() {
-  const running = fullState.rounds.some((round) => ["queued", "running"].includes(round.status));
+  const running = fullState.rounds.some((round) => activeFullStatuses.includes(round.status));
   const configured = fullState.config?.available && fullState.config?.model_configured;
+  const provider = fullState.config?.provider ?? "DeepSeek";
+  const modelName = fullState.config?.model ?? "deepseek-flash";
+  const endpoint = fullState.config?.provider_endpoint;
   const fallback = !!fullState.config && (!configured || fullState.providerBlocked);
   const offlineOption = $("full-mode").querySelector("[value=offline]");
   offlineOption.hidden = !fallback;
@@ -386,52 +509,59 @@ function fullControls() {
     $("full-sop-source").value === "uploaded"
       ? !!fullState.uploaded
       : !!fullState.library?.source && fullState.library.default_available !== false;
-  const busy = fullState.submitting || fullState.uploading;
-  $("full-mode").querySelector("[value=model]").disabled = !configured || fullState.providerBlocked;
+  const busy = fullState.submitting || fullState.uploading || fullState.loading;
+  $("full-consent").disabled = busy;
+  const modelOption = $("full-mode").querySelector("[value=model]");
+  modelOption.disabled = !configured || fullState.providerBlocked;
+  modelOption.textContent = `${provider} / ${modelName} 多轮语义审计`;
   $("full-consent-label").hidden = !model;
-  $("full-mode").disabled = busy || running;
-  $("full-sop-source").disabled = busy || running;
-  $("full-sop-file").disabled = busy || running;
+  $("full-consent-text").textContent = `我了解：完整审计会分多次将所选材料发送至 ${provider}，使用模型 ${modelName}，可能产生费用；结果仍需人工复核。`;
+  $("full-mode").disabled = busy;
+  $("full-sop-source").disabled = busy;
+  $("full-sop-file").disabled = busy;
   $("full-request-file").disabled = busy;
   $("full-demo").disabled = busy;
+  $("full-demo-select").disabled = busy || !fullState.demos.length;
   $("full-verify").disabled =
     !fullState.request ||
     !rulesReady ||
     busy ||
-    running ||
     (model && (!configured || !$("full-consent").checked));
   $("full-verify").textContent = fullState.submitting
     ? "正在提交…"
-    : running
-      ? "已有审计正在运行"
-      : model
-        ? "使用 DeepSeek 开始审计"
+    : model
+        ? running ? `停止旧任务并使用 ${provider} / ${modelName} 开始新审计` : `使用 ${provider} / ${modelName} 开始审计`
         : "运行本地结构检查";
   $("full-file-label").textContent = fullState.fileName || "先载入合成示例或选择 JSON";
   $("full-model-status").disabled = busy || running;
   $("full-model-status").textContent = !fullState.config
-    ? "DeepSeek API · 读取配置"
+    ? "模型 API · 读取配置"
     : fullState.providerBlocked
-      ? "DeepSeek API · 本轮请求未完成"
-      : configured ? "DeepSeek API · 已配置" : "DeepSeek API · 不可用";
+      ? `${provider} API · 本轮请求未完成 · ${modelName}`
+      : configured ? `${provider} API · 已配置 · ${modelName}` : `${provider} API · 不可用`;
   $("full-config-label").textContent = configured
-    ? `${fullState.config.model ?? "deepseek-flash"} · 配置已读取，额度与连接以实际请求为准`
+    ? `${provider} / ${modelName}${endpoint ? ` · ${endpoint}` : ""} · 配置已读取，额度与连接以实际请求为准`
     : "本地备用仅检查结构；仍可回看已有报告";
   $("full-mode-help").textContent = model
-    ? `点击后将分多次把所选对话、Commit diff、材料和本轮规则发送至 DeepSeek。总模型请求最多 ${fullState.config?.max_total_calls ?? 80} 次，其中 SOP 请求最多 ${fullState.config?.max_sop_calls ?? 64} 次；不运行材料里的业务代码。失败保留记录，不自动重新提交。`
-    : "DeepSeek 当前不可用，本地备用只检查输入结构与已冻结规则清单，不生成语义结论，也不会自动重跑。恢复配置后可点击 DeepSeek API 重新读取状态。";
+    ? `点击后将分多次把所选对话、Commit diff、材料和本轮规则发送至 ${provider}，使用模型 ${modelName}，可能产生费用。${endpoint ? `服务端请求端点：${endpoint}。` : ""}总模型请求最多 ${fullState.config?.max_total_calls ?? 80} 次，其中 SOP 请求最多 ${fullState.config?.max_sop_calls ?? 64} 次；不运行材料里的业务代码。失败保留记录，不自动重新提交。`
+    : `${provider} 当前不可用，本地备用只检查输入结构与已冻结规则清单，不生成语义结论，也不会自动重跑。恢复配置后可点击 ${provider} API 重新读取状态。`;
   renderRuleSummary();
+  renderAuditObject();
+  const active = fullState.rounds.find((round) => activeFullStatuses.includes(round.status));
+  $("full-active-status").hidden = !active;
+  $("full-active-status").textContent = active ? `活动任务记录：${active.id} · ${jobLabels[active.status]}${active.input_sha256 ? ` · 输入摘要 ${active.input_sha256}` : ""}` : "";
 }
 $("full-model-status").addEventListener("click", async () => {
-  if (fullState.submitting || fullState.rounds.some((round) => ["queued", "running"].includes(round.status))) return;
+  if (fullState.submitting || fullState.loading || fullState.uploading || fullState.rounds.some((round) => activeFullStatuses.includes(round.status))) return;
   try {
     fullState.config = await api("/api/full-audit-config");
     fullState.providerBlocked = false;
     $("full-consent").checked = false;
-    showDialog("DeepSeek API", `<p>${fullState.config.model_configured ? "服务端密钥已配置" : "服务端未配置密钥"} · ${escapeHtml(fullState.config.model ?? "deepseek-flash")}</p><p>这里只读取本地服务配置，不调用模型，也不显示密钥。额度与连接状态以实际审计返回为准；失败记录不会被覆盖。</p>`);
+    const provider = fullState.config.provider ?? "DeepSeek";
+    showDialog(`${provider} API`, `<p>${fullState.config.model_configured ? "服务端密钥已配置" : "服务端未配置密钥"} · ${escapeHtml(provider)} / ${escapeHtml(fullState.config.model ?? "deepseek-flash")}</p>${fullState.config.provider_endpoint ? `<p>服务端请求端点：<code>${escapeHtml(fullState.config.provider_endpoint)}</code></p>` : ""}<p>这里只读取本地服务配置，不调用模型，也不显示密钥。额度与连接状态以实际审计返回为准；失败记录不会被覆盖。</p>`);
   } catch (error) {
-    fullState.config = { available: false, model_configured: false };
-    setFullError(`无法读取 DeepSeek 配置：${error.message} 已显示本地结构检查备用入口。`);
+    fullState.config = { ...fullState.config, available: false, model_configured: false };
+    setFullError(`无法读取模型配置：${error.message} 已显示本地结构检查备用入口。`);
   }
   fullControls();
 });
@@ -442,7 +572,10 @@ $("full-sop-source").addEventListener("change", () => {
 });
 $("full-sop-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
-  if (!file) return;
+  if (!file || fullState.loading || fullState.submitting || fullState.uploading) return;
+  fullState.loading = true;
+  $("full-consent").checked = false;
+  fullControls();
   try {
     if (file.size > 2 * 1024 * 1024) throw new Error("规则 JSON 超过 2 MiB，未自动截断。");
     const value = JSON.parse(await file.text());
@@ -450,6 +583,9 @@ $("full-sop-file").addEventListener("change", async (event) => {
     setFullError();
   } catch (error) {
     setFullError(`规则未载入：${error.message} 原有材料、规则和报告已保留。`);
+  } finally {
+    fullState.loading = false;
+    fullControls();
   }
   event.target.value = "";
 });
@@ -540,7 +676,7 @@ Object.assign(fieldNames, {
   id: "检查项",
 });
 const categoryNames = {
-  implementation_defect: "实现问题",
+  implementation_defect: "实现问题候选",
   suspected_issue: "疑似问题",
   evidence_gap: "证据缺口",
 };
@@ -1408,8 +1544,14 @@ function renderSopCoverage(report) {
     failures.append(
       node("summary", "", `${coverage.failures.length} 条分析失败记录 · 影响 ${affected} 个条件`),
     );
-    for (const failure of array(coverage.failures))
+    for (const failure of array(coverage.failures)) {
+      const location = [["任务", failure.task_id], ["条件", failure.condition_id],
+        ["子项", failure.atomic_item_id], ["失败阶段", failure.stage], ["类别", failure.kind]]
+        .filter(([, value]) => typeof value === "string" && value)
+        .map(([label, value]) => `${label}：${value}`).join(" · ");
+      if (location) failures.append(node("p", "inline-note", location));
       failures.append(node("p", "", failure.reason || "未提供失败原因"));
+    }
     summary.append(failures);
   }
   if (array(coverage.unsupported_sections).length) {
@@ -1641,6 +1783,35 @@ function renderChecks(report) {
       }
     }
     appendField(body, "判断依据", check.reason);
+    const review = check.local_failure_review;
+    if (modern && review && typeof review === "object" && !Array.isArray(review)) {
+      const details = node("details", "gate-details local-failure-review"),
+        completed = review.status === "completed",
+        confirmed = completed && review.confirmed === true && review.effective_result === "不满足" &&
+          review.relation === "direct_counterexample" && review.scope_consistency === "same_scope";
+      details.append(node("summary", "", "模型反例复核"));
+      appendField(details, "复核状态", {
+        pending: "复核未完成", completed: "复核已完成", failed: "复核失败",
+      }[review.status] || "复核状态未核定");
+      appendField(details, "反例关系", completed ? {
+        direct_counterexample: "直接反例候选",
+        different_dimension: "属于其他判断维度",
+        evidence_insufficient: "反例证据不足",
+      }[review.relation] || "未核查" : "未核查");
+      appendField(details, "范围一致性", completed ? {
+        same_scope: "同一范围", different_scope: "不同范围", uncertain: "范围待确认",
+      }[review.scope_consistency] || "范围待确认" : "范围待确认");
+      appendField(details, "复核结论", confirmed ? "复核支持同范围反例" : "尚无复核支持的同范围反例");
+      details.append(resultBadge(confirmed ? "不满足" : "未核查", "本次有效判断："));
+      appendField(details, "复核说明", review.reason);
+      const candidate = check.local_failure_candidate;
+      if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
+        appendField(details, "原模型失败候选理由", candidate.reason);
+        appendRefs(details, candidate.evidence_refs, "原候选支持证据");
+        appendRefs(details, candidate.counter_refs, "原候选反向证据");
+      }
+      body.append(details);
+    }
     appendRefs(body, check.evidence_refs, "支持证据");
     appendRefs(body, check.counter_refs, "反向证据");
     if (array(check.missing_materials).length) {
@@ -1788,7 +1959,7 @@ function renderFindings(report) {
     node(
       "p",
       "inline-note",
-      `${records} 条原始问题记录${explicit.length ? ` · ${explicit.length} 个显式候选根因组 · ${groups.length - explicit.length} 条未分组记录` : " · 尚无显式根因归并"}。候选分组不代表已确认的独立缺陷数；条件结果与原始记录均保留。`,
+      `${records} 条原始问题记录${explicit.length ? ` · ${explicit.length} 个显式候选根因组 · ${groups.length - explicit.length} 条未分组记录` : " · 尚无显式根因归并"}。候选分组不代表已确认的独立缺陷数；条件结果与原始记录均保留。原始问题记录仍是未独立复核的模型候选；某检查的反例复核不自动认证这些记录。`,
     ),
   );
   for (const group of groups) {
@@ -1966,11 +2137,16 @@ function reportRuleSummary(report) {
 function renderFull() {
   const round = fullState.rounds[fullState.active];
   if (!round) return;
-  const history = `<label class="history"><select id="full-history" aria-label="选择完整审计轮次">${fullState.rounds.map((entry, index) => `<option value="${index}" ${index === fullState.active ? "selected" : ""}>第 ${fullState.rounds.length - index} 轮 · ${entry.imported ? "导入回放" : (jobLabels[entry.status] ?? entry.status)}</option>`).join("")}</select><small>本页保留 ${fullState.rounds.length} 轮；刷新会重置列表，后台作业不会因此取消。</small></label>`;
-  const heading = `<div class="report-heading"><div><div class="step-label">完整审计 · 模型候选</div><h2>${escapeHtml(round.report?.title ?? round.request?.title ?? "完整审计")}</h2><p class="report-subtitle">人工未复核 · 正式未关闭 · ${round.imported ? "导入本地报告，不代表本次模型执行" : escapeHtml(round.id)}</p></div>${history}</div>`;
+  const history = `<label class="history"><select id="full-history" aria-label="选择完整审计轮次">${fullState.rounds.map((entry, index) => `<option value="${index}" ${index === fullState.active ? "selected" : ""}>第 ${fullState.rounds.length - index} 轮 · ${entry.imported ? "导入回放" : (jobLabels[entry.status] ?? escapeHtml(entry.status))}</option>`).join("")}</select><small>本页保留 ${fullState.rounds.length} 轮；刷新可恢复服务端活动任务，已保存记录仍保留在服务端。</small></label>`;
+  const related = [...array(round.supersedes), ...(typeof round.superseded_by === "string" ? [round.superseded_by] : [])],
+    links = related.length ? `<div class="job-actions">${related.map((id) => `<button type="button" class="button secondary" data-full-job="${escapeHtml(id)}">查看关联任务 ${escapeHtml(id)}</button>`).join("")}</div>` : "",
+    stop = round.stop && typeof round.stop === "object" ? round.stop : {},
+    stopped = ["cancelling", "cancelled"].includes(round.status),
+    stopDetails = stopped ? `<div class="notice"><strong>${escapeHtml(jobLabels[round.status])}</strong><p>${round.status === "cancelling" ? "已请求停止旧任务；新审计等待旧请求退出后开始。" : "此轮已停止，已有响应与停止记录保留；未记为审计通过或分析失败。"}</p>${stop.stage ? `<p>停止阶段：${escapeHtml(stop.stage)}</p>` : ""}${round.cancelled_at ? `<p>停止时间：${escapeHtml(round.cancelled_at)}</p>` : ""}</div>` : "";
+  const heading = `<div class="report-heading"><div><div class="step-label">完整审计 · 模型候选</div><h2>${escapeHtml(round.report?.title ?? round.request?.title ?? "完整审计")}</h2><p class="report-subtitle">人工未复核 · 正式未关闭 · ${round.imported ? "导入本地报告，不代表本次模型执行" : escapeHtml(round.id)}</p></div>${history}</div>${links}${stopDetails}`;
   if (!round.report) {
     $("full-report").innerHTML =
-      `${heading}<div class="notice ${round.status === "failed" ? "error" : ""}"><strong>${escapeHtml(jobLabels[round.status] ?? "作业状态未知")}</strong><p>${escapeHtml(round.error?.message ?? round.progress ?? "")}</p>${round.error?.code ? `<p>错误代码：${escapeHtml(round.error.code)}</p>` : ""}${failureDetailsHtml(round.error)}${round.error?.recording_error ? `<div><p>失败记录保存异常；原始故障仍保留。</p>${failureDetailsHtml(round.error.recording_error)}</div>` : ""}${["queued", "running"].includes(round.status) ? `<p>停止查看进度不会取消后台任务，也不会再次发送材料。</p><div class="job-actions"><button type="button" class="button secondary" data-full-poll>${fullState.polling ? "停止查看进度" : "继续查看进度"}</button></div>` : "<p>本轮失败已保留；不自动重试。旧报告可从历史轮次回看。</p>"}</div>`;
+      `${heading}<div class="notice ${round.status === "failed" ? "error" : ""}"><strong>${escapeHtml(jobLabels[round.status] ?? "作业状态未知")}</strong><p>${escapeHtml(round.error?.message ?? round.progress ?? "")}</p>${round.error?.code ? `<p>错误代码：${escapeHtml(round.error.code)}</p>` : ""}${failureDetailsHtml(round.error)}${round.error?.recording_error ? `<div><p>失败记录保存异常；原始故障仍保留。</p>${failureDetailsHtml(round.error.recording_error)}</div>` : ""}${activeFullStatuses.includes(round.status) ? `<p>${round.status === "queued" && related.length ? "新审计已排队，等待旧请求退出后运行。" : "停止查看进度不会取消后台任务，也不会再次发送材料。"}</p><div class="job-actions"><button type="button" class="button secondary" data-full-poll>${fullState.polling ? "停止查看进度" : "继续查看进度"}</button></div>` : round.status === "cancelled" ? "<p>旧轮记录保留，可从历史轮次查看。</p>" : "<p>本轮失败已保留；不自动重试。旧报告可从历史轮次回看。</p>"}</div>`;
     return;
   }
   const report = round.report,
@@ -1992,7 +2168,7 @@ function renderFull() {
     <div class="notice warning"><strong>候选结果 · 人工未复核 · 正式未关闭</strong><p>${model.model_invoked ? `报告记录 ${escapeHtml(model.provider ?? "DeepSeek")} / ${escapeHtml(model.model)}，真实 HTTP 请求 ${escapeHtml(model.api_request_count)} 次。` : "报告未记录真实模型调用。"} 材料来源未经平台身份认证，业务测试未由本工具执行。</p><p id="candidate-banner"></p></div>
     ${diagnostics.length ? `<details class="notice warning"><summary>${diagnostics.length} 条调用异常记录（可能包含已恢复尝试）</summary>${diagnostics.map((item) => `<div>${failureDetailsHtml(item)}</div>`).join("")}</details>` : ""}
     <p id="schema-label" class="muted"></p><div id="legacy-banner" hidden></div><div id="metrics" class="metrics"></div><div id="current-audit-scope" class="card scope-panel"></div><div id="review-status" class="review-grid"></div><div id="summary-content" class="card scope-panel"></div><div id="report-warnings" class="notice warning" hidden></div><div id="delta-content" class="card scope-panel" hidden></div>
-    <details class="card report-identity"><summary>本轮来源、规则版本与分析限制</summary>${ruleSummaryHtml(reportRuleSummary(report))}<p>审计 ID：${escapeHtml(report.audit_id ?? round.id)}</p><p>输入摘要：<code>${escapeHtml(report.integration?.input_sha256 ?? "未提供")}</code></p><p>真实 HTTP 请求：${escapeHtml(model.api_request_count ?? 0)}；总调用预算：${escapeHtml(model.max_total_calls ?? "未提供")}。</p><ul>${array(
+    <details class="card report-identity"><summary>本轮来源、规则版本与分析限制</summary>${ruleSummaryHtml(reportRuleSummary(report))}<p>审计 ID：${escapeHtml(report.audit_id ?? round.id)}</p><p>输入摘要：<code>${escapeHtml(report.integration?.input_sha256 ?? "未提供")}</code></p>${model.provider || model.model || model.provider_endpoint ? `<p>报告记录的模型配置：${escapeHtml(model.provider ?? "DeepSeek")} / ${escapeHtml(model.model ?? "未提供")}${model.provider_endpoint ? `；请求端点：<code>${escapeHtml(model.provider_endpoint)}</code>` : ""}。</p>` : ""}<p>真实 HTTP 请求：${escapeHtml(model.api_request_count ?? 0)}；总调用预算：${escapeHtml(model.max_total_calls ?? "未提供")}。</p><ul>${array(
       report.integration?.known_limitations,
     )
       .map((limit) => `<li>${escapeHtml(limit)}</li>`)
@@ -2039,18 +2215,14 @@ async function pollFull(round) {
     try {
       const result = await api(`/api/full-audits/${encodeURIComponent(round.id)}`);
       if (version !== fullState.pollVersion) return;
-      if (
-        result.id !== round.id ||
-        !["queued", "running", "completed", "failed"].includes(result.status)
-      )
-        throw new Error("作业响应身份或状态不匹配。");
-      if (result.status === "completed") assertFullReport(result.report);
+      retainFullJob(result, round.id);
+      await refreshSuperseded(round);
+      if (version !== fullState.pollVersion) return;
       if (result.error?.provider_code || result.report?.sop_coverage?.provider_failure) {
         fullState.providerBlocked = true;
         $("full-consent").checked = false;
       }
-      Object.assign(round, result);
-      if (["completed", "failed"].includes(round.status)) fullState.polling = false;
+      if (terminalFullStatuses.includes(round.status)) fullState.polling = false;
       renderFull();
       fullControls();
       if (fullState.polling) fullState.timer = setTimeout(poll, 1500);
@@ -2072,22 +2244,18 @@ $("full-mode").addEventListener("change", () => {
   fullControls();
 });
 $("full-consent").addEventListener("change", fullControls);
-$("full-demo").addEventListener("click", async () => {
-  try {
-    const request = await api("/api/full-audit-demo");
-    assertFullRequest(request);
-    fullState.request = request;
-    fullState.fileName = "完整审计安全合成示例";
-    $("full-consent").checked = false;
-    setFullError();
-    fullControls();
-  } catch (error) {
-    setFullError(`示例未载入：${error.message} 原有材料与报告保留。`);
-  }
+$("full-demo").addEventListener("click", () => loadFullDemo(""));
+$("full-demo-select").addEventListener("change", (event) => {
+  $("full-consent").checked = false;
+  if (event.target.value) return loadFullDemo(event.target.value);
+  fullControls();
 });
 $("full-request-file").addEventListener("change", async (event) => {
   const file = event.target.files[0];
-  if (!file) return;
+  if (!file || fullState.loading || fullState.submitting || fullState.uploading) return;
+  fullState.loading = true;
+  $("full-consent").checked = false;
+  fullControls();
   try {
     if (file.size > 16 * 1024 * 1024)
       throw new Error("JSON 超过 16 MiB；未自动截断。请求本身上限仍为 2 MiB。");
@@ -2107,6 +2275,8 @@ $("full-request-file").addEventListener("change", async (event) => {
       assertFullRequest(value);
       if (value.rules !== undefined) await freezeRules(value.rules);
       fullState.request = value;
+      fullState.demo = null;
+      $("full-demo-select").value = "";
       fullState.fileName = file.name;
     }
     $("full-consent").checked = false;
@@ -2114,14 +2284,16 @@ $("full-request-file").addEventListener("change", async (event) => {
     fullControls();
   } catch (error) {
     setFullError(`材料未载入：${error.message} 现有材料与报告保留。`);
+  } finally {
+    fullState.loading = false;
+    fullControls();
   }
   event.target.value = "";
 });
 $("full-verify").addEventListener("click", async () => {
   if (
-    fullState.submitting ||
-    !fullState.request ||
-    fullState.rounds.some((round) => ["queued", "running"].includes(round.status))
+    fullState.submitting || fullState.loading || fullState.uploading ||
+    !fullState.request
   )
     return;
   let preparedRequest;
@@ -2146,6 +2318,7 @@ $("full-verify").addEventListener("click", async () => {
     return setFullError("未确认模型发送或本地模型不可用，未发送材料。");
   const request = preparedRequest;
   fullState.submitting = true;
+  $("full-consent").checked = false;
   fullControls();
   setFullError();
   try {
@@ -2156,8 +2329,13 @@ $("full-verify").addEventListener("click", async () => {
     });
     if (typeof result.id !== "string" || !["queued", "running"].includes(result.status))
       throw new Error("未收到明确的作业身份；请检查后台记录，勿重复提交。");
-    const round = { ...result, request };
-    fullState.rounds.unshift(round);
+    const round = retainFullJob(result);
+    round.request = request;
+    fullState.rounds = [round, ...fullState.rounds.filter((entry) => entry !== round)];
+    for (const id of array(result.supersedes)) {
+      const old = fullState.rounds.find((entry) => entry.id === id && !entry.imported);
+      if (old && activeFullStatuses.includes(old.status)) Object.assign(old, { status: "cancelling", superseded_by: round.id });
+    }
     fullState.active = 0;
     fullState.query = "";
     fullState.filter = "";
@@ -2191,10 +2369,20 @@ $("full-report").addEventListener("change", (event) => {
     renderFull();
   }
 });
-$("full-report").addEventListener("click", (event) => {
+$("full-report").addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
   if (button.hasAttribute("data-full-return")) return renderFull();
+  if (button.hasAttribute("data-full-job")) {
+    const id = button.getAttribute("data-full-job");
+    try {
+      retainFullJob(await api(`/api/full-audits/${encodeURIComponent(id)}`), id);
+      fullState.active = fullState.rounds.findIndex((entry) => !entry.imported && entry.id === id);
+      renderFull();
+      fullControls();
+    } catch (error) { setFullError(`关联任务未读取：${error.message} 旧轮记录保留。`); }
+    return;
+  }
   const round = fullState.rounds[fullState.active];
   if (!round) return;
   if (button.hasAttribute("data-full-poll")) {
@@ -2212,10 +2400,26 @@ async function startFull() {
   const results = await Promise.allSettled([
     api("/api/full-audit-config"),
     api("/api/sop-library"),
+    api("/api/full-demo-catalog"),
+    api("/api/full-audits/active"),
   ]);
   fullState.config = results[0].status === "fulfilled"
     ? results[0].value : { available: false, model_configured: false };
   if (results[1].status === "fulfilled") fullState.library = results[1].value;
+  if (results[2].status === "fulfilled" && Array.isArray(results[2].value?.demos))
+    fullState.demos = results[2].value.demos.filter((demo) => demo && typeof demo.id === "string" && /^[A-Za-z0-9_.-]+$/.test(demo.id) && /^[a-f0-9]{64}$/.test(demo.input_sha256) && Array.isArray(demo.license_files) && demo.license_files.length);
+  renderDemoChoices();
+  let restored;
+  if (results[3].status === "fulfilled" && results[3].value?.job) {
+    try {
+      const metadata = results[3].value.job;
+      if (!activeFullStatuses.includes(metadata.status)) throw new Error("活动任务状态无效。");
+      restored = retainFullJob(metadata);
+      if (fullState.rounds.length === 1) fullState.active = 0;
+      renderFull();
+    } catch (error) { setFullError(`活动任务未恢复：${error.message} 未自动提交材料。`); }
+  }
   fullControls();
+  if (restored) await pollFull(restored);
 }
 startFull();

@@ -2,7 +2,8 @@
 import copy
 import unittest
 
-from ..reference_repair import _quote_choices, repair_references
+from ..reference_repair import _quote_choices, attach_quote_ids, repair_references
+from .test_engine_quote_retry import select_refs
 from ..sop_failures import review_failures
 from ..sop_judgments import UNKNOWN
 from . import test_sop_failures as failure_fixtures
@@ -45,6 +46,9 @@ class FailureRetryReasonTests(unittest.TestCase):
                     retry['counterexample_refs'] = [fixture.ref('ACTION')]
                     retry['counterexample_refs'][0].update(start_line=2, end_line=2)
                 value = {'reviews': [retry], 'root_causes': []}
+                if not inexact_retry:
+                    value = select_refs(value, attach_quote_ids(payload, fixture.package))
+                self.assertTrue(payload['citation_retry']['selector_only'])
             self.raw_checks.append(copy.deepcopy(value))
             kwargs['before_repair'](value)
             canonical, _ = repair_references(value, fixture.package, [fixture.task],

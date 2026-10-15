@@ -57,6 +57,74 @@ class FullAuditTests(unittest.TestCase):
         self.default_source.start()
         self.addCleanup(self.default_source.stop)
 
+    def test_full_thinking_mode_is_explicit_bounded_and_retained_in_request(self):
+        class Response:
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size):
+                return json.dumps({"choices": [{"finish_reason": "stop", "message": {
+                    "reasoning_content": "Synthetic provider reasoning.", "content": '{"ok":true}'}}]}).encode()
+        for mode, tokens in [("disabled", 10000), ("enabled", 32768)]:
+            with self.subTest(mode=mode), tempfile.TemporaryDirectory() as root, \
+                 patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key", "DEEPSEEK_THINKING": mode}), \
+                 patch("urllib.request.OpenerDirector.open", return_value=Response()) as wire:
+                client = _EnvironmentFullClient()
+                self.assertEqual(client.complete("Return JSON.", {}, root, "analysis-1.call-001"), {"ok": True})
+                body = json.loads(wire.call_args.args[0].data)
+                self.assertEqual(body["thinking"], {"type": mode})
+                self.assertEqual(body["max_tokens"], tokens)
+                self.assertEqual(wire.call_args.kwargs["timeout"], 180)
+                self.assertEqual(client.request_settings["max_output_tokens"], tokens)
+                if mode == "enabled":
+                    self.assertEqual(body["reasoning_effort"], "high")
+                    self.assertNotIn("temperature", body)
+                else:
+                    self.assertEqual(body["temperature"], 0)
+                    self.assertNotIn("reasoning_effort", body)
+                retained = json.loads((Path(root) / "analysis-1.call-001.provider-request.json").read_text())
+                self.assertEqual(retained, body)
+
+    def test_invalid_thinking_configuration_fails_before_provider_request(self):
+        with patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key", "DEEPSEEK_THINKING": "invalid"}), \
+             patch("urllib.request.OpenerDirector.open", side_effect=AssertionError("no provider request")):
+            with self.assertRaises(ProviderError) as raised:
+                _EnvironmentFullClient()
+            self.assertEqual(raised.exception.code, "provider_invalid_configuration")
+            self.assertEqual(raised.exception.failure_details["error_category"], "configuration")
+            self.assertEqual(raised.exception.failure_details["phase"], "prepare")
+
+    def test_mocked_provider_transport_report_records_thinking_settings_without_credentials(self):
+        scripted = OfflineClient()
+        class Response:
+            def __init__(self, candidate): self.candidate = candidate
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def read(self, size):
+                return json.dumps({"choices": [{"finish_reason": "stop", "message": {
+                    "content": json.dumps(self.candidate)}}]}).encode()
+        def transport(request, **kwargs):
+            body = json.loads(request.data)
+            self.assertEqual(body["thinking"]["type"], "enabled")
+            self.assertEqual(request.full_url, "https://tokenhub.tencentmaas.com/v1/chat/completions")
+            self.assertEqual(body["model"], "deepseek/deepseek-flash")
+            return Response(scripted.complete(body["messages"][0]["content"], json.loads(body["messages"][1]["content"])))
+        with tempfile.TemporaryDirectory() as root, \
+             patch.dict("os.environ", {"DEEPSEEK_API_KEY": "synthetic-key", "DEEPSEEK_THINKING": "enabled",
+                 "DEEPSEEK_BASE_URL": "https://tokenhub.tencentmaas.com/v1",
+                 "DEEPSEEK_MODEL": "deepseek/deepseek-flash"}, clear=True), \
+             patch("urllib.request.OpenerDirector.open", side_effect=transport):
+            report = run_full_audit(synthetic_payload(), directory=root)
+            self.assertEqual(report["model_snapshot"]["provider"], "Tencent TokenHub")
+            self.assertEqual(report["model_snapshot"]["provider_endpoint"], "https://tokenhub.tencentmaas.com/v1/chat/completions")
+            self.assertEqual(report["model_snapshot"]["request_settings"], {
+                "thinking": "enabled", "reasoning_effort": "high", "max_output_tokens": 32768,
+                "timeout_seconds": 180})
+            self.assertNotIn("synthetic-key", json.dumps(report))
+            metadata = [json.loads(path.read_text()) for path in Path(root).glob("*.call-*.request.json")]
+            self.assertTrue(metadata)
+            self.assertTrue(all(row["provider"] == "Tencent TokenHub" and
+                row["provider_endpoint"] == "https://tokenhub.tencentmaas.com/v1/chat/completions" for row in metadata))
+
     def test_catalog_and_freeze_are_offline_and_preserve_complete_reference(self):
         with patch("urllib.request.urlopen", side_effect=AssertionError("no network")), \
              patch("formsy_sop_verification.trace_audit.run_evidence.verify_runs", side_effect=AssertionError("no private runner reads")):
@@ -76,6 +144,37 @@ class FullAuditTests(unittest.TestCase):
         literal = "应保留 `因配置而退出` 这段字面量。"
         units = summary_review_units([{"id": "T", "title": "目标", "goal": literal}])[1]["units"]
         self.assertFalse(any(unit["role"] == "causal_premise" for unit in units))
+
+    def test_publication_labels_retained_model_prose_without_rewriting_raw_artifacts(self):
+        raw = {"model_reason": "Historical helper.py contained SAMPLE_TOKEN.",
+               "model_reason_verification": {"facts": "verified", "version_binding": "verified"}}
+        accepted = "Target security evidence remains incomplete."
+
+        def finish(candidate, package, catalog, client, directory, **_):
+            # A synthetic raw fixture represents the immutable response boundary.
+            (directory / "synthetic-raw.response.json").write_text(json.dumps(raw))
+            candidate["sop_condition_checks"] = [{**copy.deepcopy(raw), "reason": accepted,
+                "result": "未核查", "evidence_refs": [], "target_commit_ids": ["a" * 40],
+                "atomic_checks": [{"model_reason": "Nested original claim.", "reason": accepted}]}]
+            candidate["sop_selection"] = {"task_selections": [{"rules": [{"model_reason": "Original scope."}]}]}
+            return candidate
+
+        with tempfile.TemporaryDirectory() as root, \
+             patch("urllib.request.urlopen", side_effect=AssertionError("no network")), \
+             patch("formsy_sop_verification.full_audit.sop_audit.audit_sop", side_effect=finish):
+            report = run_full_audit(synthetic_payload(), directory=root, client=OfflineClient())
+            row = report["sop_condition_checks"][0]
+            self.assertEqual(row["model_reason"], raw["model_reason"])
+            self.assertEqual(row["reason"], accepted)
+            self.assertEqual(row["result"], "未核查")
+            self.assertEqual(row["evidence_refs"], [])
+            self.assertEqual(row["target_commit_ids"], ["a" * 40])
+            for item in [row, row["atomic_checks"][0], report["sop_selection"]["task_selections"][0]["rules"][0]]:
+                self.assertEqual(item["model_reason_verification"], {
+                    "kind": "raw_model_narrative", "facts": "unverified",
+                    "version_binding": "unverified", "decision_basis": False})
+            self.assertEqual(json.loads((Path(root) / "report.json").read_text()), report)
+            self.assertEqual(json.loads((Path(root) / "synthetic-raw.response.json").read_text()), raw)
 
     def test_real_pipeline_with_fake_client_produces_144_rows_without_network_or_execution(self):
         payload = synthetic_payload()

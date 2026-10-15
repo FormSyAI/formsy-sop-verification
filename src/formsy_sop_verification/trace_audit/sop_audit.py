@@ -6,16 +6,17 @@ from collections import Counter
 from pathlib import Path
 
 from .model_client import ModelOutputError, redact, save_json
-from .audit_policy import target_source_index
+from .audit_policy import SOURCE_SYNTAX_PROMPT, project_local_failures, target_source_index
 from .reference_repair import (CITATION_SYSTEM_PROMPT, CITATION_RETRY_PROMPT, attach_quote_ids,
                               reference_diagnostics, repair_references, validate_quote_id_retry,
                               validate_retry_reason_consistency)
 from .run_evidence import execution_review_candidates
 from .sop_contracts import VERSION, ensure_contracts, rule_audit_scope
 from .sop_judgments import atomic_response, apply_atomic_gates, acceptance_consistency, sync_execution_checks, closure_prerequisites
-from .sop_scope import (INTENT_SYSTEM, evaluation_condition, intent_input, intent_response,
+from .sop_scope import (INTENT_SYSTEM, REUSE_SCOPE_PROMPT, CREDENTIAL_SCOPE_PROMPT,
+                       evaluation_condition, intent_input, intent_response,
                        resolve_scope, restore_deferred_items, scoped_result, uncertain_intents)
-from .sop_failures import review_failures, build_issue_groups
+from .sop_failures import review_failures, review_local_failures, build_issue_groups
 
 PASS, FAIL, UNKNOWN, NA = '满足', '不满足', '未核查', '不适用'
 GAPS = {'evidence_missing', 'automatic_check_unsupported', 'rule_scope_difference',
@@ -44,8 +45,8 @@ contract.audit_scope和item.audit_object固定被审对象，item.judgment_dimen
 带semantic_gate的原子子项，确定结果需semantic_basis，结构为{audit_object:item指定值,dimension:item指定值,basis_type,evidence_refs:[引用]}。以下门槛无依据时直接未核查，不编造字段：design_failure仅约束不满足，basis_type=direct_counterexample，需求/计划设计引用放evidence_refs，另counterexample_refs给出与之矛盾的需求/计划设计原文；同一要求重复引用、缺测试或缺运行不是设计反例。design_alignment用于TC12断言设计：basis_type=design_alignment,alignment=supported|contradicts|unknown,requirement_refs:[用户需求引用],design_refs:[需求或计划引用]；明确需求本身也可提供设计，毋需额外计划文件。满足需supported，不满足需contradicts且两侧为不同原文；计划虽有可判定比较但期待错误输出、违背冻结用户期望时是设计反例，不能仅因六要素有文字就满足。security_chain用basis_type=security_chain，security_chain:{asset,threat,control,scenario}，mapping_refs引用保护意图/安全映射，control_refs定位目标控制代码；普通功能错误不能冒充安全威胁。actual_claim用basis_type=actual_claim，claim_kind=actual_state,claimant,target_commit_ids,statement_refs；声明原文自身须有目标SHA或材料version_id绑定，不能给用户愿望贴SHA。evidence_alignment用basis_type=evidence_alignment，核已存在证据是否对象错误，不因缺截图判失败。authorization_contract用basis_type=authorization_contract，authorization:{subject,destination,action,boundary},contract_refs定位有效授权，action_refs定位目标动作；没授权记录不是证实未授权。environment_record用basis_type=environment_record，environment:{platform,runtime,configuration}及配置/环境引用，功能场景不等于平台。claim_scope用basis_type=claim_scope，claims:[{statement_refs,source_refs,relation:supported|exceeds_source|uncertain}]；满足另需coverage=all_in_scope且逐条支持，不能仅有引用就宣称全部主张不超资料。除design_failure/design_alignment/claim_scope外，不满足另需counterexample_refs定位本条件的直接反例。所有refs沿用相同逐字/任务/最终版本要求；顶层evidence_refs汇总子项关键依据。
 1.5补充判定字段：design_alignment的semantic_basis还需design_basis=user_expectation|plan_expectation|delivered_assertion|missing_delivery|unknown；只有user_expectation或plan_expectation可支持设计确定结论。I05先核用户输入、操作、期望及明确计划，不能拿交付断言遗漏、缺测试代码或缺运行判设计失败；交付遗漏交TC13。claim_scope每个claim还需claim_type=fact|diagnosis|prediction|plan|actual_state；一般诊断、事实、预测与计划不强制目标SHA，实际状态声明按对应真实性门槛检查。TC14.C02的statement_review_inventory列出原assistant源，满足须coverage=all_in_scope、covered_source_ids覆盖清单全部evidence_id、source_reviews逐源分类claims|no_claim|uncertain，且不能有uncertain；分类claims的源须有具体claim对应。已定位局部exceeds_source仍可不满足，不借其他未核查遮蔽失败，也不因缺成功声明省略一般诊断。TC14和actual_claim的原Agentstatement_refs只引用assistant，工具/日志/context可作原始来源或反证，不冒充Agent声明。TC13.C03的presence_substitution须basis_type=presence_substitution，statement_kind=agent_statement|acceptance_decision，前者statement_refs定位assistant原Agent声明、后者定位context中的有效验收决定；evidence_refs定位产物或验证依据，relation=existence_as_completion|behavior_verified|unknown；不满足需existence_as_completion，满足需behavior_verified，缺声明保留未核查。断言缺失本身不是“用存在代替验证”的实际声明证据。
 trigger.mode=always的子项必查，纯函数、任务小或缺材料不能记不适用；conditional/rule子项仍须明确场景证据才可不适用。allowed_evidence_kinds只是最低证据类型，引用存在不等于能证明结论。前置、环境、数据、操作、断言和证据计划分别核查；测试函数存在不能代替环境配置或证据采集计划。TC12检查验收设计：明确需求中的输入/期望值与验证计划可共同证明计划断言；必须把计划期望逐项对照冻结用户期望，明确相反的计划是不满足，不把错误实现的输出当有效验收。缺交付测试不能直接推出缺设计，交付断言遗漏由FIX02/TC13判断。process_history需要实际流程记录，源码、用户希望怎样做或本轮发现问题都不能证明已追加轮次/重开/保留旧失败。
-acceptance_checks为同任务已核查的验收事实；对相同维度、相同必要验收范围不得相互矛盾。明确必需反例缺失且完整材料已证实，不能因其他测试通过或缺口已另行记录而判满足；材料不全则未核查。测试交付失败不能推出正确函数实现失败。对全部必需项的判断不得只挑通过子集。TC02.C01核内容正确的需求—设计—验收关联，计划仅提到同一任务却未对应用户行为不算满足；TC02.C02反向目的要与本轮change_relations及未映射改动一致，不能从Agent工具错误、诊断观察或时间先后新增用户需求，再宣称所有改动都有需求来源。若基础矩阵未建立配套/诊断目的的因果依据，不能仅凭相同引用判反向关联全部满足，保留未核查。
-本轮以冻结的当前参考版本为准，不核查Trace日期、SOP生效时间或历史适用性，缺这些信息不得扣分、记未核查或要求补证，也不输出相关提示。涉及来源日期时以本轮提供的明确版本和内容哈希定位；目标代码版本、源引用内容及冲突仍须严格核对。
+acceptance_checks为同任务已核查的验收事实；对相同维度、相同必要验收范围不得相互矛盾。明确必需反例缺失且完整材料已证实，不能因其他测试通过或缺口已另行记录而判满足；材料不全则未核查。测试交付失败不能推出正确函数实现失败。用户明确纠正旧行为时，旧断言本身不构成必须维持的兼容合同；旧断言与新行为冲突交测试设计核查，需求变更范围之外的兼容边界仍独立核查。对全部必需项的判断不得只挑通过子集。TC02.C01核内容正确的需求—设计—验收关联，计划仅提到同一任务却未对应用户行为不算满足；TC02.C02反向目的要与本轮change_relations及未映射改动一致，不能从Agent工具错误、诊断观察或时间先后新增用户需求，再宣称所有改动都有需求来源。若基础矩阵未建立配套/诊断目的的因果依据，不能仅凭相同引用判反向关联全部满足，保留未核查。
+本轮以冻结的当前参考版本为准，不核查Trace消息时间、SOP生效时间或历史适用性，缺这些信息不得扣分、记未核查或要求补证，也不输出相关提示。此排除不包含实际采用外部/本地依据自身的来源日期；版本和内容哈希不能推导日期，缺来源日期时保留对应未知。目标代码版本、源引用内容及冲突仍须严格核对。
 result四态：满足、不满足、未核查、不适用。明确满足或不满足需逐字证据；代码结论需引用当前任务最终目标Commit源码或diff，父版本/中间版本不能证明最终行为。用户需求引用限固定任务引用的用户消息。scope为代码行为时分析完整表达式与边界，不用助手自述作事实。未提供材料仅证据不足，不意味着没有执行或不适用。不适用须明确场景范围证据，不能用缺日志/环境等作理由。
 区分原错误回归与原本就应通过的兼容断言，不按断言数量强加需求。凡声称断言能验证原缺陷、旧版会失败或区分修复前后，理由必须写出同一输入在父版本和目标版本的推导结果及期望值；两版结果相同只能证明兼容保持。不确定则保留未知，不能编造结果。一条必需反例遗漏不等于所有现有断言都无法区分两版。只按本条件原文检查，不把示例、建议或更严测试要求变成必需项。不机械要求所有类型材料：说明该条件实际缺哪份证据和为什么。execution条件只有程序验证的目标版本、源文件/测试/日志、具体断言运行绑定能证明执行；本模型不赋予签名或日志可信身份。human条件由程序另处理，无人流程不生成签字、人工复核或人工补证动作。
 FIX05可检查全任务必验行为执行；其他execution条件目前没有条件专属的测试断言及运行映射，不能借本任务普通功能断言通过证明安全拒绝、越界或其它条件专属测试通过。此类适用条件记未核查/automatic_check_unsupported；仅明确场景不适用且有范围原文依据时可记不适用。
@@ -66,6 +67,7 @@ TC02.C02使用purpose_alignment：purpose_kind=diagnostic_attempt|implementation
 FIX05依据contract.execution_dimension分层：behavior只核必验行为实际结果；skip_substitution只核跳过是否有有效替代；artifact_binding/evidence_completeness/current_identity核绑定、证据完整性及当前对象身份。实际行为失败不使命令、环境、版本、日志身份也失败，证据齐全也不使行为通过。current_identity只核当前版本的原始执行和身份绑定，不以运行是否成功重判身份。环境和真实/mock分类可结合context明细，但必须同时引用已验签run_record的environment/scope或其绑定日志，普通环境说明不能独立证明运行事实。execution_dimension=evidence_presence只核已有运行性结论是否有受信当前版本实证，不判断功能通过或要求重复引用源码。TC13原设计需引用原目标完整测试源码及用户要求，本轮外部日志仅支持执行，不替代原测试覆盖证明。'''
 CONDITION_SYSTEM += '''
 引用纠错时须同步重审相应事实：指定目标材料全文不存在quote不是行号小误差，不把历史试验、助手代码片段或别的版本迁移为最终源码。没有扫描、复检或流程记录时，未核查可空evidence_refs，不引用标题或准备复现计划冒充缺失的实际记录。原有完整测试覆盖范围只能按所见实际源码判，不将已存在的控制用例说成不存在。
+reason和atomic_checks.reason即便结论为未核查，也须区分目标文件现状与历史观察。同路径的历史tool/assistant只证明当时观察，不能据本行target SHA迁移为目标现状；目标现状须由同任务、同路径、目标版本source支持，diff仅证明其对应变更前后，不能把删除行说成目标版本仍存在。仅有历史材料时须明确“历史观察，未绑定目标版本”，缺证据保留未核查。TC14原主张比较仍可使用该主张原观察的父版本，不改变其观察版本例外。
 target_source_syntax_index是同任务同目标的可见Python语法定位目录，列实际测试函数、json解析及带路径参数的调用；只辅助查原文，不证明外部信任、持久副作用、数据流或测试覆盖。判输入/副作用须核对应完整调用链；称原测试全部/仅某输入时须核所有相关函数及断言，不能漏掉布尔等控制用例。
 不适用的排除须用同对象范围证据。标题或任务聚焦某功能不能证明产品没有数据、凭据、存储、保护对象或其它能力；没有保护决策仅是决策缺口。相邻条件已经确认数据/凭据对象时，不能在后续条件又写对象不存在；某具体加密/备份场景是否不适用仍须对应范围证据，而非把整条数据生命周期一并豁免。'''
 SELECT_SYSTEM += '''
@@ -73,6 +75,20 @@ SELECT_SYSTEM += '''
 '''
 CONDITION_SYSTEM += '''
 1.7：contract.items是本轮程序固定的检查子集，原条款完整文字和来源仍保留；程序未纳入的阶段子项会另列未核定，不能自行新增、豁免或补成通过。code_fix只核本次全部实质改动与必要依赖链的安全影响，不要求覆盖整产品未涉及的治理文档；同范围未知仍未核查，不能声称整产品安全或SOP全文已通过。固定文档格式、单独计划文件和特定回执格式不是额外义务，引用已有等价有效材料；实际执行仍必须通过来源、版本和断言绑定门槛。
+'''
+CONDITION_SYSTEM += '\n' + SOURCE_SYNTAX_PROMPT
+CONDITION_SYSTEM += '\nTC14.C01须区分依据kind：direct_requirement的原用户要求可用本源完整内容hash定位版本，不需额外version_id，不额外索取消息日期或把它列入缺口；本地local及外部external实际依据仍各自核自身版本、来源日期、位置和适用性，不能借直接要求的例外豁免。理由只列该依据实际缺失且属于本轮核查的属性。'
+CONDITION_SYSTEM += '\nTC10依赖版本、许可、环境须按各依赖自身对象及对应属性分别核；项目setup/license声明只证明项目许可，不能证明mypy/pytest等第三方依赖许可。版本固定、没有新增依赖都不能补齐许可依据；保留已定位版本事实，任一适用必需属性缺据则整体未核查。源码/测试全称判断必须覆盖全部实际相关函数，不能把已有nested/lambda用例说成均顶层；确证局部测试断言错误与全称覆盖理由分别核，不用错误全称理由支持正确的局部FAIL。'
+CONDITION_SYSTEM += '\nTC01.C01的direct_requirement基准identity用原用户源ID/name/path或逐字原文定位，不用另写概述冒充定位值；自身内容版本可为64位完整sha256或sha256:加64位完整hash。本地/外部基准即使身份版本结构成立，规则名出现在选择引用也不证明有效采用，当前无独立采用语义回执时保持未核查并保留候选，不能把否定采用或举例当选择。FIX03.C03.I01只核原错误触发，可引用当前目标的直接父版本源码；不要求用目标修复后代码冒充原错误证据。该例外不适用于其它子项，完整条件仍需目标材料，所有逐字引用及任务边界不变。'
+CONDITION_SYSTEM += '''
+必要调用/数据/状态路径（FIX03.C03.I03）须逐条定位所声称的每个必要边及其版本。入口函数定义和末端注册不能证明中间调度；历史traceback可支持历史路径，不能由目标版本两端引用迁移为目标完整链。只见局部守卫、映射或返回常量时可说明这些局部事实，关键中间路径缺失则未核查，不宣称完整转译或确定输出已验证。
+失败/未验证不算解决（TC07.C03）须读原Agent完整解决声明及同段上下文，逐个核实际声称的性质；“无异常且正确输出”包含两个义务，不能仅证无异常就满足整句。无输出的成功命令不能证明输出字面量，目标局部返回常量不能证明历史运行输出。原观察与目标版本分别核对，缺该属性实证保留未核查，既不凭缺证据判虚假完成，也不以部分证据判满足。
+'''
+SELECT_SYSTEM += '\n' + REUSE_SCOPE_PROMPT + '\n' + CREDENTIAL_SCOPE_PROMPT
+CONDITION_SYSTEM += '\n' + REUSE_SCOPE_PROMPT + '\n' + CREDENTIAL_SCOPE_PROMPT
+CONDITION_SYSTEM += '''
+TC01.C01的对象代码版本与任务规则基准版本分别核。满足候选在原子项semantic_basis.rule_baseline声明{kind:direct_requirement|local|external,identity,evidence_id,version,evidence_refs:[],selection_refs:[]}。evidence_refs指向同一基准来源，identity必须非空并能在该来源定位。直接原用户要求可作本任务有效基准，version可用该原文的sha256、selection_refs可省略。本地/外部规则须来自context原规则材料，另由selection_refs定位原用户对该identity的有效规则选择；实施源码、目标路径范围指令不能冒充规则选择。本地基准可用自身版本或内容sha256，外部规范版本须见于自己的原文。源码Commit SHA、审计器固定规则pin不能代替被审规则版本。该门只校验声明基准的选择引用与自身版本结构，不认证采用语义、外部资料或项目历史生效；未定位有效规则材料或选择时未核查，不自动改资料类型或补选来源。
+TC14.C01仍核每个实际采用依据自己的版本、来源日期、位置及适用性。本地源码的来源日期同样需要自身依据，不限于外部文档。每个缺失属性保留未核查；不能用本轮排除范围作为这些属性已满足的理由，也不要在reason/improvement/verification复述已排除的核查或生成相关提示。不要仅因资料名或URL出现就假设已采用。
 '''
 SELECTION_SYSTEM, SOP_SYSTEM = SELECT_SYSTEM, CONDITION_SYSTEM
 
@@ -96,6 +112,10 @@ def _task_user_ids(task):
     return {ref.get('evidence_id') for ref in refs}
 
 
+class InsufficientEvidence(ValueError):
+    """Valid citations that cannot support a definite conclusion, not a parse failure."""
+
+
 def _validate_refs(refs, task, package, *, definite=False):
     # Reuse the same citation, task scope and target-version boundary as the core audit.
     from .audit_engine import task_refs
@@ -109,7 +129,7 @@ def _validate_refs(refs, task, package, *, definite=False):
         raise ValueError('SOP引用了不属于当前固定任务的用户需求。')
     if definite and (not refs or all(evidence[ref['evidence_id']]['kind'] in {'assistant', 'tool'}
                                      for ref in refs)):
-        raise ValueError('SOP确定结论缺少用户范围或目标源码等可核查证据，不能仅凭助手/工具自述。')
+        raise InsufficientEvidence('SOP确定结论缺少用户范围或目标源码等可核查证据，不能仅凭助手/工具自述。')
 
 
 def _selection_response(value, task, rules, package):
@@ -185,6 +205,27 @@ def _require_cross_file_interface_review(selections, task, result, package, rule
             selection.pop('analysis_failed', None)
 
 
+def _require_original_statement_review(selections, task, package, rules):
+    """Source presence requires classification, not a presumption of factual claims."""
+    from .sop_judgments import statement_review_inventory
+    native = any(rule['id'] == 'TC14' and any(
+        condition.get('contract', {}).get('origin') == 'library_interpretation'
+        and condition['contract'].get('version') == VERSION
+        and condition['contract'].get('audit_object') == 'task_delivery'
+        for condition in rule.get('conditions', [])) for rule in rules)
+    inventory = statement_review_inventory(task, package) if native else []
+    if not inventory:
+        return
+    for selection in selections:
+        if selection['rule_id'] == 'TC14' and selection['selection'] != 'selected':
+            selection.update(model_selection=selection['selection'], model_reason=selection['reason'],
+                             selection='selected',
+                             reason='存在本任务原Agent材料，需逐源核是否有一般主张或实际采用的本地/继承依据；'
+                                    '未采用外部资料不能整体跳过。此范围纳入不证明主张存在或正确。',
+                             program_review_scope={'id': 'original_agent_statement_review',
+                                 'statement_source_ids': [row['evidence_id'] for row in inventory]})
+
+
 def _condition_response(value, task, conditions, package, *, strict_basis=False):
     rows = value.get('conditions') if isinstance(value, dict) else None
     if not isinstance(rows, list) or len(rows) != len(conditions):
@@ -201,16 +242,27 @@ def _condition_response(value, task, conditions, package, *, strict_basis=False)
         if result not in {PASS, FAIL, UNKNOWN, NA} or not isinstance(reason, str) or not reason.strip():
             raise ValueError('SOP条件缺少有效四态结论或具体理由。')
         if any(HISTORY.search(str(row.get(field, ''))) for field in ['reason', 'improvement', 'verification']):
-            raise ValueError('本轮已排除历史时间适用性核查，不因这些信息缺失扣分或生成提示。')
+            raise ValueError('本字段引入了本轮明确排除的核查，请删除该判断及相关提示，不复述排除说明。'
+                             'TC14.C01的local/external依据仍各核自身版本、来源日期、位置和适用性；'
+                             'direct_requirement原要求可用本源hash，不额外索取version_id或消息日期；'
+                             '本地及外部依据缺自己的日期均未核查，不能借排除范围默认满足。')
         if not isinstance(ids, list) or any(not isinstance(pid, str) for pid in ids) \
                 or len(ids) != len(set(ids)) or not set(ids) <= point_ids:
             raise ValueError('SOP条件引用了未知、其他任务或重复的验收点。')
         claim_scope = any(item.get('semantic_gate') == 'claim_scope'
                           and item.get('semantic_schema_version') in {'1.6', '1.7', '1.8', VERSION}
                           for item in by_condition[row['condition_id']].get('contract', {}).get('items', []))
-        _validate_refs(refs, task, package, definite=result != UNKNOWN and not claim_scope)
+        insufficient = None
+        try:
+            _validate_refs(refs, task, package, definite=result != UNKNOWN and not claim_scope)
+        except InsufficientEvidence as exc:
+            if by_condition[row['condition_id']].get('contract', {}).get('origin') != 'library_interpretation':
+                raise
+            insufficient = str(exc)
         if result == NA and MISSING.search(reason):
-            raise ValueError('条件证据缺失或适用性不明确不能记不适用。')
+            raise ValueError(row['condition_id'] + '的reason表明证据缺失或适用性不明确，不能记不适用；'
+                             '请result=未核查，适用性未知用gap_type=applicability_uncertain，'
+                             '已知适用但缺证明用gap_type=evidence_missing；不补造范围或引用。')
         gap = row.get('gap_type', '')
         if result == UNKNOWN and gap not in GAPS - {'analysis_failed'}:
             raise ValueError('未核查条件必须说明具体gap_type。')
@@ -226,6 +278,10 @@ def _condition_response(value, task, conditions, package, *, strict_basis=False)
              ('evidence_refs', []), ('acceptance_ids', []), ('improvement', ''), ('verification', '')]}
         validated[row['condition_id']]['atomic_checks'] = atomic_response(
             row, by_condition[row['condition_id']], task, package, strict_basis=strict_basis)
+        if insufficient:
+            candidate = validated[row['condition_id']]
+            candidate.update(result=UNKNOWN, reason=insufficient, gap_type='evidence_missing',
+                             model_candidate={'result': result, 'reason': reason})
     return [validated[condition['id']] for condition in conditions]
 
 
@@ -385,6 +441,12 @@ def _execution_identity_gate(row, task, package):
 
 def _unknown(row, reason, gap='analysis_failed'):
     row.update(result=UNKNOWN, reason=reason, gap_type=gap)
+    if not row.get('atomic_checks'):
+        row['atomic_checks'] = [
+            {'id': item['id'], 'text': item['text'], 'result': UNKNOWN,
+             'reason': reason, 'gap_type': gap, 'evidence_refs': [],
+             'acceptance_ids': [], 'program_gates': []}
+            for item in row.get('contract', {}).get('items', [])]
     if gap == 'analysis_failed':
         row['analysis_status'] = 'failed'
     return row
@@ -448,6 +510,8 @@ def reaggregate_sop(result, *, task_ids=None):
         if rows is None:
             continue
         value = _aggregate([row['result'] for row in rows])
+        if check.get('local_failure_candidate'):
+            value = _aggregate([value, check.get('automated_result', UNKNOWN)])
         if check.get('automated_result') == FAIL:
             value = FAIL
         check.update(sop_result=value, result=value, original_sop_result=value,
@@ -457,7 +521,10 @@ def reaggregate_sop(result, *, task_ids=None):
                           if check.get('task_id') in tasks and check.get('automated_result') == FAIL
                           and ('target_commit_ids' not in check or set(check['target_commit_ids']) ==
                                set(tasks[check['task_id']].get('target_commit_ids', [])))]
-    original = _aggregate([row['result'] for row in conditions] + confirmed_failures)
+    unconfirmed_local = [UNKNOWN for check in result.get('checks', [])
+                        if check.get('task_id') in tasks and check.get('local_failure_candidate')
+                        and check.get('automated_result') == UNKNOWN]
+    original = _aggregate([row['result'] for row in conditions] + confirmed_failures + unconfirmed_local)
     unsupported = result.get('sop_coverage', {}).get('unsupported_sections', [])
     if original == PASS and unsupported:
         original = UNKNOWN
@@ -482,6 +549,8 @@ def reaggregate_sop(result, *, task_ids=None):
                             'selected_rule_pairs': sum(rule['selection'] == 'selected' for task in selections
                                                        for rule in task.get('rules', [])),
                             'analysis_complete': not metadata.get('failures') and not metadata.get('provider_failure') and
+                                                 not any(check.get('local_failure_review', {}).get('status') in {'pending', 'failed'}
+                                                         for check in result.get('checks', [])) and
                                                  not any(row.get('gap_type') == 'analysis_failed' or row.get('analysis_status') == 'failed'
                                                          for row in conditions),
                             'outcome': original}
@@ -494,7 +563,7 @@ def reaggregate_sop(result, *, task_ids=None):
             'profile': context['profile'],
             'outcome': original if context['profile'] == 'full_sop' else
                        _aggregate([row.get('scope_result', row['result']) for row in required]
-                                  + deferred_failures + confirmed_failures),
+                                  + deferred_failures + confirmed_failures + unconfirmed_local),
             'conditions': len(required), 'deferred_conditions': len(conditions) - len(required),
             'deferred_atomic_items': sum(len(row.get('review_scope', {}).get('deferred_item_ids', [])) for row in conditions),
             'analysis_complete': result['sop_coverage']['analysis_complete'],
@@ -551,12 +620,14 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
             try:
                 model_payload = attach_quote_ids({**payload, 'validation_feedback': feedback,
                     **({'reference_feedback': diagnostics, 'citation_retry': {
-                        'mode': 'exact_visible_citations', 'instruction': CITATION_RETRY_PROMPT}} if diagnostics else {})}, package)
+                        'mode': 'exact_visible_citations', 'selector_only': True, 'instruction': CITATION_RETRY_PROMPT}} if diagnostics else {})}, package)
                 for item in model_payload.get('evidence', []):
                     # SOP sees the complete numbered original once; frozen evidence remains untouched.
                     if 'numbered_lines' in item:
                         item.pop('content', None)
-                value = client.complete(system + ("\n" + CITATION_RETRY_PROMPT if diagnostics else ""),
+                selector_retry = model_payload.get('citation_retry', {}).get('selector_only') is True
+                retry_prompt = '\n' + CITATION_RETRY_PROMPT if selector_retry and CITATION_RETRY_PROMPT not in system else ''
+                value = client.complete(system + retry_prompt,
                                         model_payload, directory, name)
             except ModelOutputError as exc:
                 feedback = [redact(str(exc))[:600]]
@@ -641,7 +712,7 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
             checked, error, truncated = call(name, system, {**payload, request_key: pending,
                                   'reference_feedback': [{id_key: cid, 'references': details}
                                                          for cid, details in references.items() if details],
-                                  **({'citation_retry': {'mode': 'exact_visible_citations',
+                                  **({'citation_retry': {'mode': 'exact_visible_citations', 'selector_only': True,
                                       'condition_ids': [cid for cid, details in references.items() if details],
                                       'instruction': CITATION_RETRY_PROMPT}} if any(references.values()) else {})},
                                   validate_rows, attempts=1, initial_feedback=feedback, final_failure=False,
@@ -716,6 +787,7 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
             'rule_id': rule['id'], 'selection': 'uncertain', 'reason': selection_errors[rule['id']],
             'evidence_refs': [], 'analysis_failed': True} for rule in rules]
         _require_cross_file_interface_review(selections, task, result, package, rules)
+        _require_original_statement_review(selections, task, package, rules)
         rules_by_id = {rule['id']: rule for rule in rules}
         pending = []
         for selection in selections:
@@ -780,12 +852,15 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
             from .sop_exclusions import review_exclusions
             stage_callback('独立复核不适用条件的排除范围')
             review_exclusions(condition_rows, task, package, request, call,
-                              'sop-failure-review-exclusions-' + token, failures)
+                              'sop-failure-review-exclusions-' + token, failures, directory=directory)
             stage_callback('逐条复核直接反例并归并同根因问题')
             source_ids = sorted({eid for point in result.get('acceptance_checks', [])
                                  if point.get('task_id') == task['id']
                                  for eid in point.get('source_context_evidence_ids', [])
                                  if eid not in {ref.get('evidence_id') for ref in point.get('assertion_refs', [])}})
+            review_local_failures({**result, 'sop_condition_checks': condition_rows}, task, package,
+                                  {**request, 'affected_source_context_ids': source_ids}, call,
+                                  'sop-failure-review-local-' + token, failures)
             review_failures(condition_rows, task, package,
                             {**request, 'affected_source_context_ids': source_ids}, call,
                             'sop-failure-review-' + token, failures)
@@ -881,6 +956,16 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
                     row['program_gates'].append({'id': 'execution_scope_exemption', 'met': True,
                                                 'reason': '条件场景不适用已由逐字范围引用校验，不能由缺日志豁免。'})
                 sync_execution_checks(row)
+                if row['condition_id'] == 'SEC06.C02' and row['result'] == PASS:
+                    from .sop_credential_review import review_credential_absence
+                    stage_callback('独立核查完整秘密边界与调用方凭据路径')
+                    review_credential_absence(row, task, package, request, call,
+                        'sop-credential-review-' + token + '-SEC06-C02', failures, directory=directory)
+                if row['condition_id'] == 'TC14.C01' and row['result'] == PASS:
+                    from .sop_source_review import review_source_identity
+                    stage_callback('独立核查实际采用依据的来源、版本及适用性')
+                    review_source_identity(row, task, package, request, call,
+                        'sop-source-review-' + token + '-TC14-C01', failures, directory=directory)
                 if answer.get('analysis_stage_errors') and row['result'] == UNKNOWN:
                     _unknown(row, row['reason'] + '；主张核查阶段未完成。')
         if not failures_reviewed:
@@ -904,4 +989,5 @@ def audit_sop(result, package, catalog, client, directory, stage_callback=None, 
                                 'matrix_complete': len(condition_rows) == len(tasks) * len(condition_ids)})
     if package.get('audit_context'):
         result['audit_context'] = copy.deepcopy(package['audit_context'])
+    project_local_failures(result, package, chosen)
     return reaggregate_sop(result, task_ids=chosen)

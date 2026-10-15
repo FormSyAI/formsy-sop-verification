@@ -2,15 +2,144 @@ import http.client
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 import urllib.error
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from formsy_sop_verification.failure_reporting import AuditFailure, failure_details, safe_stage
 from formsy_sop_verification.model_client import ProviderError
+from formsy_sop_verification.full_audit import _ClientAdapter
+from formsy_sop_verification.trace_audit.model_client import ModelOutputError
 
 
 class FailureReportingTests(unittest.TestCase):
+    def test_credential_review_keeps_exact_stage_and_adapter_failure_without_retry(self):
+        base = 'sop-credential-review-395e90173540-SEC06-C02'
+        for stage in (base, base + '-1', base + '-2.call-080', 'model:' + base + '-1.call-003'):
+            self.assertEqual(safe_stage(stage), stage)
+            for exc, phase in ((TimeoutError(), 'read'), (OSError(), 'store')):
+                self.assertEqual(failure_details(exc, stage=stage, phase=phase)['failure_stage'], stage)
+        class InvalidOutputClient:
+            def complete(self, system, payload):
+                raise ModelOutputError('provider_invalid_candidate')
+        adapter = _ClientAdapter(InvalidOutputClient(), 80, lambda stage: None)
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ModelOutputError):
+                adapter.complete('strict JSON', {}, directory, base + '-1')
+            record = json.loads((Path(directory) / (base + '-1.call-001.error.json')).read_text())
+            self.assertEqual(record['failure_stage'], base + '-1.call-001')
+            self.assertEqual(record['error_category'], 'output')
+            self.assertFalse(record['transport_retry'])
+            self.assertEqual(adapter.calls, 1)
+
+    def test_credential_review_does_not_accept_sensitive_or_nonbuiltin_stages(self):
+        base = 'sop-credential-review-395e90173540-SEC06-C02'
+        for value in (base.replace('SEC06-C02', 'SEC06-C05'), base.replace('395e90173540', 'T1'),
+                      base.replace('395e90173540', '395E90173540'), base + '-3', base + '-01',
+                      base + '-1.call-0016', base + '-1.call-０１６', base + '\n',
+                      base + '?password=synthetic-private', base + '/../../private'):
+            self.assertEqual(safe_stage(value), 'unknown')
+            self.assertNotIn('synthetic-private', json.dumps(failure_details(ValueError(), stage=value)))
+
+    def test_source_review_stage_is_preserved_through_output_failure(self):
+        base = "sop-source-review-395e90173540-TC14-C01"
+        for stage in (base, base + "-1", base + "-2.call-017",
+                      "model:" + base + "-1.call-016"):
+            with self.subTest(stage=stage):
+                self.assertEqual(safe_stage(stage), stage)
+                exc = ProviderError("provider_invalid_candidate", failure_stage=stage,
+                    exception_type="ModelOutputError", phase="parse", http_status=200,
+                    response_saved=True, response_partial=False)
+                details = failure_details(exc, stage="job_run", phase="job")
+                self.assertEqual(details["failure_stage"], stage)
+                self.assertEqual(details["error_category"], "output")
+                self.assertEqual(details["phase"], "parse")
+                self.assertEqual(details["provider_code"], "provider_invalid_candidate")
+                self.assertFalse(details["transport_retry"])
+                wrapped = AuditFailure("full_audit_failed", **details)
+                self.assertEqual(failure_details(wrapped)["failure_stage"], stage)
+
+    def test_source_review_adapter_records_exact_stage_without_retry(self):
+        class InvalidOutputClient:
+            calls = 0
+
+            def complete(self, system, payload):
+                self.calls += 1
+                raise ModelOutputError("provider_invalid_candidate")
+
+        client, progress = InvalidOutputClient(), []
+        adapter = _ClientAdapter(client, 80, progress.append)
+        stage = "sop-source-review-395e90173540-TC14-C01-1"
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ModelOutputError) as raised:
+                adapter.complete("strict JSON object", {}, directory, stage)
+            self.assertEqual(client.calls, 1)
+            self.assertEqual(adapter.calls, 1)
+            self.assertEqual(progress, ["model:" + stage])
+            recorded = json.loads((Path(directory) / (stage + ".call-001.error.json")).read_text())
+            self.assertEqual(recorded["failure_stage"], stage + ".call-001")
+            self.assertEqual(recorded["error_category"], "output")
+            self.assertEqual(recorded["phase"], "parse")
+            self.assertFalse(recorded["transport_retry"])
+            self.assertEqual(raised.exception.failure_details["failure_stage"], recorded["failure_stage"])
+            self.assertEqual(adapter.failure_diagnostics[0]["failure_stage"], recorded["failure_stage"])
+
+    def test_source_review_whitelist_rejects_untrusted_lookalikes(self):
+        base = "sop-source-review-395e90173540-TC14-C01"
+        values = [None, {"stage": base}, base.replace("395e90173540", "T1"),
+                  base.replace("395e90173540", "395E90173540"),
+                  base.replace("395e90173540", "395e9017354"),
+                  base.replace("395e90173540", "395e901735400"),
+                  base.replace("TC14-C01", "TC14-C02"),
+                  base + "-0", base + "-3", base + "-01", base + "-split-1",
+                  base + "-1.call-16", base + "-1.call-0016", base + "-1.call-０１６",
+                  base + "-1.call-016\n", base + "/../../private", "https://" + base,
+                  base + "?password=synthetic-private", base + ":synthetic-private",
+                  base + "x" * 201]
+        for value in values:
+            with self.subTest(value_type=type(value).__name__):
+                self.assertEqual(safe_stage(value), "unknown")
+                details = failure_details(ValueError("synthetic-private"), stage=value)
+                self.assertEqual(details["failure_stage"], "unknown")
+                self.assertNotIn("synthetic-private", json.dumps(details))
+
+    def test_local_failure_stage_preserves_only_builtin_bounded_call_tokens(self):
+        base = "sop-failure-review-local-e257d129e51b"
+        for stage in (base, base + "-1-1-1", base + "-1-2-1.call-080",
+                      "model:" + base + "-1-1-1.call-028"):
+            with self.subTest(stage=stage):
+                self.assertEqual(safe_stage(stage), stage)
+                exc = ProviderError("provider_invalid_candidate", failure_stage=stage,
+                    exception_type="ModelOutputError", phase="parse")
+                details = failure_details(exc, stage="job_run")
+                self.assertEqual(details["failure_stage"], stage)
+                self.assertEqual(details["error_category"], "output")
+                self.assertFalse(details["transport_retry"])
+
+    def test_local_failure_stage_rejects_untrusted_or_nonbuiltin_variants(self):
+        base = "sop-failure-review-local-e257d129e51b"
+        values = [base.replace("e257d129e51b", "T1"), base.replace("e257d129e51b", "E257D129E51B"),
+                  base.replace("e257d129e51b", "e257d129e51"), base.replace("e257d129e51b", "e257d129e51b0"),
+                  base + "-0-1-1", base + "-2-1-1", base + "-1-0-1", base + "-1-3-1",
+                  base + "-1-1-0", base + "-1-1-2", base + "-1-1", base + "-FIX03-1-1",
+                  base + "-1-1-1.call-28", base + "-1-1-1.call-0028", base + "-1-1-1.call-０２８",
+                  base + "-1-1-1\n", "https://" + base, base + "/../../private",
+                  base + "?password=synthetic-private", base + ":synthetic-private"]
+        for value in values:
+            with self.subTest(value=value):
+                self.assertEqual(safe_stage(value), "unknown")
+                self.assertNotIn("synthetic-private", json.dumps(failure_details(ValueError("synthetic-private"), stage=value)))
+
+    def test_stage_character_and_length_boundaries_stay_strict(self):
+        stage = "analysis-" + "1" * 191
+        self.assertEqual(len(stage), 200)
+        self.assertEqual(safe_stage(stage), stage)
+        for value in (stage + "1", "analysis-１", "", True, 17,
+                      "sop-source-review-395e90173540-TC14-C01-1\x00"):
+            with self.subTest(value_type=type(value).__name__):
+                self.assertEqual(safe_stage(value), "unknown")
+
     def test_typed_failure_keeps_original_safe_stage_and_transport_context(self):
         exc = ProviderError("provider_network_or_timeout", error_category="timeout",
                             failure_stage="sop-condition-a225562fa243-7-rows-1-1.call-018",

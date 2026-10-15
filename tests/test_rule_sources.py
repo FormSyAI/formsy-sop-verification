@@ -28,7 +28,7 @@ class RuleSourceTests(unittest.TestCase):
     def setUpClass(cls):
         cls.fixture = tempfile.TemporaryDirectory()
         cls.repository = Path(cls.fixture.name) / "formsy-sop"
-        cls.base = cls.repository / "audit/traceaudit-r11"
+        cls.base = cls.repository / "audit/traceaudit-r12"
         cls.base.mkdir(parents=True)
         packaged = Path(__file__).resolve().parents[1] / "src/formsy_sop_verification/trace_audit"
         shutil.copytree(packaged / "rules", cls.base / "rules")
@@ -41,7 +41,7 @@ class RuleSourceTests(unittest.TestCase):
             entries.append({"path": name, "sha256": hashlib.sha256(raw).hexdigest(), "bytes": len(raw),
                             "role": "rule_source" if name in rule_sources.RULE_FILES else
                                     "compiled_catalog" if name == "compiled-catalog.json" else "readme"})
-        cls.release = {"schema_version": "1.0", "release_id": "traceaudit-r11",
+        cls.release = {"schema_version": "1.0", "release_id": "traceaudit-r12", "interpretation_revision": "1.9.1",
                        "reference_only": True, "source_authenticated": False, "files": entries,
                        "catalog": {"path": "compiled-catalog.json", "sha256": next(
                            entry["sha256"] for entry in entries if entry["path"] == "compiled-catalog.json"),
@@ -69,7 +69,7 @@ class RuleSourceTests(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.repository = Path(self.temporary.name) / "formsy-sop"
         shutil.copytree(type(self).repository, self.repository)
-        self.base = self.repository / "audit/traceaudit-r11"
+        self.base = self.repository / "audit/traceaudit-r12"
         self.environment = patch.dict("os.environ", {"FORMSY_SOP_RULES_ROOT": str(self.base),
                                                     "FORMSY_SOP_RULES_COMMIT": self.commit})
         self.environment.start()
@@ -89,7 +89,10 @@ class RuleSourceTests(unittest.TestCase):
         self.assertEqual((summary["rule_count"], summary["condition_count"], summary["atomic_item_count"]), (33, 144, 184))
         self.assertEqual(summary["source"]["git_commit"], self.commit)
         self.assertEqual(summary["source"]["repository"], "FormSyAI/formsy-sop")
-        self.assertEqual(summary["source"]["path"], "audit/traceaudit-r11")
+        self.assertEqual(summary["source"]["path"], "audit/traceaudit-r12")
+        self.assertEqual(summary["source"]["release_id"], "traceaudit-r12")
+        self.assertEqual(summary["source"]["interpretation_revision"], "1.9.1")
+        self.assertEqual(summary["source"]["contract_version"], "1.9")
         self.assertEqual(len(source["rules"]), 6)
         self.assertTrue(all(condition["contract"]["items"]
                             for rule in source["catalog"]["rules"] for condition in rule["conditions"]))
@@ -158,7 +161,9 @@ class RuleSourceTests(unittest.TestCase):
     def test_invalid_release_paths_duplicate_entries_and_pinned_subset_are_rejected(self):
         for mutate in [lambda release: release["files"][0].update(path="../outside.json"),
                        lambda release: release["files"].append(release["files"][0]),
-                       lambda release: release["catalog"].update(atomic_item_count=1)]:
+                       lambda release: release["catalog"].update(atomic_item_count=1),
+                       lambda release: release.update(interpretation_revision="1.9"),
+                       lambda release: release.pop("interpretation_revision")]:
             release = copy.deepcopy(self.release)
             mutate(release)
             write_json(self.base / "release.json", release)

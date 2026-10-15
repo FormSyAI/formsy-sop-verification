@@ -20,9 +20,12 @@ def main():
             raise ValueError("output_too_large")
         sys.stdout.buffer.write(output + b"\n")
         return 0
-    except (ValueError, UnicodeError, RecursionError):
+    except (ValueError, UnicodeError, RecursionError) as exc:
         # Never echo untrusted input, provider output, credentials or exception text.
-        sys.stdout.write('{"error":{"code":"invalid_request","message":"Invalid or oversized verification request."}}\n')
+        if isinstance(exc, ValueError) and str(exc) == "credential_in_evidence_identity":
+            sys.stdout.write('{"error":{"code":"credential_in_evidence_identity","message":"Remove credentials from project, SOP or source identity fields."}}\n')
+        else:
+            sys.stdout.write('{"error":{"code":"invalid_request","message":"Invalid or oversized verification request."}}\n')
         return 2
 
 

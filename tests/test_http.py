@@ -4,10 +4,13 @@ import copy
 from http.client import HTTPConnection
 import importlib.util
 import json
+import hashlib
+import shutil
 import os
 from pathlib import Path
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import Mock, patch
 
@@ -60,6 +63,23 @@ class HTTPTests(unittest.TestCase):
             self.assertIn(demo["mode"], {"synthetic_replay", "offline_fixture"})
             self.assertFalse(demo["report"]["formal_closed"])
             verify.assert_not_called()
+        self.assertFalse(self.records.exists())
+
+    def test_invalid_full_thinking_config_is_disabled_and_cannot_submit(self):
+        with patch.dict(os.environ, {"DEEPSEEK_THINKING": "invalid"}, clear=True), \
+             patch.object(local_server, "configuration", side_effect=AssertionError("no key configuration read")), \
+             patch("formsy_sop_verification.full_audit.catalog_summary", side_effect=AssertionError("no catalog read")), \
+             patch.object(local_server.FullAuditJobs, "submit", side_effect=AssertionError("no job submission")) as submit, \
+             patch("urllib.request.OpenerDirector.open", side_effect=AssertionError("no provider request")):
+            status, _, config = self.call("/api/full-audit-config")
+            self.assertEqual(status, 200)
+            for field in ("available", "default_available", "model_configured"):
+                self.assertFalse(config[field])
+            self.assertEqual(config["configuration_error"], "provider_invalid_configuration")
+            status, _, result = self.call("/api/full-audits", body=json.dumps({"request": {}, "mode": "model"}).encode())
+            self.assertEqual(status, 503)
+            self.assertEqual(result["error"]["code"], "provider_invalid_configuration")
+            submit.assert_not_called()
         self.assertFalse(self.records.exists())
 
     def test_embedding_defaults_to_blocked_and_allows_only_an_explicit_local_origin(self):
@@ -131,12 +151,13 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(self.call("/api/full-audits", json.dumps({"request": demo, "mode": "model"}).encode())[0], 503)
         self.assertFalse(self.records.exists())
 
-    def test_full_job_submit_poll_and_busy_do_not_dispatch_the_quick_engine(self):
+    def test_full_job_submit_poll_active_and_start_failure_do_not_dispatch_the_quick_engine(self):
         # A fake queue exercises the wire contract without starting a model worker.
         jobs = Mock()
-        queued = {"id": "123", "status": "queued", "progress": "queued"}
+        queued = {"id": "123", "status": "queued", "progress": "queued", "supersedes": ["old-id"], "input_sha256": "sha256:" + "a" * 64}
         jobs.submit.return_value = queued
         jobs.get.return_value = queued
+        jobs.active.return_value = queued
         self.server.shutdown()
         self.server.server_close()
         self.thread.join()
@@ -152,6 +173,9 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual((submitted[0], submitted[2]), (202, queued))
             jobs.submit.assert_called_once_with(demo)
             self.assertEqual(self.call("/api/full-audits/123")[2], queued)
+            self.assertEqual(self.call("/api/full-audits/active")[2], {"job": queued})
+            jobs.active.return_value = None
+            self.assertEqual(self.call("/api/full-audits/active")[2], {"job": None})
             failed = {"id": "123", "status": "failed", "progress": "model:analysis-1.call-001", "error": {
                 "code": "full_audit_failed", "message": "Fixed safe message", "provider_code": "provider_network_or_timeout",
                 "error_category": "timeout", "failure_stage": "analysis-1.call-001", "exception_type": "TimeoutError",
@@ -165,10 +189,139 @@ class HTTPTests(unittest.TestCase):
             self.assertEqual(polled[2], failed)
             jobs.get.return_value = None
             self.assertEqual(self.call("/api/full-audits/missing")[0], 404)
-            jobs.submit.side_effect = RuntimeError("busy")
-            self.assertEqual(self.call("/api/full-audits", body)[0], 429)
+            for category, status in (("start", 503), ("storage", 500)):
+                error = {"code": "full_audit_start_failed", "error_category": category, "failure_stage": "job_start"}
+                jobs.submit.side_effect = local_server.FullAuditStartError(error)
+                failed_start = self.call("/api/full-audits", body)
+                self.assertEqual((failed_start[0], failed_start[2]), (status, {"error": error}))
+            jobs.submit.side_effect = RuntimeError("private unexpected error")
+            unknown_start = self.call("/api/full-audits", body)
+            self.assertEqual(unknown_start[0], 500)
+            self.assertNotIn("private unexpected", json.dumps(unknown_start))
             self.assertEqual(self.call("/api/full-audits", body, headers={"Origin": "https://other.invalid"})[0], 403)
             verify.assert_not_called()
+        self.assertFalse(self.records.exists())
+
+    def test_new_full_http_submission_waits_for_old_runner_and_latest_queue_wins(self):
+        from formsy_sop_verification.cancellation import check_cancelled
+        started, release = threading.Event(), threading.Event()
+        calls = []
+
+        def run(request, *, directory, cancellation_event, **_):
+            calls.append(request["title"])
+            if request["title"] == "first private title":
+                directory.mkdir()
+                (directory / "received-response.json").write_text('{"old":"kept"}')
+                started.set()
+                self.assertTrue(release.wait(5))
+                check_cancelled(cancellation_event, "analysis-1.call-001")
+            return {"candidate": True}
+
+        jobs = local_server.FullAuditJobs(self.records / "full", runner=run, prepare=lambda _: None)
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+        self.server = local_server.make_server(port=0, reports_dir=self.records, full_jobs=jobs)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.origin = f"http://127.0.0.1:{self.server.server_port}"
+
+        def submit(title):
+            response = self.call("/api/full-audits", json.dumps({"request": {"title": title}, "mode": "model"}).encode())
+            self.assertEqual(response[0], 202)
+            self.assertEqual(response[2]["status"], "queued")
+            return response[2]
+
+        def terminal(job):
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                polled = self.call("/api/full-audits/" + job["id"])[2]
+                if polled["status"] in {"completed", "failed", "cancelled"}:
+                    return polled
+                time.sleep(0.01)
+            self.fail("HTTP fake job did not finish")
+
+        with patch.object(local_server, "full_configuration", return_value={"available": True, "model_configured": True}), \
+             patch.object(local_server, "verify", side_effect=AssertionError("no quick engine")), \
+             patch("urllib.request.OpenerDirector.open", side_effect=AssertionError("no provider")):
+            try:
+                first = submit("first private title")
+                self.assertTrue(started.wait(5))
+                second = submit("second")
+                third = submit("third")
+                self.assertEqual(third["supersedes"], [first["id"], second["id"]])
+                self.assertEqual(calls, ["first private title"])
+                self.assertEqual(self.call("/api/full-audits/" + first["id"])[2]["status"], "cancelling")
+                active = self.call("/api/full-audits/active")[2]["job"]
+                self.assertEqual(active["id"], third["id"])
+                self.assertNotIn("private", json.dumps(active))
+                self.assertNotIn("title", active)
+                self.assertNotIn("request", active)
+                release.set()
+                self.assertEqual(terminal(first)["status"], "cancelled")
+                self.assertEqual(terminal(second)["status"], "cancelled")
+                self.assertEqual(terminal(third)["status"], "completed")
+                self.assertEqual(calls, ["first private title", "third"])
+                self.assertEqual(self.call("/api/full-audits/active")[2], {"job": None})
+                self.assertTrue((self.records / "full" / first["id"] / "engine/received-response.json").is_file())
+            finally:
+                release.set()
+
+    def test_public_demo_catalog_and_selection_are_hash_checked_offline_fixed_files(self):
+        fixture_root = Path(self.directory.name) / "fixture-app"
+        (fixture_root / "examples").mkdir(parents=True)
+        for name in ("offline-request.json", "offline-report.json"):
+            shutil.copyfile(ROOT / "examples" / name, fixture_root / "examples" / name)
+        base = fixture_root / "examples/public-traces"
+        demo_id = "Melevir__cognitive_complexity-15"
+        (base / demo_id).mkdir(parents=True)
+        request = local_server.full_demo()
+        raw = json.dumps(request, ensure_ascii=False).encode()
+        input_path = base / demo_id / "input.json"
+        input_path.write_bytes(raw)
+        license_path = base / demo_id / "LICENSE"
+        license_path.write_text("Synthetic offline test fixture, not a claim about public source licensing.")
+        entry = {"id": demo_id, "title": "Explicit synthetic fixture", "repository": "synthetic/demo",
+                 "input_file": demo_id + "/input.json", "input_sha256": hashlib.sha256(raw).hexdigest(),
+                 "source_url": "https://example.org/synthetic-fixture", "license_files": [demo_id + "/LICENSE"],
+                 "message_count": 1, "material_count": 1, "commit_shas": ["a" * 40]}
+        catalog_path = base / "catalog.json"
+        catalog_path.write_text(json.dumps({"examples": [entry]}))
+        self.server.shutdown()
+        self.server.server_close()
+        self.thread.join()
+        self.server = local_server.make_server(root=fixture_root, port=0, reports_dir=self.records)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        self.thread.start()
+        self.origin = f"http://127.0.0.1:{self.server.server_port}"
+        with patch.object(local_server, "verify", side_effect=AssertionError("no model")), \
+             patch.object(local_server.FullAuditJobs, "submit", side_effect=AssertionError("no submit")), \
+             patch("urllib.request.OpenerDirector.open", side_effect=AssertionError("no provider")):
+            catalog = self.call("/api/full-demo-catalog")
+            self.assertEqual(catalog[0], 200)
+            metadata = catalog[2]["demos"][0]
+            self.assertEqual(metadata["input_sha256"], entry["input_sha256"])
+            self.assertNotIn("input_file", metadata)
+            self.assertNotIn("request", metadata)
+            selected = self.call("/api/full-demo/" + demo_id)
+            self.assertEqual(selected[0], 200)
+            self.assertEqual(selected[2], {"demo": metadata, "request": request})
+            self.assertEqual(self.call("/api/full-demo")[2], self.call("/api/full-audit-demo")[2])
+            for path in ("missing", "../reports/private.json", "%2e%2e/private", "akolar__ogn-lib-18"):
+                self.assertEqual(self.call("/api/full-demo/" + path)[0], 404)
+            input_path.write_bytes(raw + b" ")
+            self.assertEqual(self.call("/api/full-demo-catalog")[0], 503)
+            self.assertEqual(self.call("/api/full-demo/" + demo_id)[0], 503)
+            input_path.unlink()
+            outside = Path(self.directory.name) / "outside-private.json"
+            outside.write_bytes(raw)
+            input_path.symlink_to(outside)
+            self.assertEqual(self.call("/api/full-demo/" + demo_id)[0], 503)
+            input_path.unlink()
+            input_path.write_bytes(raw)
+            entry["input_file"] = "../outside-private.json"
+            catalog_path.write_text(json.dumps({"examples": [entry]}))
+            self.assertEqual(self.call("/api/full-demo-catalog")[0], 503)
         self.assertFalse(self.records.exists())
 
     def test_sop_upload_is_offline_private_and_round_trips_with_a_fixed_identity(self):

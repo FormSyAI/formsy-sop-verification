@@ -96,6 +96,53 @@ class SopAuditTests(unittest.TestCase):
             'test_evidence_ids': ['TEST'], 'assertion_results': [
                 {'path': 'tests/test_limit.py', 'line': 1, 'outcome': 'pass'}]}]
 
+    def test_native_uncertain_selection_keeps_registered_atomic_statuses(self):
+        self.catalog = load_catalog(Path(__file__).resolve().parents[1])
+        self.catalog['rules'] = [rule for rule in self.catalog['rules'] if rule['id'] == 'SEC02']
+        self.package['audit_context'] = {'profile': 'full_sop'}
+        def respond(payload):
+            return {'rules': [{'rule_id': row['id'], 'audit_object': row['audit_scope']['audit_object'],
+                               'selection': 'uncertain', 'reason': '材料不足以核定本条范围。',
+                               'evidence_refs': [ref('U', '保留零值')]}
+                              for row in payload['candidate_rules']]}
+        report = self.audit(Client(respond))
+        rows = report['sop_condition_checks']
+        expected = {item['id'] for rule in self.catalog['rules'] for condition in rule['conditions']
+                    for item in condition['contract']['items']}
+        atoms = [item for row in rows for item in row['atomic_checks']]
+        self.assertEqual(len(rows), len(self.catalog['rules'][0]['conditions']))
+        self.assertTrue(expected)
+        self.assertEqual(len(atoms), len(expected))
+        self.assertEqual({item['id'] for item in atoms}, expected)
+        self.assertTrue(all(item['result'] == '未核查' and
+                            item['gap_type'] == 'applicability_uncertain' for item in atoms))
+        self.assertTrue(report['sop_coverage']['analysis_complete'])
+
+    def test_native_human_conditions_keep_unknown_atoms_without_model_signoff(self):
+        from ..sop_audit import HUMAN
+        self.catalog = load_catalog(Path(__file__).resolve().parents[1])
+        self.catalog['rules'] = [dict(rule, conditions=[condition for condition in rule['conditions']
+                                  if condition['kind'] == 'human' or HUMAN.search(condition['text'])])
+                                for rule in self.catalog['rules']]
+        self.catalog['rules'] = [rule for rule in self.catalog['rules'] if rule['conditions']]
+        self.catalog['rules'] = [rule for rule in self.catalog['rules'] if rule['id'] != 'FIX06']
+        self.package['audit_context'] = {'profile': 'full_sop'}
+        def respond(payload):
+            self.assertIn('candidate_rules', payload)
+            return {'rules': [{'rule_id': row['id'], 'audit_object': row['audit_scope']['audit_object'],
+                               'selection': 'selected', 'reason': '本条流程范围适用。',
+                               'evidence_refs': [ref('U', '保留零值')]}
+                              for row in payload['candidate_rules']]}
+        report = self.audit(Client(respond))
+        rows = report['sop_condition_checks']
+        self.assertTrue(rows)
+        for row in rows:
+            self.assertEqual({item['id'] for item in row['atomic_checks']},
+                             {item['id'] for item in row['contract']['items']})
+            self.assertTrue(all(item['result'] == '未核查' and item['gap_type'] == 'rule_scope_difference'
+                                for item in row['atomic_checks']))
+        self.assertFalse(report['original_sop']['formal_closed'])
+
     def test_selected_full_matrix_and_human_condition_is_not_signed_by_model(self):
         report = self.audit()
         self.assertEqual(len(report['sop_condition_checks']), 3)
@@ -214,8 +261,7 @@ class SopAuditTests(unittest.TestCase):
     def test_wrong_quote_old_version_or_other_task_acceptance_rejected(self):
         for mutate in [lambda row: row['evidence_refs'][0].update(quote='not present'),
                        lambda row: row.update(evidence_refs=[ref('OLD', 'return value or 25')]),
-                       lambda row: row.update(acceptance_ids=['OTHER']),
-                       lambda row: row.update(evidence_refs=[ref('ASSISTANT', '已全部完成')])]:
+                       lambda row: row.update(acceptance_ids=['OTHER'])]:
             self.setUp()
             def response(payload):
                 value = default_response(payload)
@@ -224,6 +270,19 @@ class SopAuditTests(unittest.TestCase):
                 return value
             report = self.audit(Client(response))
             self.assertEqual(report['sop_coverage']['gap_types']['analysis_failed'], 2)
+
+    def test_assistant_only_conclusion_is_unknown_without_losing_candidate(self):
+        def response(payload):
+            value = default_response(payload)
+            for row in value.get('conditions', []):
+                row.update(evidence_refs=[ref('ASSISTANT', '已全部完成')])
+            return value
+        report = self.audit(Client(response))
+        self.assertEqual(report['sop_coverage']['gap_types']['evidence_missing'], 2)
+        self.assertTrue(report['sop_coverage']['analysis_complete'])
+        for row in report['sop_condition_checks'][:2]:
+            self.assertEqual(row['result'], '未核查')
+            self.assertEqual(row['model_candidate']['result'], '满足')
 
     def test_condition_missing_evidence_cannot_be_not_applicable(self):
         def response(payload):

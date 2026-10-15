@@ -10,7 +10,7 @@ import re
 SECRET_FIELD = r"(?:[A-Za-z0-9]+[_-])?(?:api[_-]?key|access[_-]?token|refresh[_-]?token|password|secret|authorization)"
 SECRET_ASSIGNMENT = re.compile(
     r"(?i)((?:\"" + SECRET_FIELD + r"\"|'" + SECRET_FIELD + r"'|\b" + SECRET_FIELD
-    + r")\s*[=:]\s*)(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|[^\s,;}\]]+)"
+    + r")\s*[=:]\s*)(\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|\[REDACTED(?:_KEY)?\]|[^\s,;}\]]+)"
 )
 
 
@@ -23,6 +23,8 @@ def redact(value, secrets=()):
     text = re.sub(r"(?i)(\bauthorization\s*:\s*(?:bearer|basic)\s+)[^\s,;}\"']+", r"\1[REDACTED]", text)
 
     def replace(match):
+        if match[2].strip("\"'") in ("[REDACTED]", "[REDACTED_KEY]"):
+            return match[0]
         # Keep the source line numbering even when a JSON/string value spans lines.
         return match[1] + "[REDACTED]" + "\n" * match[2].count("\n")
 

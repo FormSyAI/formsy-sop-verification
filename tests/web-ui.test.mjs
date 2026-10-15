@@ -61,6 +61,12 @@ class Element {
   removeAttribute(name) {
     delete this.attributes[name];
   }
+  hasAttribute(name) {
+    return Object.hasOwn(this.attributes, name);
+  }
+  getAttribute(name) {
+    return this.attributes[name] ?? null;
+  }
   querySelector(selector) {
     if (!this.options.has(selector))
       this.options.set(selector, new Element("option", this.registry));
@@ -74,7 +80,7 @@ class Element {
     this.open = false;
   }
 }
-function setup(hash = "") {
+function setup(hash = "", initialResponse) {
   const registry = new Map();
   for (const [, id] of html.matchAll(/id="([^"]+)"/g))
     registry.set(id, new Element("div", registry));
@@ -87,7 +93,7 @@ function setup(hash = "") {
     return el;
   });
   const calls = [];
-  let response;
+  let response = initialResponse;
   const context = vm.createContext({
     console,
     TextEncoder,
@@ -122,11 +128,12 @@ function setup(hash = "") {
       return response ? Promise.resolve(response(path, options)) : new Promise(() => {});
     },
   });
-  vm.runInContext(source, context);
+  const ready = vm.runInContext(source, context);
   return {
     context,
     registry,
     calls,
+    ready,
     run: (code) => vm.runInContext(code, context),
     setResponse: (handler) => (response = handler),
   };
@@ -361,10 +368,95 @@ test("DeepSeek is the default and local fallback appears only when unavailable",
   assert.equal(mode.querySelector("[value=offline]").hidden, true);
   assert.match(ui.registry.get("full-model-status").textContent, /DeepSeek API · 已配置/);
   assert.match(ui.registry.get("full-verify").textContent, /使用 DeepSeek/);
+  assert.match(ui.registry.get("full-consent-text").textContent, /发送至 DeepSeek，使用模型 deepseek-flash/);
   ui.run("fullState.config.model_configured=false;fullControls()");
   assert.equal(mode.value, "offline");
   assert.equal(mode.querySelector("[value=offline]").hidden, false);
   assert.match(ui.registry.get("full-mode-help").textContent, /不生成语义结论/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+test("TokenHub configuration discloses the actual provider, model, destination and cost", () => {
+  const ui = setup();
+  configure(ui);
+  const config = { provider: "Tencent TokenHub", model: "configured-model",
+    provider_endpoint: "https://tokenhub.example.test/v1/chat/completions" };
+  ui.run(`Object.assign(fullState.config,${json(config)});fullControls()`);
+  for (const id of ["full-model-status", "full-verify", "full-consent-text", "full-mode-help", "full-config-label"]) {
+    const text = ui.registry.get(id).textContent;
+    assert.match(text, /Tencent TokenHub/);
+    assert.match(text, /configured-model/);
+    assert.doesNotMatch(text, /发送至 DeepSeek|使用 DeepSeek/);
+  }
+  assert.match(ui.registry.get("full-mode").querySelector("[value=model]").textContent, /Tencent TokenHub/);
+  assert.match(ui.registry.get("full-mode-help").textContent, /可能产生费用/);
+  assert.ok(ui.registry.get("full-config-label").textContent.includes(config.provider_endpoint));
+  assert.equal(ui.registry.get("full-consent").checked, false);
+  ui.run("fullState.providerBlocked=true;fullControls()");
+  assert.match(ui.registry.get("full-model-status").textContent, /Tencent TokenHub API · 本轮请求未完成/);
+  assert.match(ui.registry.get("full-mode-help").textContent, /Tencent TokenHub 当前不可用/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+test("provider configuration stays text-only and its dialog escapes server values", async () => {
+  const ui = setup();
+  configure(ui);
+  const config = { available: true, model_configured: true,
+    provider: 'Tencent TokenHub <img src=x onerror="alert(1)">', model: '<script>alert(2)</script>',
+    provider_endpoint: 'https://tokenhub.example.test/v1/chat/completions?label=<svg onload="alert(3)">' };
+  ui.setResponse(() => ({ ok: true, json: async () => config }));
+  await ui.registry.get("full-model-status").listeners.click[0]();
+  assert.equal(ui.registry.get("source-title").textContent, `${config.provider} API`);
+  const dialog = ui.registry.get("source-body").innerHTML;
+  assert.match(dialog, /Tencent TokenHub &lt;img/);
+  assert.match(dialog, /&lt;script&gt;/);
+  assert.match(dialog, /label=&lt;svg/);
+  assert.doesNotMatch(dialog, /<img|<script|<svg/);
+  assert.ok(ui.registry.get("full-consent-text").textContent.includes(config.provider));
+  assert.equal(ui.registry.get("full-consent-text").innerHTML, "");
+  ui.setResponse(() => ({ ok: false, status: 503, json: async () => ({ error: { message: "unavailable" } }) }));
+  await ui.registry.get("full-model-status").listeners.click[0]();
+  assert.ok(ui.registry.get("full-model-status").textContent.includes(config.provider));
+  assert.match(ui.registry.get("full-model-status").textContent, /不可用/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+test("report overview uses the stored route independently of current configuration and escapes its endpoint", () => {
+  const ui = setup();
+  configure(ui);
+  for (const provider of [undefined, "Tencent TokenHub"]) {
+    const value = structuredClone(report);
+    value.model_snapshot = { model_invoked: true, model: 'stored-model <script>unsafe</script>', api_request_count: 1,
+      ...(provider ? { provider } : {}),
+      provider_endpoint: 'https://stored.example.test/v1/chat/completions?label=<img src=x>' };
+    showReport(ui, value);
+    const output = ui.registry.get("full-report").innerHTML;
+    assert.ok(output.includes(`报告记录 ${provider ?? "DeepSeek"} / stored-model &lt;script&gt;`));
+    assert.match(output, /报告记录的模型配置/);
+    assert.match(output, /https:\/\/stored.example.test\/v1\/chat\/completions\?label=&lt;img/);
+    assert.doesNotMatch(output, /<script>|<img src=x>/);
+    assert.deepEqual(JSON.parse(ui.run("JSON.stringify(currentFullReport().model_snapshot)")), value.model_snapshot);
+  }
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+test("r12 interpretation is distinct from machine contract and never replaces a historical source", () => {
+  const ui = setup();
+  configure(ui);
+  const latest = { ...summary, source: { kind: "formsy_sop", release_id: "traceaudit-r12",
+    interpretation_revision: "1.9.1", contract_version: "1.9", git_commit: "new-commit" } };
+  ui.run(`fullState.library=${json(latest)}`);
+  const value = structuredClone(report);
+  value.rule_source = { kind: "formsy_sop", release_id: "traceaudit-r11", contract_version: "1.9", git_commit: "old-commit" };
+  showReport(ui, value);
+  const output = ui.registry.get("full-report").innerHTML;
+  assert.match(output, /规则发布 traceaudit-r11/);
+  assert.match(output, /机器契约 1\.9/);
+  assert.doesNotMatch(output, /traceaudit-r12|1\.9\.1|new-commit/);
+  assert.deepEqual(JSON.parse(ui.run("JSON.stringify(currentFullReport().rule_source)")), value.rule_source);
+  const metadata = ui.run(`ruleSummaryHtml(${json(latest)})`);
+  assert.match(metadata, /规则发布 traceaudit-r12 · 判定口径 1\.9\.1/);
+  assert.match(metadata, /机器契约 1\.9/);
+  latest.source.interpretation_revision = "<img src=x>";
+  const escaped = ui.run(`ruleSummaryHtml(${json(latest)})`);
+  assert.match(escaped, /&lt;img src=x&gt;/);
+  assert.doesNotMatch(escaped, /<img src=x>/);
   assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
 });
 test("provider failure preserves the round and reveals fallback without a second submission", async () => {
@@ -408,11 +500,21 @@ test("safe diagnostic rendering ignores arbitrary message fields and escapes dis
   const output = ui.run(`failureDetailsHtml(${json({
     error_category: "timeout", failure_stage: "<stage>", exception_type: "TimeoutError",
     provider_code: "provider_network_or_timeout", message: "private exception body", traceback: "private stack",
+    http_status: 500, phase: "read", response_saved: true,
   })})`);
   assert.match(output, /错误类别：模型请求超时/);
   assert.match(output, /失败阶段：&lt;stage&gt;/);
   assert.match(output, /模型服务代码：provider_network_or_timeout/);
+  assert.match(output, /HTTP 状态：500/);
+  assert.match(output, /请求阶段：read/);
+  assert.match(output, /原始响应已保存：是/);
   assert.doesNotMatch(output, /private|<stage>/);
+  const invalid = ui.run(`failureDetailsHtml(${json({http_status: "<secret>", phase: "private phase",
+    response_saved: "private saved"})})`);
+  assert.equal(invalid, "");
+  for (const phase of ["prepare", "store", "engine", "job", "report"]) {
+    assert.match(ui.run(`failureDetailsHtml(${json({phase})})`), new RegExp(`请求阶段：${phase}`));
+  }
 });
 test("completed reports show recovered call diagnostics without changing the final job state", () => {
   const ui = setup();
@@ -422,6 +524,11 @@ test("completed reports show recovered call diagnostics without changing the fin
     exception_type: "IncompleteRead", phase: "read", response_partial: true,
     message: "private transport text", traceback: "private stack",
   }];
+  value.sop_coverage.failures = [{
+    condition_id: "SEC03.C05", atomic_item_id: "SEC03.C05.I01",
+    stage: "sop-failure-review-exclusions-1-retry", kind: "exclusion_review_failure",
+    reason: "适用性观察中的验收点 ID 无效",
+  }];
   showReport(ui, value);
   const output = ui.registry.get("full-report").innerHTML;
   assert.match(output, /调用异常记录（可能包含已恢复尝试）/);
@@ -430,6 +537,11 @@ test("completed reports show recovered call diagnostics without changing the fin
   assert.doesNotMatch(output, /private transport|private stack/);
   assert.equal(ui.run("fullState.rounds[0].status"), "completed");
   assert.match(ui.registry.get("sop-coverage-summary").textContent, /部分条件分析失败/);
+  const failures = ui.registry.get("sop-coverage-summary").textContent;
+  assert.match(failures, /条件：SEC03.C05/);
+  assert.match(failures, /子项：SEC03.C05.I01/);
+  assert.match(failures, /失败阶段：sop-failure-review-exclusions-1-retry/);
+  assert.match(failures, /类别：exclusion_review_failure/);
   assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
 });
 test("rule upload freezes offline and permits custom when default source is unavailable", async () => {
@@ -449,9 +561,11 @@ test("rule upload freezes offline and permits custom when default source is unav
   assert.equal(ui.registry.get("full-sop-source").value, "uploaded");
   assert.equal(ui.registry.get("full-mode").querySelector("[value=model]").disabled, false);
   assert.match(ui.registry.get("full-sop-summary").innerHTML, /upload-hash/);
+  ui.run("fullState.request.sop_selection={mode:'auto',document_ids:['old-pinned-document']}");
   const request = JSON.parse(ui.run("JSON.stringify(buildFullRequest())"));
   assert.deepEqual(request.rules, rules);
-  assert.equal(request.sop_selection.mode, "uploaded");
+  assert.equal(Object.hasOwn(request, "sop_selection"), false);
+  assert.equal(ui.run("fullState.request.sop_selection.document_ids[0]"), "old-pinned-document");
   assert.equal(ui.calls.filter((call) => call.path === "/api/full-audits").length, 0);
   ui.registry.get("full-sop-source").value = "default";
   assert.throws(() => ui.run("buildFullRequest()"), /默认 FormSy SOP 不可用/);
@@ -526,7 +640,7 @@ test("model submission requires explicit mode and consent and includes the selec
   await click();
   assert.equal(payload.mode, "model");
   assert.deepEqual(payload.request.rules, rules);
-  assert.equal(payload.request.sop_selection.mode, "uploaded");
+  assert.equal(Object.hasOwn(payload.request, "sop_selection"), false);
   assert.equal(ui.run("fullState.rounds[0].status"), "completed");
 });
 test("invalid condition imports are rejected without changing selected history", () => {
@@ -553,4 +667,346 @@ test("malformed native task blocks cannot corrupt imported history", () => {
     );
   }
   assert.equal(ui.run("currentFullReport().title"), report.title);
+});
+
+test("local failure review keeps final reason separate from unconfirmed model candidate", () => {
+  const ui = setup(), value = structuredClone(report);
+  Object.assign(value.checks[0], {
+    reason: "最终程序理由 marker",
+    local_result: "不满足",
+    local_failure_candidate: { result: "不满足", reason: "原模型建议当义务 marker", evidence_refs: [ref], counter_refs: [ref] },
+    local_failure_review: { status: "completed", confirmed: false, effective_result: "未核查",
+      relation: "evidence_insufficient", scope_consistency: "uncertain", reason: "独立反例证据不足 marker" },
+  });
+  showReport(ui, value);
+  const text = ui.registry.get("checks-content").textContent;
+  assert.match(text, /判断依据最终程序理由 marker/);
+  assert.match(text, /复核状态复核已完成/);
+  assert.match(text, /反例关系反例证据不足/);
+  assert.match(text, /范围一致性范围待确认/);
+  assert.match(text, /尚无复核支持的同范围反例/);
+  assert.match(text, /本次有效判断：未核查/);
+  assert.match(text, /复核说明独立反例证据不足 marker/);
+  assert.match(text, /原模型失败候选理由原模型建议当义务 marker/);
+  assert.match(text, /原候选支持证据/);
+  assert.match(text, /原候选反向证据/);
+  assert.doesNotMatch(text, /复核结论复核支持同范围反例/);
+});
+test("only a completed consistent direct same-scope review displays confirmed failure", () => {
+  const rows = [
+    [{ status: "completed", confirmed: true, effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" }, true],
+    [{ status: "pending", confirmed: true, effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" }, false],
+    [{ status: "failed", confirmed: true, effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" }, false],
+    [{ status: "unknown", confirmed: true, effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" }, false],
+    [{ status: "completed", confirmed: false, effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" }, false],
+    [{ status: "completed", confirmed: true, effective_result: "未核查", relation: "direct_counterexample", scope_consistency: "same_scope" }, false],
+    [{ status: "completed", confirmed: true, effective_result: "不满足", relation: "different_dimension", scope_consistency: "same_scope" }, false],
+    [{ status: "completed", confirmed: true, effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "different_scope" }, false],
+    [{ status: "completed", confirmed: "true", effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" }, false],
+  ];
+  for (const [review, confirmed] of rows) {
+    const ui = setup(), value = structuredClone(report);
+    value.checks[0].local_failure_review = review;
+    showReport(ui, value);
+    const text = ui.registry.get("checks-content").textContent;
+    assert.equal(text.includes("复核结论复核支持同范围反例"), confirmed);
+    assert.equal(text.includes("本次有效判断：不满足"), confirmed);
+    assert.equal(text.includes("本次有效判断：未核查"), !confirmed);
+  }
+});
+test("local failure review prose uses safe text and original citations keep active snapshot", () => {
+  const ui = setup(), value = structuredClone(report), payload = '<img src=x onerror="marker">';
+  value.checks[0].local_failure_review = { status: "completed", confirmed: false,
+    effective_result: "未核查", relation: "evidence_insufficient", reason: payload };
+  value.checks[0].local_failure_candidate = { reason: payload, counter_refs: [ref] };
+  showReport(ui, value);
+  const container = ui.registry.get("checks-content");
+  assert.ok(container.textContent.includes(payload));
+  const walk = (entry) => [entry, ...entry.children?.flatMap(walk) ?? []];
+  const entries = walk(container);
+  assert.ok(entries.every((entry) => !(entry.innerHTML || "").includes(payload)));
+  const citation = entries.find((entry) => entry.tagName === "button" && entry.listeners.click);
+  assert.ok(citation);
+  citation.listeners.click[0]();
+  assert.match(ui.registry.get("source-body").innerHTML, /保留0/);
+  assert.match(ui.registry.get("source-body").innerHTML, /已定位/);
+});
+test("reports without review metadata and four-condition rendering keep their prior fields", () => {
+  const ui = setup();
+  showReport(ui);
+  assert.doesNotMatch(ui.registry.get("checks-content").textContent, /模型反例复核|原模型失败候选理由/);
+  assert.match(ui.registry.get("checks-content").textContent, /基础依据 marker/);
+  const legacy = { ...structuredClone(report), schema_version: 1 };
+  legacy.checks[0].result = "unverified";
+  ui.run(`renderChecks(${json(legacy)})`);
+  const before = ui.registry.get("checks-content").textContent;
+  legacy.checks[0].local_failure_review = { status: "completed", confirmed: true };
+  legacy.checks[0].local_failure_candidate = { reason: "must not enter four-condition view" };
+  ui.run(`renderChecks(${json(legacy)})`);
+  assert.equal(ui.registry.get("checks-content").textContent, before);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("completed check review does not authenticate original finding candidates or old schema records", () => {
+  const ui = setup(), value = structuredClone(report);
+  value.findings[0].category = "implementation_defect";
+  showReport(ui, value);
+  const before = ui.registry.get("findings-content").textContent;
+  value.checks[0].local_failure_review = { status: "completed", confirmed: true,
+    effective_result: "不满足", relation: "direct_counterexample", scope_consistency: "same_scope" };
+  showReport(ui, value);
+  assert.match(ui.registry.get("checks-content").textContent, /复核支持同范围反例/);
+  const findings = ui.registry.get("findings-content").textContent;
+  assert.equal(findings, before);
+  assert.match(findings, /实现问题候选/);
+  assert.match(findings, /原始问题记录仍是未独立复核的模型候选；某检查的反例复核不自动认证这些记录。/);
+  assert.doesNotMatch(findings, /复核支持同范围反例/);
+  const legacy = { ...structuredClone(value), schema_version: 1 };
+  ui.run(`renderFindings(${json(legacy)})`);
+  assert.equal(ui.registry.get("findings-content").textContent, findings);
+  assert.match(ui.registry.get("findings-content").textContent, /具体问题 marker/);
+});
+
+const ok = (value) => ({ ok: true, json: async () => value });
+function enableFullSubmit(ui) {
+  configure(ui);
+  ui.run(`fullState.uploaded={rules:${json(rules)},summary:${json(summary)}}`);
+  ui.registry.get("full-sop-source").value = "uploaded";
+  ui.registry.get("full-consent").checked = true;
+  ui.run("fullControls()");
+}
+const descendants = (entry) => [entry, ...(entry.children?.flatMap(descendants) ?? [])];
+
+test("current audit object uses input identities and safe original user text, without inferred IDs", () => {
+  const ui = setup(), attack = '<img src=x onerror="object-marker">', value = structuredClone(input);
+  value.title = attack;
+  value.trace.trace_id = "declared-trace";
+  value.trace.repository = "owner/input-repository";
+  value.trace.messages.push({ role: "assistant", content: "not an original user request" },
+    { role: "user", content: attack });
+  value.materials.push({ kind: "source", name: "zero.py", content: "x = 0" });
+  configure(ui);
+  showReport(ui);
+  ui.run(`fullState.rounds[0].report.tasks[0].target_commit_ids=['${"b".repeat(40)}'];fullState.request=${json(value)};fullState.fileName=${json(attack + ".json")};fullControls()`);
+  const content = ui.registry.get("full-object-content"), text = content.textContent;
+  for (const expected of [attack, "declared-trace", "owner/input-repository", "a".repeat(40), "3 条消息 · 1 份材料", "保留0", "原用户请求 · 2 条"])
+    assert.ok(text.includes(expected), expected);
+  assert.doesNotMatch(content.children.find((entry) => entry.tagName === "details").textContent, /not an original user request/);
+  assert.ok(!text.includes("b".repeat(40)));
+  assert.ok(descendants(content).every((entry) => !(entry.innerHTML || "").includes(attack)));
+  assert.equal(descendants(content).find((entry) => entry.tagName === "details").open, undefined);
+  ui.run("fullState.request=structuredClone(fullState.request);delete fullState.request.trace.trace_id;fullControls()");
+  assert.match(content.textContent, /材料声明的 Trace ID未提供/);
+  ui.run("fullState.request=structuredClone(fullState.request);fullState.request.trace.id=0;fullControls()");
+  assert.match(content.textContent, /材料声明的 Trace ID0/);
+  const long = "原用户请求".repeat(1600);
+  ui.run(`fullState.request=structuredClone(fullState.request);fullState.request.trace.messages=[{role:'user',content:${json(long)}}];fullControls()`);
+  assert.match(content.textContent, /仅预览前 6000 字符/);
+  assert.equal(ui.run("fullState.request.trace.messages[0].content.length"), long.length);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("full Trace text and public example identity remain distinct and expanded details survive progress renders", () => {
+  const ui = setup(), messages = [{ role: "user", content: "u".repeat(8000) },
+    { role: "tool", content: '<img src=x onerror="trace-marker">' }, { role: "assistant", content: "complete last message" }];
+  configure(ui);
+  ui.run(`fullState.request={...fullState.request,trace:{messages:${json(messages)}}};fullState.demo={id:'public-example',input_sha256:'${"d".repeat(64)}'};fullControls()`);
+  const container = ui.registry.get("full-object-content"), details = container.children.filter((entry) => entry.tagName === "details"), full = details[1];
+  assert.match(container.textContent, /公开示例 IDpublic-example/);
+  assert.match(container.textContent, new RegExp(`公开示例原文件 SHA256${"d".repeat(64)}`));
+  assert.match(container.textContent, /材料声明的 Trace ID未提供/);
+  assert.match(full.textContent, /完整 Trace 消息正文 · 3 条/);
+  assert.deepEqual(full.children.filter((entry) => entry.tagName === "pre").map((entry) => entry.textContent), messages.map((message) => message.content));
+  assert.ok(descendants(full).every((entry) => !(entry.innerHTML || "").includes("<img")));
+  full.open = true;
+  ui.run("fullState.rounds=[{id:'pending',status:'running',progress:'model:analysis-1.call-001'}];fullControls();renderAuditObject()");
+  assert.equal(container.children.filter((entry) => entry.tagName === "details")[1], full);
+  assert.equal(full.open, true);
+  ui.run("fullState.fileName='different.json';fullControls()");
+  assert.notEqual(container.children.filter((entry) => entry.tagName === "details")[1], full);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("a new explicit submission supersedes running work once and preserves old reports and stop metadata", async () => {
+  const ui = setup();
+  enableFullSubmit(ui);
+  ui.run(`fullState.rounds=[{id:'old',status:'running',report:${json(report)}}];fullState.active=0;fullControls()`);
+  assert.equal(ui.registry.get("full-verify").disabled, false);
+  assert.match(ui.registry.get("full-verify").textContent, /停止旧任务/);
+  let releasePost, oldStopped = false;
+  ui.setResponse((path, options) => {
+    if (options?.method === "POST") return new Promise((resolve) => { releasePost = () => resolve(ok({ id: "new", status: "queued", supersedes: ["old"] })); });
+    if (path.endsWith("/new")) return ok({ id: "new", status: "queued", supersedes: ["old"], progress: "等待旧请求退出" });
+    if (path.endsWith("/old")) return ok({ id: "old", status: oldStopped ? "cancelled" : "cancelling", superseded_by: "new",
+      ...(oldStopped ? { cancelled_at: "2026-10-14T12:00:00Z", stop: { stage: "model.call-001" } } : {}) });
+    throw new Error(path);
+  });
+  const submit = ui.registry.get("full-verify").listeners.click[0];
+  const pending = submit();
+  assert.equal(ui.registry.get("full-verify").disabled, true);
+  assert.equal(ui.registry.get("full-consent").checked, false);
+  await submit();
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 1);
+  releasePost();
+  await pending;
+  assert.equal(ui.run("fullState.rounds[0].id"), "new");
+  assert.equal(ui.run("fullState.rounds[1].status"), "cancelling");
+  assert.equal(ui.run("fullState.rounds[1].report.title"), report.title);
+  assert.match(ui.registry.get("full-report").innerHTML, /新审计已排队，等待旧请求退出后运行/);
+  assert.match(ui.registry.get("full-report").innerHTML, /data-full-job="old"/);
+  assert.equal(ui.registry.get("full-verify").disabled, true);
+  oldStopped = true;
+  await ui.run("pollFull(fullState.rounds[0])");
+  assert.equal(ui.run("fullState.rounds[1].status"), "cancelled");
+  ui.run("fullState.active=1;renderFull()");
+  const stopped = ui.registry.get("full-report").innerHTML;
+  assert.match(stopped, /此轮已停止，已有响应与停止记录保留/);
+  assert.match(stopped, /停止阶段：model.call-001/);
+  assert.match(stopped, /合成完整报告/);
+  assert.match(stopped, /data-full-job="new"/);
+  assert.equal(ui.run("fullState.providerBlocked"), false);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 1);
+});
+
+test("cancelled polling is terminal but stop-record storage failures remain failures", async () => {
+  const ui = setup();
+  configure(ui);
+  ui.run("fullState.rounds=[{id:'stopping',status:'cancelling'}];fullState.active=0");
+  ui.setResponse(() => ok({ id: "stopping", status: "cancelled", cancelled_at: "now", stop: { stage: "<unsafe>" } }));
+  await ui.run("pollFull(fullState.rounds[0])");
+  assert.equal(ui.run("fullState.polling"), false);
+  assert.equal(ui.run("fullState.providerBlocked"), false);
+  const stopped = ui.registry.get("full-report").innerHTML;
+  assert.match(stopped, /审计已停止/);
+  assert.match(stopped, /停止阶段：&lt;unsafe&gt;/);
+  assert.doesNotMatch(stopped, /本轮失败已保留|作业失败|<unsafe>/);
+  ui.run("fullState.rounds=[{id:'failed-stop',status:'cancelling'}];fullState.active=0");
+  ui.setResponse(() => ok({ id: "failed-stop", status: "failed", progress: "审计已退出；停止记录保存失败",
+    error: { code: "full_audit_storage_failed", error_category: "storage", failure_stage: "job_failure_write", phase: "store" } }));
+  await ui.run("pollFull(fullState.rounds[0])");
+  assert.match(ui.registry.get("full-report").innerHTML, /作业失败|full_audit_storage_failed/);
+  assert.doesNotMatch(ui.registry.get("full-report").innerHTML, /此轮已停止/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("refresh restores only active task metadata and association links read records without submitting", async () => {
+  const ui = setup("", (path) => {
+    if (path === "/api/full-audit-config") return ok({ available: true, model_configured: true });
+    if (path === "/api/sop-library") return ok(summary);
+    if (path === "/api/full-demo-catalog") return ok({ demos: [] });
+    if (path === "/api/full-audits/active") return ok({ job: { id: "new", status: "queued", input_sha256: "sha256:active", supersedes: ["old"] } });
+    if (path.endsWith("/new")) return ok({ id: "new", status: "queued", input_sha256: "sha256:active", supersedes: ["old"] });
+    if (path.endsWith("/old")) return ok({ id: "old", status: "cancelled", superseded_by: "new", stop: { stage: "job_waiting" } });
+    throw new Error(path);
+  });
+  await ui.ready;
+  assert.equal(ui.run("fullState.request"), null);
+  assert.match(ui.registry.get("full-object-content").textContent, /尚未载入审计材料/);
+  assert.match(ui.registry.get("full-active-status").textContent, /new.*等待审计.*sha256:active/);
+  assert.equal(ui.registry.get("full-verify").disabled, true);
+  const button = new Element("button", ui.registry);
+  button.setAttribute("data-full-job", "old");
+  await ui.registry.get("full-report").listeners.click[0]({ target: { closest: () => button } });
+  assert.equal(ui.run("fullState.rounds[fullState.active].id"), "old");
+  assert.match(ui.registry.get("full-report").innerHTML, /停止阶段：job_waiting/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("public demo selection loads only catalogued material and clears consent without model submission", async () => {
+  const ids = ["Melevir__cognitive_complexity-15", "akolar__ogn-lib-18", "DCC-Lab__RayTracing-273", "tobymao__sqlglot-2063"],
+    demos = ids.map((id, index) => ({ id, title: index ? id : '<img src=x onerror="catalog-marker">',
+      repository: "owner/repo", input_sha256: String(index).repeat(64), license_files: ["LICENSE"] }));
+  const ui = setup();
+  enableFullSubmit(ui);
+  showReport(ui);
+  ui.run(`fullState.demos=${json(demos)};renderDemoChoices();fullControls()`);
+  const options = ui.registry.get("full-demo-select").children;
+  assert.deepEqual(options.slice(1).map((option) => option.value), ids);
+  assert.ok(options[1].textContent.includes(demos[0].title));
+  assert.equal(options[1].innerHTML, "");
+  assert.match(ui.registry.get("full-demo-status").textContent, /4 份公开完整 Trace/);
+  const next = { ...structuredClone(input), title: "selected public input", trace: { messages: input.trace.messages } };
+  ui.setResponse((path) => {
+    assert.equal(path, `/api/full-demo/${ids[0]}`);
+    return ok({ demo: demos[0], request: next });
+  });
+  await ui.registry.get("full-demo-select").listeners.change[0]({ target: { value: ids[0] } });
+  assert.equal(ui.run("fullState.request.title"), next.title);
+  assert.equal(ui.registry.get("full-consent").checked, false);
+  assert.match(ui.registry.get("full-object-content").textContent, /材料声明的 Trace ID未提供/);
+  assert.equal(ui.run("currentFullReport().title"), report.title);
+  ui.registry.get("full-consent").checked = true;
+  ui.setResponse(() => ok({ demo: { ...demos[1], input_sha256: "mismatch" }, request: input }));
+  await ui.registry.get("full-demo-select").listeners.change[0]({ target: { value: ids[1] } });
+  assert.equal(ui.run("fullState.request.title"), next.title);
+  assert.equal(ui.registry.get("full-demo-select").value, ids[0]);
+  assert.match(ui.registry.get("full-error").textContent, /示例身份或输入摘要与目录不一致/);
+  ui.setResponse((path) => { assert.equal(path, "/api/full-audit-demo"); return ok(input); });
+  await ui.registry.get("full-demo").listeners.click[0]();
+  assert.equal(ui.run("fullState.demo"), null);
+  assert.equal(ui.run("fullState.fileName"), "完整审计安全合成示例");
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("catalog failures and partial catalogues never invent unavailable public examples", async () => {
+  const valid = { id: "akolar__ogn-lib-18", title: "one licensed input", input_sha256: "a".repeat(64), license_files: ["LICENSE"] };
+  const ui = setup("", (path) => ok(path === "/api/full-demo-catalog" ? { demos: [valid,
+    { ...valid, id: "unlicensed", license_files: [] }, { ...valid, id: "bad-hash", input_sha256: "wrong" },
+    { ...valid, id: "../escape" }] } : path === "/api/full-audits/active" ? { job: null } : summary));
+  await ui.ready;
+  assert.equal(ui.registry.get("full-demo-select").children.length, 2);
+  assert.match(ui.registry.get("full-demo-status").textContent, /1 份公开完整 Trace/);
+  const unavailable = setup("", (path) => path === "/api/full-demo-catalog"
+    ? { ok: false, status: 503, json: async () => ({ error: { message: "catalog unavailable" } }) }
+    : ok(path === "/api/full-audits/active" ? { job: null } : summary));
+  await unavailable.ready;
+  assert.equal(unavailable.registry.get("full-demo-select").disabled, true);
+  assert.match(unavailable.registry.get("full-demo-status").textContent, /仍可使用安全合成示例或导入 JSON/);
+  assert.equal(unavailable.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("file and rule switches clear consent before asynchronous reads and cannot submit stale material", async () => {
+  for (const id of ["full-request-file", "full-sop-file"]) {
+    const ui = setup();
+    enableFullSubmit(ui);
+    showReport(ui);
+    let release;
+    const file = { name: "new.json", size: 5, text: () => new Promise((resolve) => { release = resolve; }) },
+      target = { files: [file], value: "new.json" };
+    const loading = ui.registry.get(id).listeners.change[0]({ target });
+    assert.equal(ui.registry.get("full-consent").checked, false);
+    assert.equal(ui.registry.get("full-verify").disabled, true);
+    await ui.registry.get("full-verify").listeners.click[0]();
+    assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+    release("invalid JSON");
+    await loading;
+    assert.equal(ui.run("fullState.request.title"), input.title);
+    assert.equal(ui.run("currentFullReport().title"), report.title);
+    assert.equal(ui.run("fullState.loading"), false);
+    assert.equal(ui.registry.get("full-consent").checked, false);
+  }
+});
+
+test("consent cannot carry across pending demo loads or rule freezes even if reticked while waiting", async () => {
+  const ui = setup(), demo = { id: "akolar__ogn-lib-18", title: "next", input_sha256: "a".repeat(64), license_files: ["LICENSE"] };
+  enableFullSubmit(ui);
+  ui.run(`fullState.demos=[${json(demo)}]`);
+  let release;
+  ui.setResponse(() => new Promise((resolve) => { release = resolve; }));
+  const loading = ui.run(`loadFullDemo('${demo.id}')`);
+  assert.equal(ui.registry.get("full-consent").disabled, true);
+  ui.registry.get("full-consent").checked = true;
+  release(ok({ demo, request: { ...input, title: "new input requires fresh consent" } }));
+  await loading;
+  assert.equal(ui.registry.get("full-consent").disabled, false);
+  assert.equal(ui.registry.get("full-consent").checked, false);
+  assert.equal(ui.registry.get("full-verify").disabled, true);
+  const freezing = ui.run(`freezeRules(${json(rules)})`);
+  assert.equal(ui.registry.get("full-consent").disabled, true);
+  ui.registry.get("full-consent").checked = true;
+  release(ok({ id: "upload-after-wait", rules, summary, model_invoked: false }));
+  await freezing;
+  assert.equal(ui.registry.get("full-consent").checked, false);
+  assert.equal(ui.registry.get("full-verify").disabled, true);
+  assert.equal(ui.calls.filter((call) => call.path === "/api/full-audits").length, 0);
 });

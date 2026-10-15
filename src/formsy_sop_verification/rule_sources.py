@@ -14,8 +14,9 @@ from .trace_audit import audit_engine, sop_catalog
 
 
 REPOSITORY = "FormSyAI/formsy-sop"
-RELEASE_ID = "traceaudit-r11"
-DEFAULT_RULES_COMMIT = "617385cb54995287abeca8ccb5cb407b1e246994"
+RELEASE_ID = "traceaudit-r12"
+DEFAULT_RULES_COMMIT = "8a57dcf33658844f6852fb144c3943ab4a3fed4d"
+INTERPRETATION_REVISION = "1.9.1"
 MAX_UPLOAD_RULES = 8  # Preserve the upstream normalizer's public upload contract.
 MAX_UPLOAD_CONDITIONS = 512
 MAX_UPLOAD_ATOMIC_ITEMS = 2048
@@ -97,7 +98,7 @@ def default_catalog(selection=None):
     """Read only the configured checkout; reject drift and never use a bundled fallback."""
     try:
         configured = os.environ.get("FORMSY_SOP_RULES_ROOT")
-        path = Path(configured) if configured else Path(__file__).resolve().parents[3] / "formsy-sop/audit/traceaudit-r11"
+        path = Path(configured) if configured else Path(__file__).resolve().parents[3] / "formsy-sop/audit/traceaudit-r12"
         if not path.is_absolute() or path.is_symlink() or not path.is_dir():
             raise RuleSourceError("sop_library_unavailable")
         base = path.resolve()
@@ -105,6 +106,7 @@ def default_catalog(selection=None):
         release = decode_json(release_raw)
         if (not isinstance(release, dict) or release.get("schema_version") != "1.0"
                 or release.get("release_id") != RELEASE_ID or release.get("reference_only") is not True
+                or release.get("interpretation_revision") != INTERPRETATION_REVISION
                 or release.get("source_authenticated") is not False):
             raise RuleSourceError("invalid_sop_release")
         files, metadata = release.get("files"), release.get("catalog")
@@ -167,6 +169,7 @@ def default_catalog(selection=None):
             raise RuleSourceError("sop_release_contract_mismatch")
         source = {"kind": "formsy_sop", "repository": REPOSITORY, "path": relative,
                   "git_commit": commit, "release_id": RELEASE_ID, "release_sha256": _sha(release_raw),
+                  "interpretation_revision": release["interpretation_revision"],
                   "catalog_sha256": _sha(frozen["compiled-catalog.json"]),
                   "selected_catalog_sha256": _sha(_canonical(catalog)),
                   "contract_sha256": catalog["contract_sha256"], "contract_version": catalog["contract_version"],

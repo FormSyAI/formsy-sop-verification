@@ -383,13 +383,65 @@ class ScopeConsistencyTests(unittest.TestCase):
         self.assertEqual(claim['claim_target'], frozen['claim_target'])
         self.assertEqual(claim['statement_refs'], frozen['statement_refs'])
 
-    def test_explicit_local_structure_supported_claim_does_not_require_effective_state_review(self):
+    def test_explicit_local_structure_supported_claim_receives_full_scope_review(self):
         self.scope = 'local_structure'
         self.set_statement('The subclass __init__ body has no direct self.domain assignment.')
         row = self.review()
         self.assertEqual(row['result'], PASS)
-        self.assertEqual(len(self.calls), 2)
-        self.assertFalse(any('scope_candidates' in payload for payload in self.calls))
+        self.assertEqual(len(self.calls), 3)
+        self.assertEqual(len([payload for payload in self.calls if 'scope_candidates' in payload]), 1)
+
+    def test_supported_observation_checks_full_mixed_inference_and_retains_direct_fact(self):
+        self.scope = 'observed_event'
+        tool = 'cwd=/workspace/tests; files: conftest.py, test_cognitive_complexity.py'
+        self.package['evidence'].append({'id': 'TOOL', 'kind': 'tool', 'content': tool})
+        samples = [('The conftest.py file is present in the tests directory.', 'same_scope', PASS),
+            ('The conftest.py file is present in the tests directory, which suggests that it should be detected and used correctly by the test runner.',
+             'narrowed_scope', UNKNOWN)]
+        for sentence, consistency, expected in samples:
+            with self.subTest(consistency=consistency):
+                self.calls.clear()
+                self.set_statement(sentence)
+                self.package['trace'] = {'messages': [
+                    {'role': 'tool', 'evidence_id': 'TOOL', 'content': tool},
+                    {'role': 'assistant', 'evidence_id': 'A', 'content': sentence}]}
+                before = copy.deepcopy(self.package)
+
+                def respond(payload):
+                    if 'source_inventory' in payload:
+                        sources = self.sources()
+                        sources[0]['claims'][0]['claim_target']['object'] = 'conftest.py file'
+                        return {'sources': sources}
+                    rows = self.compare(payload['frozen_claims'])['comparisons']
+                    for row in rows:
+                        row.update(source_refs=[ref('TOOL', tool)], observation_commit_ids=[],
+                            reason='The listing supports file existence; runner behavior needs separate evidence.')
+                    if 'scope_candidates' in payload:
+                        self.assertEqual(payload['frozen_claims'], self.calls[1]['frozen_claims'])
+                        self.assertEqual(payload['evidence'], self.calls[1]['evidence'])
+                        return {'scope_reviews': [{**row, 'scope_consistency': consistency} for row in rows]}
+                    return {'comparisons': rows}
+
+                def call(stage, system, payload, validator, **kwargs):
+                    self.calls.append(copy.deepcopy(payload))
+                    if 'scope_candidates' in payload:
+                        self.assertEqual(kwargs, {'attempts': 1, 'final_failure': False})
+                    return validator(respond(payload)), None, False
+
+                row = review_claim_scope(self.task, self.package, self.condition,
+                    model_input(self.package, [self.task]), call, 'claims', self.directory, lambda _: None)
+                claim = row['atomic_checks'][0]['semantic_basis']['claims'][0]
+                self.assertEqual(row['result'], expected)
+                self.assertEqual(claim['relation'], 'supported' if expected == PASS else 'uncertain')
+                self.assertEqual(claim['proposition'], sentence)
+                self.assertEqual(claim['claim_target']['scope'], 'observed_event')
+                self.assertEqual(claim['observation_commit_ids'], [])
+                self.assertEqual(len(self.calls), 3)
+                self.assertFalse(row.get('analysis_stage_errors'))
+                candidate = json.loads((self.directory / 'claims.comparison-candidates.json').read_text())['claims'][0]
+                self.assertEqual(candidate['relation'], 'supported')
+                self.assertEqual(candidate['proposition'], sentence)
+                self.assertEqual(self.package, before)
 
     def test_directory_and_full_file_path_are_not_automatically_a_contradiction(self):
         self.scope = 'observed_event'
@@ -417,21 +469,80 @@ class ScopeConsistencyTests(unittest.TestCase):
         self.assertEqual(len(self.calls), 3, 'An exceeds_source candidate requires review regardless of target scope.')
 
     def test_failed_review_cannot_leave_a_sensitive_supported_or_failed_candidate_definite(self):
-        for relation in ('supported', 'exceeds_source'):
-            with self.subTest(relation=relation):
+        for scope, relation in ((scope, relation) for scope in ('effective_state', 'local_structure')
+                                for relation in ('supported', 'exceeds_source')):
+            with self.subTest(scope=scope, relation=relation):
+                self.scope = scope
                 def call(stage, system, payload, validator, **kwargs):
                     if 'scope_candidates' in payload:
-                        self.assertEqual(kwargs, {'attempts': 1})
+                        self.assertEqual(kwargs, {'attempts': 1, 'final_failure': False})
                         return None, 'scope budget exhausted', False
                     value = ({'sources': self.sources()} if 'source_inventory' in payload
                              else self.compare(payload['frozen_claims'], relation))
                     return validator(value), None, False
+                stage = 'failed-' + scope + '-' + relation
                 row = review_claim_scope(self.task, self.package, self.condition,
-                    model_input(self.package, [self.task]), call, 'failed-' + relation,
+                    model_input(self.package, [self.task]), call, stage,
                     self.directory, lambda _: None)
                 self.assertEqual(row['result'], UNKNOWN)
                 self.assertEqual(row['analysis_stage_errors'], ['scope budget exhausted'])
                 self.assertEqual(row['atomic_checks'][0]['semantic_basis']['claims'][0]['relation'], 'uncertain')
+                saved = json.loads((self.directory / (stage + '.claim-review.json')).read_text())
+                self.assertEqual(saved['scope_errors'], ['scope budget exhausted'])
+                candidate = json.loads((self.directory / (stage + '.comparison-candidates.json')).read_text())
+                self.assertEqual(candidate['claims'][0]['relation'], relation)
+
+    def test_unknown_observation_options_reach_scope_and_do_not_relax_source_version_gate(self):
+        from ..sop_claim_review import COMPARE_SYSTEM, SCOPE_SYSTEM
+        self.set_statement('The file was updated.')
+        self.package['evidence'].append({'id': 'ORIGINAL_TOOL', 'kind': 'tool', 'content': 'File updated.'})
+        self.package['trace'] = {'messages': [
+            {'role': 'tool', 'evidence_id': 'ORIGINAL_TOOL', 'content': 'File updated.'},
+            {'role': 'assistant', 'evidence_id': 'A', 'content': 'The file was updated.'}]}
+        before = copy.deepcopy(self.package)
+        for scope_choice in ('original_tool', 'uncertain', 'mixed_target_source'):
+            with self.subTest(scope_choice=scope_choice):
+                self.calls.clear()
+                def respond(payload):
+                    if 'source_inventory' in payload:
+                        sources = self.sources()
+                        sources[0]['claims'][0]['claim_target'] = {'object': 'file', 'property': 'update result',
+                            'scope': 'effective_state', 'state_assertion': None}
+                        return {'sources': sources}
+                    constraint = payload['observation_source_constraints'][0]
+                    original, unknown = constraint['comparison_options']
+                    self.assertEqual(original['source_refs_from_evidence_ids'], ['ORIGINAL_TOOL'])
+                    self.assertEqual(original['observation_commit_ids'], [])
+                    self.assertEqual(unknown['relation'], 'uncertain')
+                    self.assertEqual(unknown['source_refs'], [])
+                    self.assertEqual(unknown['observation_commit_ids'], [])
+                    row = {'claim_id': payload['frozen_claims'][0]['id'], 'relation': 'supported',
+                        'comparison_type': 'fact', 'comparison_scope': 'same_property', 'observation_commit_ids': [],
+                        'source_refs': [ref('ORIGINAL_TOOL', 'File updated.')], 'reason': 'The original tool reports a file update.'}
+                    if 'scope_candidates' in payload:
+                        self.assertEqual(constraint, self.calls[1]['observation_source_constraints'][0])
+                        row['scope_consistency'] = 'same_scope'
+                        if scope_choice == 'uncertain':
+                            row.update(relation='uncertain', source_refs=[], reason='The full observation remains unconfirmed.')
+                        elif scope_choice == 'mixed_target_source':
+                            row['source_refs'].append(ref('S', 'return 25 if value is None else value'))
+                        return {'scope_reviews': [row]}
+                    return {'comparisons': [row]}
+                result = self.review(respond)
+                claim = result['atomic_checks'][0]['semantic_basis']['claims'][0]
+                self.assertEqual(len(self.calls), 3, 'Extraction, comparison and one scope call retain their budgets.')
+                self.assertEqual(claim['relation'], 'supported' if scope_choice == 'original_tool' else 'uncertain')
+                self.assertEqual(claim['observation_commit_ids'], [])
+                self.assertEqual(claim['claim_target']['scope'], 'effective_state')
+                if scope_choice == 'mixed_target_source':
+                    self.assertEqual(len(result['analysis_stage_errors']), 1)
+                    self.assertIn('来源S与所比较观察版本不一致', result['analysis_stage_errors'][0])
+                else:
+                    self.assertFalse(result.get('analysis_stage_errors'))
+        self.assertEqual(self.package, before)
+        for system in (COMPARE_SYSTEM, SCOPE_SYSTEM):
+            self.assertIn('source_refs中的每个quote_id须实际来自', system)
+            self.assertIn('不能仅把relation改成uncertain却仍保留冲突源码引用', system)
 
     def test_comparison_and_review_receive_no_other_assistant_diagnostics_or_audit_outcomes(self):
         self.scope = 'other'
@@ -447,7 +558,8 @@ class ScopeConsistencyTests(unittest.TestCase):
             else:
                 self.assertEqual(set(payload), {'fixed_task', 'evidence', 'commits',
                     'program_run_verification', 'frozen_claims', 'prior_tool_observations',
-                    'original_statement_context', 'visible_source_extents'}
+                    'original_statement_context', 'visible_source_extents',
+                    'comparison_source_catalog', 'observation_source_constraints'}
                     | ({'scope_candidates'} if 'scope_candidates' in payload else set()))
                 self.assertNotIn('DIAGNOSTIC_ONLY_THE_SUBCLASS_COUNTS', json.dumps(payload))
                 self.assertTrue(all(item['kind'] != 'assistant' for item in payload['evidence']))
@@ -458,7 +570,7 @@ class ScopeConsistencyTests(unittest.TestCase):
         row = review_claim_scope(self.task, self.package, self.condition, request, call,
                                  'filtered', self.directory, lambda _: None)
         self.assertEqual(row['result'], PASS)
-        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len(self.calls), 3)
 
     def test_review_validator_rejects_foreign_id_assistant_and_wrong_version_sources(self):
         claims = extract_response({'sources': self.sources()}, statement_review_inventory(self.task, self.package),
@@ -480,6 +592,7 @@ class ScopeConsistencyTests(unittest.TestCase):
             scope_response(value, claims, candidates, self.task, self.package)
 
     def test_scope_batches_are_bounded_and_unreviewed_claims_remain_unknown(self):
+        self.scope = 'local_structure'
         self.set_statement('The instance domain was never initialized; the timeout was never initialized.')
         original_sources = self.sources
         def sources():
@@ -487,7 +600,7 @@ class ScopeConsistencyTests(unittest.TestCase):
             rows[0]['claims'][0]['claim_target']['state_assertion'] = None
             choice = statement_choices(self.package, {'A'})[1]
             rows[0]['claims'].append({'statement_id': choice['statement_id'], 'claim_type': 'fact',
-                'claim_target': {'object': 'instance timeout', 'property': choice['proposition'], 'scope': 'effective_state', 'state_assertion': None}})
+                'claim_target': {'object': 'instance timeout', 'property': choice['proposition'], 'scope': 'local_structure', 'state_assertion': None}})
             return rows
         self.sources = sources
         with patch('formsy_sop_verification.trace_audit.sop_claim_review.SCOPE_BATCH', 1), patch('formsy_sop_verification.trace_audit.sop_claim_review.MAX_SCOPE_BATCHES', 1):
@@ -497,6 +610,10 @@ class ScopeConsistencyTests(unittest.TestCase):
         self.assertIn('固定批次上限', row['analysis_stage_errors'][0])
         self.assertEqual([claim['relation'] for claim in row['atomic_checks'][0]['semantic_basis']['claims']],
                          ['supported', 'uncertain'])
+        saved = json.loads((self.directory / 'claims.claim-review.json').read_text())
+        self.assertEqual(saved['scope_errors'], row['analysis_stage_errors'])
+        candidates = json.loads((self.directory / 'claims.comparison-candidates.json').read_text())['claims']
+        self.assertEqual([claim['relation'] for claim in candidates], ['supported', 'supported'])
 
 
 class ClaimBudgetIntegrationTests(unittest.TestCase):
@@ -945,6 +1062,25 @@ class ObservationAndCauseBoundaryTests(unittest.TestCase):
         claim = self.claim('observed_event')
         self.assertEqual(self.checked(self.answer(claim), claim)['relation'], 'supported')
 
+    def test_unknown_original_event_cannot_cite_another_tool_event(self):
+        original = next(e for e in self.package['evidence'] if e['id'] == 'OBS')
+        self.package['evidence'].append({**copy.deepcopy(original), 'id': 'LATER'})
+        self.package['trace']['messages'].append({'role': 'tool', 'evidence_id': 'LATER',
+                                                  'content': original['content']})
+        claim = self.claim('observed_event')
+        for relation in ('supported', 'exceeds_source', 'uncertain'):
+            with self.subTest(relation=relation):
+                with self.assertRaisesRegex(ValueError, '原观察事件工具身份不一致'):
+                    self.checked(self.answer(claim, refs=[ref('LATER', 'HTTPError: 403 Forbidden')],
+                                             relation=relation), claim)
+        empty = self.answer(claim, relation='uncertain')
+        empty['comparisons'][0]['source_refs'] = []
+        self.assertEqual(self.checked(empty, claim)['relation'], 'uncertain')
+        # Later observations may still inform a general cause hypothesis, rather than replace an event.
+        hypothesis = self.claim('cause_hypothesis')
+        self.assertEqual(self.checked(self.answer(hypothesis, refs=[ref('LATER', 'HTTPError: 403 Forbidden')],
+                                                 relation='uncertain'), hypothesis)['relation'], 'uncertain')
+
     def test_mechanism_neither_upgrades_unknown_nor_bypasses_attribute_or_version(self):
         claim = self.claim()
         refs = self.mechanism()['evidence_refs']
@@ -1042,7 +1178,7 @@ class ObservationAndCauseBoundaryTests(unittest.TestCase):
                 self.assertEqual(_comparison_input(request, [self.claim()], self.task, self.package)['prior_tool_observations'], [])
                 self.package = original
 
-    def test_four_real_failure_shapes_receive_their_own_original_tool_without_extra_calls(self):
+    def test_four_real_failure_shapes_receive_their_own_original_tool_with_batched_scope_review(self):
         samples = [
             ('It seems that I attempted to edit the wrong file.', '[File: /pkg/config.py (1 lines total)]\n1:provider.authenticate()'),
             ('It seems that I attempted to edit the wrong file again.', '[File: /pkg/reproduce.py (1 lines total)]\n1:        self.token = config.resolve("token")'),
@@ -1078,13 +1214,14 @@ class ObservationAndCauseBoundaryTests(unittest.TestCase):
                     source = {'evidence_id': item['id'], 'start_line': 1,
                               'end_line': len(item['content'].splitlines()), 'quote': item['content']}
                     comparisons.append(self.answer(claim, refs=[source])['comparisons'][0])
-                value = {'comparisons': comparisons}
+                value = ({'scope_reviews': [{**row, 'scope_consistency': 'same_scope'} for row in comparisons]}
+                         if 'scope_candidates' in payload else {'comparisons': comparisons})
             return validator(value), None, False
         with tempfile.TemporaryDirectory() as directory:
             row = review_claim_scope(self.task, self.package, condition, model_input(self.package, [self.task]),
                                      call, 'observations', Path(directory), lambda _: None)
         self.assertEqual(row['result'], PASS)
-        self.assertEqual(len(calls), 2, 'One extraction and one comparison, with no extra model vote.')
+        self.assertEqual(len(calls), 3, 'One extraction, one comparison and one batched full-scope review.')
 
 
 class ComparisonIsolationTests(unittest.TestCase):
@@ -1156,10 +1293,14 @@ class ComparisonIsolationTests(unittest.TestCase):
         self.assertEqual(rows[1]['comparison_scope'], 'unknown')
 
     def test_bad_quote_isolated_and_exact_visible_retry_can_recover(self):
+        from .test_engine_quote_retry import select_refs
         def respond(attempt, payload):
             rows = [self.row(c) for c in payload['frozen_claims']]
             if attempt == 1:
                 rows[-1]['source_refs'] = ['Q-not-in-visible-directory']
+            else:
+                self.assertTrue(payload['citation_retry']['selector_only'])
+                return select_refs({'comparisons': rows}, payload)
             return {'comparisons': rows}
         rows, errors = self.run_batch(respond)
         self.assertEqual([r['relation'] for r in rows], ['supported', 'supported'])
@@ -1256,6 +1397,163 @@ class ComparisonIsolationTests(unittest.TestCase):
         self.assertEqual([r['relation'] for r in rows], ['supported', 'uncertain'])
         self.assertEqual(len(errors), 1)
 
+    def test_version_catalog_is_visible_identity_only_and_statement_binding_is_not_inferred(self):
+        from ..sop_claim_review import _comparison_input, SOURCE_KINDS
+        next(e for e in self.package['evidence'] if e['id'] == 'OBS1')['version_id'] = SHA
+        next(e for e in self.package['evidence'] if e['id'] == 'A2')['version_id'] = PARENT
+        self.claims[0]['initialization_observation'] = {'version_id': PARENT}
+        self.package['evidence'].extend([
+            {'id': 'DIFF_VISIBLE', 'kind': 'commit_diff', 'path': 'limit.py', 'version_id': PARENT,
+             'content': '-before\n+after'},
+            {'id': 'UNBOUND', 'kind': 'source', 'path': 'unknown.py', 'version_id': None, 'content': 'unknown = True'},
+            {'id': 'FOREIGN_VERSION', 'kind': 'source', 'version_id': 'c' * 40, 'content': 'foreign = True'},
+            {'id': 'FOREIGN_TASK', 'kind': 'source', 'version_id': SHA, 'target_ids': ['OTHER'], 'content': 'other = True'},
+            {'id': 'HIDDEN_SOURCE', 'kind': 'source', 'version_id': SHA, 'content': 'hidden = True'}])
+        request = model_input(self.package, [self.task])
+        truth = {**request, 'evidence': [e for e in request['evidence']
+                 if e['kind'] in SOURCE_KINDS and e['id'] != 'HIDDEN_SOURCE']}
+        before, frozen = copy.deepcopy(self.package), copy.deepcopy(self.claims)
+        payload = _comparison_input(truth, self.claims, self.task, self.package)
+        catalog = {item['evidence_id']: item for item in payload['comparison_source_catalog']}
+        self.assertTrue({'S', 'OLD', 'TEST', 'DIFF_VISIBLE', 'UNBOUND'} <= set(catalog))
+        self.assertFalse({'FOREIGN_VERSION', 'FOREIGN_TASK', 'HIDDEN_SOURCE'} & set(catalog))
+        self.assertTrue(all(set(item) == {'evidence_id', 'kind', 'path', 'version_id'} for item in catalog.values()))
+        self.assertIsNone(catalog['UNBOUND']['version_id'])
+        self.assertEqual(json.dumps(payload).count('"comparison_source_catalog"'), 1)
+        unknown, known = payload['observation_source_constraints']
+        self.assertEqual(unknown, {'claim_id': 'C1', 'statement_bound_version_ids': [],
+            'version_binding_status': 'unknown', 'original_prior_tool': {'evidence_id': 'OBS1', 'version_id': SHA},
+            'same_observation_source_ids': [], 'unversioned_original_observation_ids': []})
+        self.assertEqual(known['statement_bound_version_ids'], [PARENT])
+        self.assertEqual(known['version_binding_status'], 'frozen')
+        self.assertEqual(known['same_observation_source_ids'], ['OLD', 'DIFF_VISIBLE'])
+        self.assertEqual(known['unversioned_original_observation_ids'], ['OBS2'])
+        self.assertEqual((self.package, self.claims), (before, frozen))
+
+    def test_version_retry_rejects_empty_ids_again_after_swapping_source_snapshots(self):
+        self.package['evidence'].append({'id': 'BASE_SOURCE', 'kind': 'source', 'version_id': PARENT,
+                                         'path': 'limit.py', 'content': 'return value or 25'})
+        before, frozen = copy.deepcopy(self.package), copy.deepcopy(self.claims)
+        def respond(attempt, payload):
+            self.assertNotIn('citation_retry', payload)
+            self.assertNotIn('reference_feedback', payload)
+            rows = [self.row(c) for c in payload['frozen_claims']]
+            rows[0]['source_refs'] = [ref('BASE_SOURCE', 'return value or 25') if attempt == 1
+                                     else ref('S', 'return 25 if value is None else value')]
+            return {'comparisons': rows}
+        rows, errors = self.run_batch(respond)
+        self.assertEqual([r['relation'] for r in rows], ['uncertain', 'supported'])
+        self.assertEqual(len(self.calls), 2)
+        self.assertEqual(len(errors), 1)
+        self.assertIn('来源S与所比较观察版本不一致', errors[0])
+        self.assertNotIn('version_feedback', self.calls[0])
+        feedback = self.calls[1]['version_feedback'][0]
+        self.assertEqual(feedback['declared_observation_commit_ids'], [])
+        self.assertEqual(feedback['selected_sources'], [{'evidence_id': 'BASE_SOURCE', 'kind': 'source', 'version_id': PARENT}])
+        self.assertEqual(feedback['source_ids_outside_declared_versions'], ['BASE_SOURCE'])
+        self.assertEqual(feedback['statement_bound_version_ids'], [])
+        self.assertEqual(feedback['same_observation_source_ids'], [])
+        self.assertEqual(feedback['unversioned_original_observation_ids'], ['OBS1'])
+        for name, expected in [('compare', 'BASE_SOURCE'), ('compare-retry', 'S')]:
+            raw = json.loads((self.directory / (name + '.raw.json')).read_text())['comparisons'][0]
+            self.assertEqual(raw['source_refs'][0]['evidence_id'], expected)
+            self.assertEqual(raw['observation_commit_ids'], [])
+        self.assertEqual((self.package, self.claims), (before, frozen))
+
+    def test_version_retry_can_select_exact_unversioned_original_tool_or_explicit_unknown(self):
+        for recovery in ('original_tool', 'uncertain'):
+            with self.subTest(recovery=recovery):
+                self.calls.clear()
+                def respond(attempt, payload):
+                    self.assertNotIn('citation_retry', payload)
+                    self.assertNotIn('reference_feedback', payload)
+                    original, unknown = payload['observation_source_constraints'][0]['comparison_options']
+                    self.assertEqual(original['source_refs_from_evidence_ids'], ['OBS1'])
+                    self.assertEqual(original['observation_commit_ids'], [])
+                    self.assertEqual((unknown['relation'], unknown['source_refs'], unknown['observation_commit_ids']),
+                                     ('uncertain', [], []))
+                    rows = [self.row(c) for c in payload['frozen_claims']]
+                    if attempt == 1:
+                        rows[0]['source_refs'] = [ref('S', 'return 25 if value is None else value')]
+                    else:
+                        feedback = payload['version_feedback'][0]
+                        self.assertEqual(feedback['version_binding_status'], 'unknown')
+                        self.assertEqual(feedback['statement_bound_version_ids'], [])
+                        self.assertEqual(feedback['same_observation_source_ids'], [])
+                        self.assertEqual(feedback['original_prior_tool'], {'evidence_id': 'OBS1', 'version_id': None})
+                        self.assertEqual(feedback['unversioned_original_observation_ids'], ['OBS1'])
+                        self.assertNotIn('required_observation_commit_ids', feedback)
+                        if recovery == 'uncertain':
+                            rows[0].update(relation='uncertain', source_refs=[], reason='No independently bound source is selected.')
+                    return {'comparisons': rows}
+                rows, errors = self.run_batch(respond)
+                self.assertEqual([r['relation'] for r in rows],
+                                 ['supported' if recovery == 'original_tool' else 'uncertain', 'supported'])
+                self.assertEqual(errors, [])
+                self.assertEqual(len(self.calls), 2)
+                self.assertEqual(rows[0]['observation_commit_ids'], [])
+                self.assertEqual(rows[0]['source_refs'], self.row(self.claims[0])['source_refs']
+                                 if recovery == 'original_tool' else [])
+
+    def test_version_retry_known_statement_recovers_only_with_same_version_sources(self):
+        for eid in ('A1', 'OBS1'):
+            next(e for e in self.package['evidence'] if e['id'] == eid)['version_id'] = PARENT
+        self.package['evidence'].append({'id': 'BASE_SOURCE', 'kind': 'source', 'version_id': PARENT,
+                                         'path': 'limit.py', 'content': 'return value or 25'})
+        def respond(attempt, payload):
+            self.assertNotIn('citation_retry', payload)
+            self.assertNotIn('reference_feedback', payload)
+            rows = [self.row(c) for c in payload['frozen_claims']]
+            if attempt == 1:
+                rows[0].update(observation_commit_ids=[SHA],
+                               source_refs=[ref('S', 'return 25 if value is None else value')])
+            else:
+                feedback = payload['version_feedback'][0]
+                self.assertEqual(feedback['statement_bound_version_ids'], [PARENT])
+                self.assertEqual(feedback['statement_bound_version_ids_missing_from_declared'], [PARENT])
+                self.assertEqual(feedback['version_binding_status'], 'frozen')
+                self.assertNotIn('comparison_options', payload['observation_source_constraints'][0])
+                self.assertIn('BASE_SOURCE', feedback['same_observation_source_ids'])
+                self.assertNotIn('S', feedback['same_observation_source_ids'])
+                rows[0]['observation_commit_ids'] = [PARENT]
+                rows[0]['source_refs'].append(ref('BASE_SOURCE', 'return value or 25'))
+            return {'comparisons': rows}
+        rows, errors = self.run_batch(respond)
+        self.assertEqual([r['relation'] for r in rows], ['supported', 'supported'])
+        self.assertEqual(rows[0]['observation_commit_ids'], [PARENT])
+        self.assertEqual(errors, [])
+        self.assertEqual(len(self.calls), 2)
+
+    def test_version_retry_keeps_foreign_sha_and_wrong_known_observation_rejected(self):
+        for conflict in ('foreign_sha', 'wrong_known_observation'):
+            with self.subTest(conflict=conflict):
+                self.calls.clear()
+                original = copy.deepcopy(self.package)
+                if conflict == 'wrong_known_observation':
+                    next(e for e in self.package['evidence'] if e['id'] == 'A1')['version_id'] = PARENT
+                declared = 'c' * 40 if conflict == 'foreign_sha' else SHA
+                def respond(attempt, payload):
+                    self.assertNotIn('citation_retry', payload)
+                    self.assertNotIn('reference_feedback', payload)
+                    rows = [self.row(c) for c in payload['frozen_claims']]
+                    rows[0].update(observation_commit_ids=[declared],
+                                   source_refs=[ref('S', 'return 25 if value is None else value')])
+                    return {'comparisons': rows}
+                rows, errors = self.run_batch(respond)
+                self.assertEqual([r['relation'] for r in rows], ['uncertain', 'supported'])
+                self.assertEqual(len(self.calls), 2)
+                self.assertEqual(len(errors), 1)
+                feedback = self.calls[1]['version_feedback'][0]
+                self.assertEqual(feedback['declared_observation_commit_ids'], [declared])
+                self.assertEqual(feedback['selected_sources'], [{'evidence_id': 'S', 'kind': 'source', 'version_id': SHA}])
+                if conflict == 'foreign_sha':
+                    self.assertEqual(feedback['declared_ids_outside_task_versions'], [declared])
+                    self.assertIn('本任务以外的观察版本', errors[0])
+                else:
+                    self.assertEqual(feedback['statement_bound_version_ids_missing_from_declared'], [PARENT])
+                    self.assertIn('原声明绑定的观察版本不一致', errors[0])
+                self.package = original
+
     def test_every_definite_source_and_statement_version_is_bound(self):
         for relation in ('supported', 'exceeds_source'):
             for change in ('missing_observation', 'wrong_source_version', 'unbound_source', 'statement_version'):
@@ -1277,12 +1575,11 @@ class ComparisonIsolationTests(unittest.TestCase):
                     self.package = original
 
     def test_original_tool_event_cannot_be_replaced_by_a_similar_earlier_error(self):
-        for relation in ('supported', 'exceeds_source'):
+        for relation in ('supported', 'exceeds_source', 'uncertain'):
             row = self.row(self.claims[0])
             row.update(relation=relation, source_refs=[ref('OLD', 'IndentationError: unexpected indent in another file')])
-            checked = comparison_response({'comparisons': [row]}, self.claims[:1], self.task, self.package)[0]
-            self.assertEqual(checked['relation'], 'uncertain')
-            self.assertIn('另一时点', checked['reason'])
+            with self.assertRaisesRegex(ValueError, '原观察事件工具身份不一致'):
+                comparison_response({'comparisons': [row]}, self.claims[:1], self.task, self.package)
         row = self.row(self.claims[0])
         self.assertEqual(comparison_response({'comparisons': [row]}, self.claims[:1], self.task,
                                             self.package)[0]['relation'], 'supported')
@@ -1331,13 +1628,17 @@ class ComparisonIsolationTests(unittest.TestCase):
                 self.assertEqual(set(observed.values()), {'OBS1', 'OBS2'})
                 value = {'comparisons': [{**self.row(self.claims[n]), 'claim_id': claim['id']}
                     for n, claim in enumerate(payload['frozen_claims'])]}
-                kwargs['before_repair'](value)
+                if 'scope_candidates' in payload:
+                    value = {'scope_reviews': [{**row, 'scope_consistency': 'same_scope'}
+                                               for row in value['comparisons']]}
+                else:
+                    kwargs['before_repair'](value)
             return validator(value), None, False
         answer = review_claim_scope(self.task, self.package, condition, model_input(self.package, [self.task]),
                                     call, 'actual-review', self.directory, lambda _: None)
         self.assertEqual(answer['result'], PASS)
         self.assertEqual(answer['analysis_stage_errors'], [])
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), 3)
 
     def test_scope_bad_row_is_isolated_but_ambiguous_envelope_is_not_partially_adopted(self):
         from ..sop_claim_review import _scope_batch
@@ -1370,7 +1671,7 @@ class ComparisonIsolationTests(unittest.TestCase):
                 rows = [{**self.row(self.claims[n]), 'claim_id': claim['id']}
                         for n, claim in enumerate(payload['frozen_claims'])]
                 if 'scope_candidates' in payload:
-                    self.assertEqual(kwargs, {'attempts': 1})
+                    self.assertEqual(kwargs, {'attempts': 1, 'final_failure': False})
                     rows = [{**r, 'scope_consistency': 'same_scope'} for r in rows]
                     rows[-1]['source_refs'] = [ref('NONEXISTENT', 'File updated.')]
                     value = {'scope_reviews': rows}
@@ -1385,6 +1686,60 @@ class ComparisonIsolationTests(unittest.TestCase):
         self.assertEqual(answer['result'], UNKNOWN)
         self.assertEqual(len(answer['analysis_stage_errors']), 1)
         self.assertEqual(len(calls), 3, 'One extraction, one comparison, one scope call; no added retry.')
+
+
+    def test_initial_comparison_length_splits_output_and_preserves_full_context(self):
+        from ..sop_claim_review import _compare_batch, SOURCE_KINDS
+        before = copy.deepcopy(self.claims)
+        truth = {'fixed_task': self.task, 'commits': self.package['commits'],
+                 'program_run_verification': [],
+                 'evidence': [e for e in self.package['evidence'] if e['kind'] in SOURCE_KINDS]}
+        calls = []
+        def call(stage, system, payload, validator, **kwargs):
+            calls.append(copy.deepcopy(payload))
+            self.assertEqual(kwargs['attempts'], 1)
+            if len(calls) == 1:
+                return None, 'finish_reason=length', True
+            self.assertEqual({e['id']: e for e in payload['evidence']},
+                             {e['id']: e for e in truth['evidence']})
+            value = {'comparisons': [self.row(c) for c in payload['frozen_claims']]}
+            kwargs['before_repair'](value)
+            return validator(value), None, False
+        rows, errors = _compare_batch(self.claims, self.task, self.package, truth,
+                                       call, 'length-split', self.directory)
+        self.assertEqual([len(p['frozen_claims']) for p in calls], [2, 1, 1])
+        self.assertEqual([row['claim_id'] for row in rows], ['C1', 'C2'])
+        self.assertTrue(all(row['relation'] == 'supported' for row in rows))
+        self.assertEqual(errors, [])
+        self.assertEqual(self.claims, before)
+        self.assertTrue((self.directory / 'length-split.batch-split.json').exists())
+        self.assertTrue((self.directory / 'length-split.rows-validation.json').exists())
+
+    def test_comparison_does_not_split_singleton_budget_or_late_length(self):
+        from ..sop_claim_review import _compare_batch, SOURCE_KINDS
+        truth = {'fixed_task': self.task, 'commits': self.package['commits'],
+                 'program_run_verification': [],
+                 'evidence': [e for e in self.package['evidence'] if e['kind'] in SOURCE_KINDS]}
+        for mode in ('single_length', 'budget', 'late_length'):
+            calls = []
+            def call(stage, system, payload, validator, **kwargs):
+                calls.append(copy.deepcopy(payload))
+                if mode == 'late_length' and len(calls) == 1:
+                    values = [self.row(c) for c in payload['frozen_claims']]
+                    for row in values:
+                        row['comparison_scope'] = 'invalid_scope'
+                    value = {'comparisons': values}
+                    kwargs['before_repair'](value)
+                    return validator(value), None, False
+                return None, 'shared budget exhausted' if mode == 'budget' else 'finish_reason=length', mode != 'budget'
+            claims = self.claims[:1] if mode == 'single_length' else self.claims
+            rows, errors = _compare_batch(claims, self.task, self.package, truth,
+                                          call, mode, self.directory)
+            self.assertEqual(len(calls), 2)
+            self.assertTrue(errors)
+            self.assertTrue(all(row['relation'] == 'uncertain' for row in rows))
+            self.assertFalse((self.directory / (mode + '.batch-split.json')).exists())
+
 
 
 class WholeFileCoverageTests(unittest.TestCase):
@@ -1681,8 +2036,8 @@ class EditTargetObservationTests(unittest.TestCase):
     def setUp(self):
         self.result, self.package, _ = fixtures()
         self.task = self.result['tasks'][0]
-        self.sentence = ('It seems that I attempted to edit the wrong file again. '
-                         'I need to edit the `memset.py` file instead of the `reproduce.py` file.')
+        self.sentence = ('It seems that I attempted to edit the wrong file again, '
+                         'intending to edit the `memset.py` file instead of the `reproduce.py` file.')
         self.tool = ('This is how your edit would have looked if applied\n'
                      '[File: /pkg/reproduce.py (2 lines total)]\n1:pass\n2:    self.domain = config.resolve("domain")\n'
                      'This is the original code before your edit\n[File: /pkg/reproduce.py (1 lines total)]\n1:pass\n'
@@ -1704,6 +2059,33 @@ class EditTargetObservationTests(unittest.TestCase):
     def claim(self):
         return extract_response(self.extraction(), [{'evidence_id': 'A'}], self.task,
                                 self.package, strict_state=True)[0]['claims'][0]
+
+    def test_later_sentence_or_line_cannot_supply_the_observed_intended_path(self):
+        observation = 'It seems that I attempted to edit the wrong file again.'
+        plan = 'I need to edit the `memset.py` file instead of the `reproduce.py` file.'
+        for separator in (' ', '\n'):
+            with self.subTest(separator=separator):
+                next(e for e in self.package['evidence'] if e['id'] == 'A')['content'] = observation + separator + plan
+                response = self.extraction()
+                statement_id = response['sources'][0]['claims'][0]['statement_id']
+                choice = statement_choices(self.package, {'A'})[0]
+                self.assertEqual(choice['proposition'], observation)
+                if separator == ' ':
+                    self.assertIn('memset.py', choice['statement_refs'][0]['quote'])
+                with self.assertRaises(ValueError) as caught:
+                    extract_response(response, [{'evidence_id': 'A'}], self.task, self.package, strict_state=True)
+                message = str(caught.exception)
+                self.assertIn(statement_id, message)
+                self.assertIn('memset.py', message)
+                self.assertIn(observation, message)
+                self.assertIn('edit_target=null', message)
+                response['sources'][0]['claims'][0]['claim_target']['edit_target'] = None
+                frozen = extract_response(response, [{'evidence_id': 'A'}], self.task,
+                                          self.package, strict_state=True)[0]['claims'][0]
+                self.assertEqual(frozen['proposition'], observation)
+                self.assertEqual(frozen['claim_type'], 'diagnosis')
+                self.assertEqual(frozen['claim_target']['scope'], 'observed_event')
+                self.assertIsNone(frozen['claim_target']['edit_target'])
 
     def test_hedged_edit_target_observation_cannot_be_frozen_as_a_cause_hypothesis(self):
         response = self.extraction('cause_hypothesis')

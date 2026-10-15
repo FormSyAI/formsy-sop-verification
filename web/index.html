@@ -56,7 +56,7 @@
                 <h2 id="full-input-heading">完整 SOP 审计</h2>
               </div>
               <div class="job-actions">
-                <button id="full-model-status" class="button secondary" type="button">DeepSeek API · 读取配置</button>
+                <button id="full-model-status" class="button secondary" type="button">模型 API · 读取配置</button>
                 <button id="full-demo" class="button secondary" type="button">载入安全合成示例</button>
               </div>
             </div>
@@ -90,6 +90,15 @@
               </p>
             </div>
             <div id="full-sop-summary" class="notice">正在读取默认 SOP 版本…</div>
+            <label class="mode-control">公开完整 Trace
+              <select id="full-demo-select" disabled><option value="">正在读取公开示例…</option></select>
+            </label>
+            <p id="full-demo-status" class="help">选择仅载入材料；开始审计仍需单独确认。</p>
+            <section class="notice audit-object" aria-labelledby="full-object-heading">
+              <h3 id="full-object-heading">当前审计对象</h3>
+              <div id="full-object-content"><p>尚未载入审计材料。</p></div>
+            </section>
+            <p id="full-active-status" class="help" hidden></p>
             <div class="input-controls">
               <label class="file-control"
                 ><input id="full-request-file" type="file" accept="application/json,.json" /><span
@@ -102,22 +111,22 @@
               >
               <label class="mode-control"
                 >核查方式<select id="full-mode">
-                  <option value="model" selected>DeepSeek 多轮语义审计</option>
+                  <option value="model" selected>多轮语义审计</option>
                   <option value="offline" hidden disabled>本地结构检查 · 备用</option>
                 </select></label
               >
               <button id="full-verify" class="button primary" type="button" disabled>
-                使用 DeepSeek 开始审计
+                读取模型配置后开始审计
               </button>
             </div>
             <label id="full-consent-label" class="consent" hidden
               ><input id="full-consent" type="checkbox" /><span
-                >我了解：完整审计会分多次将所选材料发送至
-                DeepSeek，可能产生费用；结果仍需人工复核。</span
+                id="full-consent-text"
+                >我了解：完整审计会分多次将所选材料发送至服务端配置的模型服务，可能产生费用；结果仍需人工复核。</span
               ></label
             >
             <p id="full-mode-help" class="help">
-              默认使用 DeepSeek。导入材料或报告不会自动开始审计。
+              正在读取服务端模型配置。导入材料或报告不会自动开始审计。
             </p>
             <div class="input-bottom">
               <span id="full-config-label" class="muted">正在读取完整审计配置…</span>
@@ -127,7 +136,7 @@
             <div class="card empty-state">
               <span class="empty-icon">▦</span>
               <h2>从固定材料开始</h2>
-              <p>导入材料并确认后使用 DeepSeek 核查。已有报告可直接导入回看。</p>
+              <p>导入材料并确认后开始模型核查。已有报告可直接导入回看。</p>
             </div>
           </section>
         </section>

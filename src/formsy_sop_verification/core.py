@@ -4,10 +4,12 @@ import copy
 from collections import Counter
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
+from urllib.parse import parse_qsl, unquote, urlsplit
 
-from .legacy_evidence import aggregate, check_refs, redact
+from .legacy_evidence import SECRET_FIELD, aggregate, check_refs, redact
 
 
 MAX_INPUT_BYTES = 2 * 1024 * 1024
@@ -84,7 +86,7 @@ def _string(value, limit=4000, *, empty=False):
     return value
 
 
-def normalize(payload):
+def normalize(payload, *, secrets=()):
     if not isinstance(payload, dict) or payload.get("schema_version") != 1 or type(payload.get("schema_version")) is not int:
         raise ValueError("unsupported_schema")
     if set(payload) - {"schema_version", "context", "sop", "sources", "mode", "candidate"}:
@@ -151,7 +153,7 @@ def normalize(payload):
             for key in ("message_ids", "call_ids"):
                 if key in locator and (not isinstance(locator[key], list) or len(locator[key]) > 20 or any(not isinstance(item, str) or not item or len(item) > 128 for item in locator[key])):
                     raise ValueError("invalid_turn_locator")
-        content = redact(original)
+        content = redact(original, secrets)
         kind = {"user_message": "user_requirement", "assistant_message": "assistant", "tool_call": "context", "tool_result": "context"}.get(row["kind"], row["kind"])
         version_id = _string(row.get("version_id", ""), 100, empty=True)
         sources[sid] = {"id": sid, "kind": kind, "input_kind": row["kind"], "content": content, "original_content": original,
@@ -324,18 +326,153 @@ def validate_candidate(candidate, normalized, profile):
     return checks, global_errors
 
 
-def _redact_tree(value):
+def _redact_tree(value, secrets=()):
     if isinstance(value, str):
-        return redact(value)
+        return redact(value, secrets)
     if isinstance(value, dict):
-        return {key: _redact_tree(item) for key, item in value.items()}
+        return {redact(key, secrets) if isinstance(key, str) else key:
+                "[REDACTED]" if re.fullmatch(SECRET_FIELD, str(key), re.IGNORECASE)
+                else _redact_tree(item, secrets) for key, item in value.items()}
     if isinstance(value, list):
-        return [_redact_tree(item) for item in value]
+        return [_redact_tree(item, secrets) for item in value]
     return value
 
 
+def _opaque_identity(value, secrets):
+    if isinstance(value, list):
+        return [_opaque_identity(item, secrets) for item in value]
+    if re.search(r"\bsk-[A-Za-z0-9_-]{16,}", value) or any(secret and secret in value for secret in secrets):
+        raise ValueError("credential_in_evidence_identity")
+    return value
+
+
+def _copy_opaque_fields(original, displayed, fields, secrets):
+    if not isinstance(original, dict) or not isinstance(displayed, dict):
+        return
+    for field in fields:
+        value = original.get(field)
+        if isinstance(value, str) or (field in ("message_ids", "call_ids")
+                and isinstance(value, list) and all(isinstance(item, str) for item in value)):
+            displayed[field] = _opaque_identity(value, secrets)
+
+
+def _opaque_url(value, secrets):
+    _opaque_identity(value, secrets)
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        raise ValueError("invalid_source_locator") from None
+    if parts.username is not None:
+        raise ValueError("credential_in_evidence_identity")
+    # URL parameters contain data, unlike an opaque namespace in a path or anchor.
+    parameters = parse_qsl(parts.query, keep_blank_values=True)
+    if "=" in parts.fragment:
+        parameters.extend(parse_qsl(parts.fragment, keep_blank_values=True))
+    for key, item in parameters:
+        if item and re.fullmatch(SECRET_FIELD, key, re.IGNORECASE):
+            raise ValueError("credential_in_evidence_identity")
+        for part in (key, item):
+            _opaque_identity(part, secrets)
+            if not IDENTIFIER.fullmatch(part) and redact(part, secrets) != part:
+                raise ValueError("credential_in_evidence_identity")
+    for part in (*parts.path.split("/"), parts.fragment):
+        decoded = unquote(part)
+        _opaque_identity(decoded, secrets)
+        if not IDENTIFIER.fullmatch(decoded) and redact(decoded, secrets) != decoded:
+            raise ValueError("credential_in_evidence_identity")
+    return value
+
+
+def _redact_locator(value, secrets):
+    displayed = _redact_tree(value, secrets)
+    if isinstance(value, dict):
+        fields = {"turn": ("session_id", "turn_id", "message_ids", "call_ids"),
+                  "checkpoint": ("checkpoint_id",), "birdview": ("artifact_id", "part", "rule_id"),
+                  "manual": ()}.get(value.get("kind") if isinstance(value.get("kind"), str) else "", ())
+        _copy_opaque_fields(value, displayed, ("kind", *fields), secrets)
+        if value.get("kind") == "manual" and isinstance(value.get("url"), str):
+            displayed["url"] = _opaque_url(value["url"], secrets)
+    return displayed
+
+
+def _restore_ref_ids(original, displayed, source_ids, secrets, locators=None):
+    if not isinstance(original, list) or not isinstance(displayed, list):
+        return
+    for check, safe_check in zip(original, displayed):
+        if not isinstance(check, dict) or not isinstance(safe_check, dict):
+            continue
+        pairs = [(check, safe_check)]
+        if isinstance(check.get("items"), list) and isinstance(safe_check.get("items"), list):
+            pairs.extend(zip(check["items"], safe_check["items"]))
+        for item, safe_item in pairs:
+            if not isinstance(item, dict) or not isinstance(safe_item, dict):
+                continue
+            refs, safe_refs = item.get("evidence_refs"), safe_item.get("evidence_refs")
+            if not isinstance(refs, list) or not isinstance(safe_refs, list):
+                continue
+            for ref, safe_ref in zip(refs, safe_refs):
+                if not isinstance(ref, dict) or not isinstance(safe_ref, dict):
+                    continue
+                source_id = ref.get("source_id")
+                if isinstance(source_id, str) and source_id in source_ids:
+                    _copy_opaque_fields(ref, safe_ref, ("source_id",), secrets)
+                    if locators is not None and "locator" in ref and ref["locator"] == locators.get(source_id):
+                        safe_ref["locator"] = _redact_locator(ref["locator"], secrets)
+
+
+def _redact_input(value, secrets=()):
+    displayed = _redact_tree(value, secrets)
+    if not isinstance(value, dict):
+        return displayed
+    _copy_opaque_fields(value.get("context"), displayed.get("context"),
+                        ("project_id", "task_id", "target_commit"), secrets)
+    _copy_opaque_fields(value.get("sop"), displayed.get("sop"), ("project_id", "sop_id", "digest"), secrets)
+    sources, safe_sources = value.get("sources"), displayed.get("sources")
+    source_ids = set()
+    if isinstance(sources, list) and isinstance(safe_sources, list):
+        for source, safe_source in zip(sources, safe_sources):
+            _copy_opaque_fields(source, safe_source, ("id", "version_id"), secrets)
+            if isinstance(source, dict) and isinstance(safe_source, dict):
+                if isinstance(source.get("id"), str):
+                    source_ids.add(source["id"])
+                if isinstance(source.get("locator"), dict):
+                    safe_source["locator"] = _redact_locator(source["locator"], secrets)
+    candidate, safe_candidate = value.get("candidate"), displayed.get("candidate")
+    if isinstance(candidate, dict) and isinstance(safe_candidate, dict):
+        _restore_ref_ids(candidate.get("checks"), safe_candidate.get("checks"), source_ids, secrets)
+    return displayed
+
+
+def _redact_report(value, secrets=()):
+    if not isinstance(value, dict) or not isinstance(value.get("source_index"), dict):
+        return _redact_tree(value, secrets)
+    # Only the verified report boundary interprets source-index keys as opaque IDs.
+    result = _redact_tree({key: item for key, item in value.items() if key != "source_index"}, secrets)
+    _copy_opaque_fields(value.get("context"), result.get("context"),
+                        ("project_id", "task_id", "target_commit"), secrets)
+    _copy_opaque_fields(value.get("sop_pin"), result.get("sop_pin"), ("project_id", "sop_id", "digest"), secrets)
+    result["source_index"], locators = {}, {}
+    for source_id, metadata in value["source_index"].items():
+        safe_id = _opaque_identity(source_id, secrets)
+        safe_metadata = _redact_tree(metadata, secrets)
+        _copy_opaque_fields(metadata, safe_metadata, ("version_id",), secrets)
+        if isinstance(metadata, dict) and isinstance(metadata.get("locator"), dict):
+            safe_metadata["locator"] = _redact_locator(metadata["locator"], secrets)
+            locators[source_id] = metadata["locator"]
+        result["source_index"][safe_id] = safe_metadata
+    _restore_ref_ids(value.get("checks"), result.get("checks"), set(value["source_index"]), secrets, locators)
+    return result
+
+
 def verify(payload, client=None):
-    normalized = normalize(payload)
+    secrets = (getattr(client, "key", ""), os.environ.get("DEEPSEEK_API_KEY", ""))
+    normalized = normalize(payload, secrets=secrets)
+    identity = {"context": {key: normalized["context"].get(key) for key in ("project_id", "task_id", "target_commit")},
+                "sop": {key: normalized["sop"].get(key) for key in ("project_id", "sop_id", "version", "digest")},
+                "sources": [{key: source[key] for key in ("id", "version_id", "locator")}
+                            for source in normalized["sources"].values()]}
+    if _redact_input(identity, secrets) != identity:
+        raise ValueError("credential_in_evidence_identity")
     profile = load_profile()
     errors = []
     candidate = payload.get("candidate") if normalized["mode"] == "offline" else None
@@ -348,13 +485,16 @@ def verify(payload, client=None):
         from .model_client import DeepSeekClient, ProviderError
         client = client or DeepSeekClient()
         model["model"] = client.model
+        model["provider"] = getattr(client, "provider", "DeepSeek")
+        if getattr(client, "provider_endpoint", None):
+            model["provider_endpoint"] = client.provider_endpoint
         model_payload = {"context": normalized["context"], "sop": normalized["sop"],
             "profile": {"id": profile["id"], "mapping_revision": profile["mapping_revision"], "conditions": profile["conditions"]},
             "sources": [{"id": source["id"], "kind": source["input_kind"], "version_id": source["version_id"],
                          "numbered_lines": [{"line": index, "text": line} for index, line in enumerate(source["content"].split("\n"), 1)]}
                         for source in normalized["sources"].values()]}
         try:
-            candidate = client.complete(SYSTEM, _redact_tree(model_payload))
+            candidate = client.complete(SYSTEM, _redact_input(model_payload, secrets))
             model["status"] = "completed"
         except ProviderError as exc:
             errors.append(exc.code)
@@ -367,7 +507,7 @@ def verify(payload, client=None):
     analysis_complete = not errors and all(not row["validation_errors"] for row in checks)
     counts = Counter(row["result"] for row in checks)
     counts = {status: counts[status] for status in sorted(RESULTS)}
-    return {"schema_version": 1, "engine_version": ENGINE_VERSION, "context": _redact_tree(normalized["context"]),
+    return _redact_report({"schema_version": 1, "engine_version": ENGINE_VERSION, "context": normalized["context"],
         "sop_pin": {"project_id": normalized["sop"]["project_id"], "sop_id": normalized["sop"]["sop_id"],
                     "version": normalized["sop"]["version"], "digest": normalized["sop"]["digest"]},
         "sop_pin_validation": "structural_only; exact RFC8785 digest and authorization belong to calling Server",
@@ -383,4 +523,4 @@ def verify(payload, client=None):
         "source_index": {sid: {key: source[key] for key in ("input_kind", "locator", "sha256", "original_sha256", "redacted", "version_id")} for sid, source in normalized["sources"].items()},
         "provenance": {**profile["provenance"], "source_document": profile["source_document"]},
         "limitations": ["仅核查4个参考条件，不代表六章全文或33规则/144条件均已核查。", "语义结果是模型候选；原文和字段校验不能证明模型语义正确。",
-                        "未执行上传代码、测试、部署或修复；普通Trace工具输出不等于受信CI回执。", "草案映射不会提升为人工批准、正式关闭或历史SOP生效证明。"]}
+                        "未执行上传代码、测试、部署或修复；普通Trace工具输出不等于受信CI回执。", "草案映射不会提升为人工批准、正式关闭或历史SOP生效证明。"]}, secrets)

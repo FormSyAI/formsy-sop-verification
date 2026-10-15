@@ -1,0 +1,59 @@
+{
+  "instance_id": "tobymao__sqlglot-2063",
+  "repository": "tobymao/sqlglot",
+  "repository_url": "https://github.com/tobymao/sqlglot",
+  "trajectory_source": {
+    "dataset": "nebius/SWE-agent-trajectories",
+    "url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories",
+    "row_index": 6500,
+    "selected_generator": "swe-agent-llama-70b",
+    "native_messages": 17,
+    "license_review_snapshot_revision": "68195a1450865274106246d0d0296a1d6807b88e",
+    "dataset_last_modified_at_review": "2024-12-23T12:42:05.000Z"
+  },
+  "task_metadata_source": {
+    "dataset": "nebius/SWE-bench-extra",
+    "url": "https://huggingface.co/datasets/nebius/SWE-bench-extra",
+    "row_index": 5932,
+    "task_created_at_as_recorded": "2023-08-15 16:31:52+00:00",
+    "license_review_snapshot_revision": "11dcbfb30e19552df2a2f8030bd764adc95c92a5",
+    "dataset_last_modified_at_review": "2025-05-28T16:27:57.000Z"
+  },
+  "code_source": {
+    "public_base_commit": "d92a5b73895ed3d843f44e4b24b68bf283376ee6",
+    "derived_target_commit": "bf57fda6501ec8fb956ad4cdfc8422ed56e33c81",
+    "derived_tree": "eb9eca4a2caf6d2609600c82e815e1dd3e8ef045",
+    "target_is_public_agent_commit": false,
+    "generated_patch_sha256": "6500f501bd5d40899212281e8c5232454c224c675bf02ec96e1387f3589de1f2",
+    "derivation": "The frozen target is reconstructed from the public base and the selected agent-generated patch; it is not an upstream published commit or current execution receipt.",
+    "visible_target_source_file_count": 11,
+    "omitted_source_file_count": 263
+  },
+  "licenses": {
+    "trajectory_and_task_metadata": "CC-BY-4.0",
+    "repository_code": "MIT",
+    "code_license_declaration_url": "https://raw.githubusercontent.com/tobymao/sqlglot/d92a5b73895ed3d843f44e4b24b68bf283376ee6/LICENSE",
+    "full_mit_notice_source_url": "https://raw.githubusercontent.com/tobymao/sqlglot/d92a5b73895ed3d843f44e4b24b68bf283376ee6/LICENSE",
+    "full_mit_notice_sha256": "008dfffe61d97ceb73637125b91fe9218066dffa44ed36d5c7ba9a1f1a19d75e",
+    "notice_revision_note": "Full MIT notice copied from the exact public base commit.",
+    "generator_notice": "Dataset publisher requires compliance with the Llama 3.1 license; its license, policy and notice are retained in ../licenses."
+  },
+  "input": {
+    "file": "input.json",
+    "sha256": "ba6da935a82f7e54e6c594b14f5a095c930ea8c73ae9322e7a635d64b77f0c79",
+    "bytes": 285241,
+    "message_count": 16,
+    "material_count": 17
+  },
+  "preparation": {
+    "checked_at": "2026-10-14T13:15:34.331131+00:00",
+    "original_frozen_request_bytes_unchanged": true,
+    "native_message_payloads_preserved_verbatim_and_checked": true,
+    "changes_from_upstream_dataset": "Existing worker request maps native system/user wrapper to context and later ai/user to assistant/tool, adds the problem statement as the sole requirement, binds selected complete source files and reconstructed target. No new transformation was made when packaging this frozen input.",
+    "sample_code_or_tests_executed": false,
+    "precomputed_audit_report_included": false,
+    "historical_evaluator_is_dataset_material_not_current_execution": true,
+    "gold_reference_patch_excluded": true,
+    "oracle_test_patch_excluded": true
+  }
+}

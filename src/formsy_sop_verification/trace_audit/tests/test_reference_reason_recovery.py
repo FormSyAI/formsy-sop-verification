@@ -8,6 +8,7 @@ from ..reference_repair import (attach_quote_ids, reference_diagnostics, repair_
                               validate_quote_id_retry, validate_retry_reason_consistency)
 from ..sop_audit import audit_sop
 from .test_sop_audit import Client, default_response, fixtures, ref
+from .test_engine_quote_retry import select_refs
 
 
 class RetryReasonConsistencyTests(unittest.TestCase):
@@ -21,6 +22,8 @@ class RetryReasonConsistencyTests(unittest.TestCase):
         self.diagnostics = reference_diagnostics(self.old, self.package)
 
     def checked(self, row, visible=None):
+        # These tests isolate the semantic gate after an explicit selector retry.
+        row = select_refs(row, attach_quote_ids({'evidence': self.package['evidence']}, self.package))
         validate_quote_id_retry(row, self.package, available_evidence_ids=visible)
         expanded, _ = repair_references(row, self.package, available_evidence_ids=visible)
         validate_retry_reason_consistency(expanded, self.diagnostics, self.package,
@@ -117,6 +120,7 @@ class SopReasonRecoveryTests(unittest.TestCase):
                 self.assertIn('DEMO_TOKEN', str(payload['reference_feedback']))
                 row.update(result='未核查', gap_type='evidence_missing', acceptance_ids=[],
                     reason='仍显示 DEMO_TOKEN，范围未知。' if retained else '旧事实缺少可见来源，范围仍缺证据。')
+                value = select_refs(value, payload)
             return value
         with tempfile.TemporaryDirectory() as directory:
             report = audit_sop(copy.deepcopy(self.result), self.package, self.catalog,
@@ -156,9 +160,10 @@ class SopReasonRecoveryTests(unittest.TestCase):
                         refs = [ref('U', '保留零值')]
                         if not retained:
                             reason = '旧事实无用户来源，阶段范围仍不确定。'
-                    return {'reviewed_source_ids': payload['source_inventory'], 'intents': [
+                    value = {'reviewed_source_ids': payload['source_inventory'], 'intents': [
                         {'name': name, 'status': 'uncertain', 'reason': reason, 'evidence_refs': refs}
                         for name in ('design_full', 'formal_closure', 'full_security')]}
+                    return select_refs(value, payload) if len(calls) == 2 else value
                 with tempfile.TemporaryDirectory() as directory:
                     report = audit_sop(copy.deepcopy(self.result), self.package, self.catalog,
                                        Client(respond), Path(directory))

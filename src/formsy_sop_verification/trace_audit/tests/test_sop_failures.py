@@ -107,12 +107,15 @@ class SopFailureReviewTests(unittest.TestCase):
         return answer
 
     def run_review(self, entries, answers=None, causes=None, error=None, responses=None,
-                   source_context_ids=()):
+                   source_context_ids=(), truncated_calls=()):
         rows = list({id(entry[0]): entry[0] for entry in entries}.values())
         by_id = {answer['id']: answer for answer in answers or []}
 
         def call(stage, system, payload, validator, **kwargs):
+            from ..reference_repair import repair_references
             self.calls.append((stage, copy.deepcopy(payload), kwargs))
+            if len(self.calls) in truncated_calls:
+                return None, 'finish_reason=length', True
             if error:
                 return None, error, False
             response = copy.deepcopy(responses[min(len(self.calls) - 1, len(responses) - 1)]) if responses else {
@@ -120,7 +123,10 @@ class SopFailureReviewTests(unittest.TestCase):
             if isinstance(response, str):
                 return None, response, False
             try:
-                return validator(response), None, False
+                kwargs['before_repair'](response)
+                canonical, _ = repair_references(response, self.package, [self.task],
+                    available_evidence_ids={item['id'] for item in payload['evidence']})
+                return validator(canonical), None, False
             except (ValueError, KeyError, TypeError) as exc:
                 return None, str(exc), False
 
@@ -332,11 +338,15 @@ class SopFailureReviewTests(unittest.TestCase):
         behavior, design = self.entry('FIX05.C01'), self.entry('TC06.C01')
         behavior[0]['program_gates'] = [{'id': 'trusted_target_assertion_execution', 'result': FAIL,
                                         'evidence_ids': ['RUN']}]
+        prior = copy.deepcopy(behavior[1])
         rows, failures = self.run_review([behavior, design], error='Model-call budget exhausted.')
         self.assertEqual([r['result'] for r in rows], [FAIL, UNKNOWN])
         self.assertEqual(design[1]['gap_type'], 'analysis_failed')
         self.assertEqual(len(failures), 2)
         self.assertEqual(behavior[1]['failure_review']['status'], 'failed')
+        self.assertEqual(behavior[1]['failure_review']['review_mode'], 'root_cause_only')
+        for field in ('result', 'reason', 'gap_type', 'evidence_refs', 'acceptance_ids'):
+            self.assertEqual(behavior[1][field], prior[field])
         self.assertEqual(design[0]['analysis_status'], 'failed')
         self.assertEqual(len(self.calls), 2)
 
@@ -358,6 +368,9 @@ class SopFailureReviewTests(unittest.TestCase):
         bad = self.answer(second, obligation='CONSUMER', contrary='S')
         bad['counterexample_refs'][0]['quote'] = 'fabricated quote'
         fixed = self.answer(second, obligation='CONSUMER', contrary='S')
+        from ..reference_repair import attach_quote_ids
+        from .test_engine_quote_retry import select_refs
+        fixed = select_refs(fixed, attach_quote_ids({'evidence': self.package['evidence']}, self.package))
         rows, failures = self.run_review([first, second], responses=[
             {'reviews': [good, bad]}, {'reviews': [fixed]}])
         self.assertFalse(failures)
@@ -366,6 +379,37 @@ class SopFailureReviewTests(unittest.TestCase):
         self.assertEqual([c['id'] for c in self.calls[1][1]['candidates']], [second[2]['id']])
         self.assertIn('原文不一致', self.calls[1][2]['initial_feedback'][0])
         self.assertTrue(self.calls[1][1]['reference_feedback'])
+
+    def test_initial_length_counterexample_batch_splits_only_output_and_keeps_context(self):
+        entries = [self.entry(cid) for cid in ('TC04.C01', 'TC05.C01')]
+        answers = [self.answer(e, obligation='CONSUMER', contrary='S') for e in entries]
+        rows, failures = self.run_review(entries, answers, truncated_calls=(1,))
+        self.assertFalse(failures)
+        self.assertEqual([len(call[1]['candidates']) for call in self.calls], [2, 1, 1])
+        self.assertEqual([row['result'] for row in rows], [FAIL, FAIL])
+        expected = {entry[2]['id'] for entry in entries}
+        children = [c['id'] for call in self.calls[1:] for c in call[1]['candidates']]
+        self.assertEqual(set(children), expected)
+        self.assertEqual(len(children), len(expected))
+        for call in self.calls:
+            self.assertEqual(call[1]['evidence'], self.package['evidence'])
+            self.assertEqual(call[2]['attempts'], 1)
+        self.assertTrue(all(entry[1]['failure_recovery'][0]['action'] == 'split_truncated_batch'
+                            for entry in entries))
+
+    def test_single_or_late_length_and_provider_failure_do_not_split_counterexample_batch(self):
+        for mode in ('singleton', 'late', 'provider'):
+            self.calls = []
+            entries = [self.entry(cid) for cid in ('TC04.C01', 'TC05.C01')]
+            if mode == 'singleton':
+                entries = entries[:1]
+            rows, failures = self.run_review(entries,
+                responses=[{'reviews': []}], truncated_calls=(2,) if mode == 'late' else (1, 2) if mode == 'singleton' else (),
+                error='provider blocked' if mode == 'provider' else None)
+            self.assertEqual(len(self.calls), 2)
+            self.assertTrue(failures)
+            self.assertTrue(all(row['result'] == UNKNOWN for row in rows))
+            self.assertFalse(any(entry[1].get('failure_recovery') for entry in entries))
 
     def test_incomplete_envelope_has_only_one_bounded_whole_batch_retry(self):
         entries = [self.entry(cid) for cid in ('TC04.C01', 'TC05.C01')]
@@ -424,6 +468,43 @@ class SopFailureReviewTests(unittest.TestCase):
                 build_issue_groups(report)
                 self.assertEqual(report['sop_issue_groups'], [])
 
+    def test_diagnosed_root_cause_retry_requires_selectors_without_erasing_counterexample(self):
+        from ..reference_repair import attach_quote_ids
+        from .test_engine_quote_retry import select_refs
+        for selectors in (False, True):
+            with self.subTest(selectors=selectors):
+                self.calls.clear()
+                entry = self.entry('TC04.C01')
+                first = self.answer(entry, obligation='CONSUMER', contrary='S', root_cause_id='C1',
+                                    reason='Original valid counterexample.')
+                bad = {'id': 'C1', **self.cause()}
+                bad['cause_refs'][0]['quote'] = 'invented mechanism quote'
+                retry = {'reviews': [self.answer(entry, obligation='CONSUMER', contrary='S', root_cause_id='C2')],
+                         'root_causes': [{'id': 'C2', **self.cause()}]}
+                numbered = attach_quote_ids({'evidence': self.package['evidence']}, self.package)
+                retry['reviews'] = select_refs(retry['reviews'], numbered)
+                if selectors:
+                    retry['root_causes'] = select_refs(retry['root_causes'], numbered)
+                rows, failures = self.run_review([entry], responses=[
+                    {'reviews': [first], 'root_causes': [bad]}, retry])
+                self.assertFalse(failures)
+                self.assertEqual(len(self.calls), 2)
+                self.assertTrue(self.calls[1][1]['citation_retry']['selector_only'])
+                self.assertEqual(rows[0]['result'], FAIL)
+                self.assertEqual(entry[1]['reason'], first['reason'])
+                review = entry[1]['failure_review']
+                self.assertEqual(review['status'], 'completed')
+                if selectors:
+                    self.assertEqual(review['root_cause'], self.cause())
+                    self.assertNotIn('grouping_error', review)
+                else:
+                    self.assertNotIn('root_cause', review)
+                    self.assertIn('禁止', review['grouping_error'])
+                self.assertNotEqual(rows[0].get('analysis_status'), 'failed')
+                report = {'sop_condition_checks': rows}
+                build_issue_groups(report)
+                self.assertEqual(len(report['sop_issue_groups']), 1 if selectors else 0)
+
     def test_empty_program_failure_marker_cannot_exempt_a_candidate(self):
         entry = self.entry('FIX05.C01')
         entry[0]['program_gates'] = [{'id': 'trusted_target_assertion_execution', 'result': FAIL}]
@@ -449,6 +530,7 @@ class SopFailureReviewTests(unittest.TestCase):
         self.assertNotIn('reason', candidate)
         self.assertNotIn('result', candidate)
         self.assertNotIn('semantic_basis', candidate)
+        self.assertNotIn('frozen_failure_context', candidate)
         self.assertNotIn('candidate_rules', self.calls[0][1])
         self.assertEqual(self.calls[0][2]['attempts'], 1)
 
@@ -461,6 +543,76 @@ class SopFailureReviewTests(unittest.TestCase):
         self.assertFalse(failures)
         self.assertEqual(rows[0]['result'], FAIL)
         self.assertEqual(self.calls[0][1]['candidates'][0]['review_mode'], 'root_cause_only')
+
+    def test_authoritative_grouping_cannot_overwrite_verified_reason_or_evidence(self):
+        entry = self.entry('FIX05.C01')
+        entry[0]['program_gates'] = [{'id': 'trusted_target_assertion_execution', 'result': FAIL,
+                                     'evidence_ids': ['RUN']}]
+        entry[1].update(reason='The verified run failed the original assertion.',
+                        evidence_refs=[self.ref('RUN')])
+        prior = copy.deepcopy(entry[1])
+        answer = self.answer(entry, contrary='CONSUMER', reason='A newly invented AttributeError explains failure.')
+        rows, failures = self.run_review([entry], [answer])
+        self.assertFalse(failures)
+        for field in ('result', 'reason', 'gap_type', 'evidence_refs', 'acceptance_ids'):
+            self.assertEqual(entry[1][field], prior[field])
+        self.assertEqual(rows[0]['reason'], prior['reason'])
+        candidate = self.calls[0][1]['candidates'][0]
+        context = candidate['frozen_failure_context']
+        self.assertEqual(context['dimension'], entry[2]['judgment_dimension'])
+        for field in ('result', 'reason', 'evidence_refs', 'acceptance_ids'):
+            self.assertEqual(context[field], prior[field])
+        self.assertIn('grouping_scope_only', context['usage'])
+        review = entry[1]['failure_review']
+        self.assertEqual(review['review_mode'], 'root_cause_only')
+        self.assertEqual(review['grouping_review']['reason'], answer['reason'])
+        self.assertNotEqual(review['reason'], answer['reason'])
+        gates = {gate['id']: gate for gate in entry[1]['program_gates']}
+        self.assertNotIn('clause_specific_counterexample', gates)
+        self.assertFalse(gates['failure_root_cause_grouping']['met'])
+        self.assertNotEqual(gates['failure_root_cause_grouping']['reason'], answer['reason'])
+
+    def test_acceptance_grouping_context_does_not_exempt_its_independent_sibling(self):
+        entry = self.entry('FIX02.C01')
+        row = entry[0]
+        row['program_gates'] = [{'id': 'same_scope_acceptance_consistency', 'result': FAIL,
+                                'dimension': 'implementation', 'acceptance_ids': ['AP1']}]
+        sibling = (row, row['atomic_checks'][1], row['contract']['items'][1])
+        sibling[1].update(result=FAIL, gap_type='')
+        prior = copy.deepcopy(entry[1])
+        independent = self.answer(sibling, relation='evidence_insufficient',
+                                  reason='Independent review did not establish the reverse obligation failure.')
+        rows, failures = self.run_review([entry, sibling], [self.answer(entry), independent])
+        self.assertFalse(failures)
+        for field in ('result', 'reason', 'gap_type', 'evidence_refs', 'acceptance_ids'):
+            self.assertEqual(entry[1][field], prior[field])
+        candidates = {candidate['id']: candidate for candidate in self.calls[0][1]['candidates']}
+        self.assertIn('frozen_failure_context', candidates[entry[2]['id']])
+        self.assertNotIn('frozen_failure_context', candidates[sibling[2]['id']])
+        self.assertNotIn('review_mode', candidates[sibling[2]['id']])
+        self.assertNotIn('reason', candidates[sibling[2]['id']])
+        self.assertEqual(sibling[1]['result'], UNKNOWN)
+        self.assertEqual(sibling[1]['reason'], independent['reason'])
+        self.assertEqual(sibling[1]['failure_review']['reason'], independent['reason'])
+        self.assertEqual(rows[0]['result'], FAIL)
+
+    def test_authoritative_context_does_not_approve_invalid_root_cause_grouping(self):
+        entry = self.entry('FIX05.C01')
+        entry[0]['program_gates'] = [{'id': 'trusted_target_assertion_execution', 'result': FAIL,
+                                     'evidence_ids': ['RUN']}]
+        prior = copy.deepcopy(entry[1])
+        answer = self.answer(entry, root_cause_id='C1')
+        rows, failures = self.run_review([entry], [answer],
+            [{'id': 'C1', **self.cause(cause_refs=[self.ref('OLD')])}])
+        self.assertFalse(failures)
+        self.assertEqual(len(self.calls), 2)
+        for field in ('result', 'reason', 'gap_type', 'evidence_refs', 'acceptance_ids'):
+            self.assertEqual(entry[1][field], prior[field])
+        self.assertIn('grouping_error', entry[1]['failure_review'])
+        self.assertNotIn('root_cause', entry[1]['failure_review'])
+        report = {'sop_condition_checks': rows}
+        build_issue_groups(report)
+        self.assertEqual(report['sop_issue_groups'], [])
 
     def test_non_failed_other_task_legacy_and_special_claims_are_not_candidates(self):
         failed = self.entry('TC04.C01')

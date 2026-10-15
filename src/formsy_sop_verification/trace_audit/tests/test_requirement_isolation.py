@@ -352,6 +352,231 @@ class RequirementExclusionTests(unittest.TestCase):
             "candidate": before[0]["acceptance_points"][1], "reason": self.reason,
             "support_review": review["tasks"][0]["acceptance_points"][1]}])
 
+    def test_nonduplicate_rejected_test_delivery_cannot_leave_a_stale_goal_after_pruning(self):
+        tasks = copy.deepcopy(self.tasks)
+        tasks[0]['goal'] += ' and deliver a regression assertion.'
+        tasks[0]['acceptance_points'][-1]['kind'] = 'test_delivery'
+        review = self.validated_rejection(self.review_with_inference(tasks), tasks)
+        before = copy.deepcopy((tasks, review))
+        self.assertTrue(review['tasks'][0]['supported'])
+        self.assertTrue(all(row['supported'] for row in review['tasks'][0]['summary_checks']))
+        self.assertEqual(engine.exclude_unsupported_points(tasks, review), (None, []))
+        self.assertEqual((tasks, review), before)
+
+    def test_supported_test_delivery_and_its_duplicate_keep_safe_pruning(self):
+        payload = synthetic_payload()
+        payload['trace']['messages'] = [{'role': 'user', 'content': ISSUE + '\nAdd a regression assertion.'}]
+        package = engine.normalize(payload, RULES)
+        user = next(item for item in package['evidence'] if item['kind'] == 'user_requirement')
+        tasks = baseline_for(package)['tasks']
+        delivery = {'id': 'test-delivery', 'kind': 'test_delivery', 'requirement': 'Add a regression assertion.',
+                    'requirement_refs': [reference(user, 2)]}
+        tasks[0]['requirement_refs'].append(reference(user, 2))
+        tasks[0]['acceptance_points'].append(delivery)
+        supported = support_for(tasks)
+        self.assertEqual(engine.validate_requirement_support(supported, tasks, package, strict_semantics=True), supported)
+        tasks[0]['acceptance_points'].append({**copy.deepcopy(delivery), 'id': 'duplicate-test',
+                                             'requirement': 'Deliver the same regression assertion.'})
+        review = support_for(tasks)
+        review['tasks'][0]['acceptance_points'][-1].update(supported=False, duplicate_of=delivery['id'],
+            reason='The same test delivery obligation is restated; the explicit canonical point remains.')
+        before = copy.deepcopy((tasks, review))
+        with self.assertRaises(engine.RequirementSupportError) as rejected:
+            engine.validate_requirement_support(review, tasks, package, strict_semantics=True)
+        filtered, excluded = engine.exclude_unsupported_points(tasks, rejected.exception.review)
+        self.assertEqual(filtered[0]['acceptance_points'], tasks[0]['acceptance_points'][:-1])
+        self.assertEqual(filtered[0]['goal'], tasks[0]['goal'])
+        self.assertEqual(excluded[0]['candidate']['id'], 'duplicate-test')
+        self.assertEqual((tasks, review), before)
+
+    def test_rejected_delivery_rebuilds_title_goal_and_points_once_or_stops_before_freeze(self):
+        candidate = copy.deepcopy(self.candidate)
+        candidate['tasks'][0].update(title='Fix output and deliver tests', goal=ISSUE + ' Deliver regression tests.')
+        candidate['tasks'][0]['acceptance_points'][-1].update(kind='test_delivery',
+            requirement='Deliver a regression assertion for the reported input.')
+        before = copy.deepcopy((candidate, self.package))
+        owner = self
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                calls, records = [], {}
+
+                class Client:
+                    def complete(client, system, request, directory, stage):
+                        calls.append(stage)
+                        if stage.startswith('task-extraction'):
+                            value = copy.deepcopy(candidate)
+                            if '-recheck-' in stage:
+                                owner.assertIn('一并重建title、goal和验收点', request['reextraction_instruction'])
+                                owner.assertIn('原候选及复核记录保留', request['reextraction_instruction'])
+                                owner.assertIn('Deliver regression tests.', request['previous_unfrozen_candidate'][0]['goal'])
+                                if not persistent:
+                                    value['tasks'][0].update(title='Fix output', goal=ISSUE)
+                                    value['tasks'][0]['acceptance_points'] = value['tasks'][0]['acceptance_points'][:1]
+                        elif stage.startswith('requirement-review'):
+                            value = support_for(request['candidate_tasks'])
+                            if request['candidate_tasks'][0]['acceptance_points'][-1]['kind'] == 'test_delivery':
+                                value['tasks'][0]['acceptance_points'][-1].update(supported=False,
+                                    source_class='reported_problem', reason='The reported behavior does not require test-source delivery.')
+                        else:
+                            value = scripted_result(request)
+                        records[stage] = copy.deepcopy(value)
+                        with (Path(directory) / (stage + '.original.json')).open('x') as stream:
+                            json.dump(value, stream)
+                        return value
+
+                with tempfile.TemporaryDirectory() as directory:
+                    if persistent:
+                        with self.assertRaisesRegex(ValueError, '无法建立受用户原话支持'):
+                            engine.analyze(self.package, Client(), directory)
+                        self.assertFalse((Path(directory) / 'frozen-tasks.json').exists())
+                        self.assertNotIn('analysis-1', calls)
+                        self.assertEqual(len(calls), 4)
+                    else:
+                        result = engine.analyze(self.package, Client(), directory)
+                        frozen = json.loads((Path(directory) / 'frozen-tasks.json').read_text())
+                        self.assertEqual(frozen['tasks'], result['tasks'])
+                        self.assertEqual(frozen['tasks'][0]['title'], 'Fix output')
+                        self.assertEqual(frozen['tasks'][0]['goal'], ISSUE)
+                        self.assertEqual([point['kind'] for point in frozen['tasks'][0]['acceptance_points']], ['behavior'])
+                        self.assertEqual(frozen['excluded_candidates'], [])
+                    self.assertEqual(calls[:4], ['task-extraction-1', 'requirement-review-1',
+                        'task-extraction-recheck-1', 'requirement-review-recheck-1'])
+                    self.assertFalse(any('-filtered-' in stage for stage in calls))
+                    self.assertTrue((Path(directory) / 'requirement-review.validation.json').exists())
+                    for stage, record in records.items():
+                        self.assertEqual(json.loads((Path(directory) / (stage + '.original.json')).read_text()), record)
+                self.assertEqual((candidate, self.package), before)
+
+    def test_source_repair_keeps_summary_and_delivery_rejections_in_reextraction_request(self):
+        payload = synthetic_payload()
+        payload['trace']['messages'] = [{'role': 'user', 'content': ISSUE + '\nExpected output is the string ID.'}]
+        package = engine.normalize(payload, RULES)
+        user = next(item for item in package['evidence'] if item['kind'] == 'user_requirement')
+        candidate = baseline_for(package)
+        candidate['tasks'][0]['goal'] += ' Deliver regression tests.'
+        candidate['tasks'][0]['acceptance_points'].append({
+            'id': 'inferred-delivery', 'kind': 'test_delivery',
+            'requirement': 'Deliver a regression assertion.', 'requirement_refs': [reference(user, 2)]})
+        before = copy.deepcopy((package, candidate))
+        owner, calls, responses, recheck_requests = self, [], {}, []
+        reason = 'An expected result does not request delivery of test-source assertions.'
+
+        class Client:
+            def complete(client, system, request, directory, stage):
+                calls.append(stage)
+                if stage.startswith('task-extraction'):
+                    value = copy.deepcopy(candidate)
+                    if '-recheck-' in stage:
+                        recheck_requests.append(copy.deepcopy(request))
+                        owner.assertIn('支持依据超出候选', request['requirement_support_feedback'][0])
+                        owner.assertEqual(request['requirement_review_feedback'], responses['requirement-review-1'])
+                        owner.assertIn(reason, json.dumps(request['requirement_review_feedback']))
+                        value['tasks'][0]['goal'] = ISSUE
+                        value['tasks'][0]['acceptance_points'] = value['tasks'][0]['acceptance_points'][:1]
+                        value['tasks'][0]['requirement_refs'].append(reference(user, 2))
+                        value['tasks'][0]['acceptance_points'][0]['requirement_refs'].append(reference(user, 2))
+                elif stage.startswith('requirement-review'):
+                    value = support_for(request['candidate_tasks'])
+                    if '-recheck-' not in stage:
+                        row = value['tasks'][0]
+                        row['acceptance_points'][0]['source_refs'].append(reference(user, 2))
+                        row['acceptance_points'][-1].update(supported=False,
+                            source_class='reported_problem', reason=reason)
+                        next(summary for summary in row['summary_checks'] if summary['field'] == 'goal').update(
+                            supported=False, reason=reason)
+                else:
+                    value = scripted_result(request)
+                responses[stage] = copy.deepcopy(value)
+                return value
+
+        with tempfile.TemporaryDirectory() as directory:
+            result = engine.analyze(package, Client(), directory)
+            receipt = json.loads((Path(directory) / 'requirement-review.reextraction.json').read_text())
+            self.assertEqual(receipt['support_review'], responses['requirement-review-1'])
+            self.assertTrue(receipt['changes'])
+            frozen = json.loads((Path(directory) / 'frozen-tasks.json').read_text())
+            self.assertEqual(frozen['tasks'], result['tasks'])
+            self.assertEqual(frozen['tasks'][0]['goal'], ISSUE)
+            self.assertEqual([point['kind'] for point in frozen['tasks'][0]['acceptance_points']], ['behavior'])
+            self.assertEqual(frozen['excluded_candidates'], [])
+        self.assertEqual(calls[:4], ['task-extraction-1', 'requirement-review-1',
+                                    'task-extraction-recheck-1', 'requirement-review-recheck-1'])
+        self.assertEqual(sum(stage.startswith('task-extraction') for stage in calls), 2)
+        self.assertEqual(len(recheck_requests), 1)
+        self.assertEqual((package, candidate), before)
+
+    def test_source_reextraction_receives_program_rejections_even_when_raw_review_says_supported(self):
+        for defect in ('summary', 'test_delivery', 'both_no_gap'):
+            with self.subTest(defect=defect):
+                summary_bad = defect in ('summary', 'both_no_gap')
+                delivery_bad = defect in ('test_delivery', 'both_no_gap')
+                expected_kinds = ({'summary'} if summary_bad else set()) | ({'test_delivery'} if delivery_bad else set())
+                payload = synthetic_payload()
+                payload['trace']['messages'] = [{'role': 'user', 'content': ISSUE +
+                    '\nExpected output is the string ID.\nI think the output is a string.'}]
+                package = engine.normalize(payload, RULES)
+                user = next(item for item in package['evidence'] if item['kind'] == 'user_requirement')
+                candidate = baseline_for(package)
+                task = candidate['tasks'][0]
+                task['goal'] += ' The output is a string.' if summary_bad else ' Deliver regression tests.'
+                task['requirement_refs'].append(reference(user, 3))
+                if delivery_bad:
+                    task['acceptance_points'].append({'id': 'inferred-delivery', 'kind': 'test_delivery',
+                        'requirement': 'Deliver regression assertions.', 'requirement_refs': [reference(user, 2)]})
+                before = copy.deepcopy((package, candidate))
+                owner, calls, responses = self, [], {}
+
+                class Client:
+                    def complete(client, system, request, directory, stage):
+                        calls.append(stage)
+                        if stage.startswith('task-extraction'):
+                            value = copy.deepcopy(candidate)
+                            if '-recheck-' in stage:
+                                if defect != 'both_no_gap':
+                                    owner.assertEqual(request['requirement_review_feedback'], responses['requirement-review-1'])
+                                else:
+                                    owner.assertTrue(responses['requirement-review-1']['tasks'][0]['summary_checks'][1]['supported'])
+                                    owner.assertFalse(request['requirement_review_feedback']['tasks'][0]['summary_checks'][1]['supported'])
+                                    owner.assertTrue(request['requirement_review_feedback']['tasks'][0]['acceptance_points'][-1]['supported'])
+                                owner.assertTrue(expected_kinds <= {issue['kind'] for issue in request['program_rejections']})
+                                owner.assertIn('supported=true不能覆盖', request['reextraction_instruction'])
+                                value['tasks'][0]['goal'] = ISSUE
+                                value['tasks'][0]['acceptance_points'] = value['tasks'][0]['acceptance_points'][:1]
+                                value['tasks'][0]['acceptance_points'][0]['requirement_refs'].append(reference(user, 2))
+                        elif stage.startswith('requirement-review'):
+                            value = support_for(request['candidate_tasks'])
+                            if '-recheck-' not in stage:
+                                row = value['tasks'][0]
+                                if defect != 'both_no_gap':
+                                    row['acceptance_points'][0]['source_refs'].append(reference(user, 2))
+                                if delivery_bad:
+                                    row['acceptance_points'][-1]['source_class'] = 'reported_problem'
+                                if summary_bad:
+                                    row['summary_checks'][1]['fragments'] = [
+                                        {'text': ISSUE + ' ', 'source_class': 'explicit_request',
+                                         'presentation': 'requirement', 'source_refs': [reference(user)]},
+                                        {'text': 'The output is a string.', 'source_class': 'diagnostic_hypothesis',
+                                         'presentation': 'asserted_fact', 'source_refs': [reference(user, 3)]}]
+                        else:
+                            value = scripted_result(request)
+                        responses[stage] = copy.deepcopy(value)
+                        return value
+
+                with tempfile.TemporaryDirectory() as directory:
+                    result = engine.analyze(package, Client(), directory)
+                    receipt_path = Path(directory) / 'requirement-review.reextraction.json'
+                    if defect != 'both_no_gap':
+                        receipt = json.loads(receipt_path.read_text())
+                        self.assertEqual(receipt['support_review'], responses['requirement-review-1'])
+                        self.assertTrue(expected_kinds <= {issue['kind'] for issue in receipt['program_rejections']})
+                    else:
+                        self.assertFalse(receipt_path.exists())
+                    self.assertEqual(result['tasks'][0]['goal'], ISSUE)
+                    self.assertEqual([point['kind'] for point in result['tasks'][0]['acceptance_points']], ['behavior'])
+                self.assertEqual(sum(stage.startswith('task-extraction') for stage in calls), 2)
+                self.assertFalse(any('-filtered-' in stage for stage in calls))
+                self.assertEqual((package, candidate), before)
+
     def test_filter_rejects_unsupported_goal_omissions_or_removing_all_points(self):
         for defect in ("goal", "omission", "all_points"):
             with self.subTest(defect=defect):

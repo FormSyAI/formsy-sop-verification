@@ -12,23 +12,32 @@ E-开头的材料编号（含运行回执ID）只指整份材料，不能作为*
 
 
 
-CITATION_RETRY_PROMPT = ('本次引用重试优先从本阶段numbered_lines目录选取独立{"quote_id":"Q-..."}，'
-    '标准*_refs数组也可全部使用裸Q-ID字符串、原样逐字且坐标准确的完整引用或为空；不同格式不得混用。'
-    '完整引用必须属于本阶段可见材料，任何错字、换行或行号偏差都直接拒绝，不自动纠错。compact *_quote_ids仍可用。'
+CITATION_RETRY_PROMPT = ('本次已有引用诊断，引用重试只允许从本阶段numbered_lines目录选取独立{"quote_id":"Q-..."}，'
+    '标准*_refs数组也可全部使用裸Q-ID字符串或为空；不同格式不得混用。'
+    '禁止手写quote/evidence_id/行号，即使完整引用逐字正确也拒绝；不自动纠错。'
+    '若citation_retry列出condition_ids、claim_ids或item_ids，本规则仅约束所列引用诊断行及其新选根因引用；其它行沿用原引用格式，冻结任务/原主张回显不得改写。'
     '须重新判断相关reason中的事实，目录文本不支持旧主张时改为未核查并使用空refs；不得机械换引文保留旧reason。')
 
 
 def validate_quote_id_retry(value, package, *, available_evidence_ids=None):
     """Restrict failed citation retries before expansion; never choose evidence for a claim."""
-    evidence = {item['id']: item for item in package['evidence']
-                if available_evidence_ids is None or item['id'] in available_evidence_ids}
-    fields = {'evidence_id', 'start_line', 'end_line', 'quote'}
 
-    def exact_reference(ref, path):
-        if (set(ref) != fields or not isinstance(ref['evidence_id'], str)
-                or ref['evidence_id'] not in evidence
-                or _selected_text(ref, evidence[ref['evidence_id']]) is None):
-            raise ValueError(path + ': 引用重试的完整引用须原样逐字且坐标精确，并在可见材料内；不自动纠错。')
+    def resolve_at(ids, path, *, scalar=False):
+        try:
+            resolve_quote_ids(ids, package, available_evidence_ids=available_evidence_ids)
+        except ValueError:
+            if not isinstance(ids, list):
+                raise ValueError(path + ': 精确引用ID须为数组。') from None
+            choices = _quote_choices(package)
+            seen = set()
+            for index, oid in enumerate(ids):
+                if (not isinstance(oid, str) or oid not in choices or oid in seen
+                        or available_evidence_ids is not None
+                        and choices[oid]['evidence_id'] not in available_evidence_ids):
+                    location = path if scalar else f'{path}[{index}]'
+                    raise ValueError(location + ': 引用ID无效、重复或本阶段不可见；仅从当前目录重新选择。') from None
+                seen.add(oid)
+            raise
 
     def walk(node, path):
         if isinstance(node, list):
@@ -38,29 +47,24 @@ def validate_quote_id_retry(value, package, *, available_evidence_ids=None):
             if 'quote_id' in node:
                 if set(node) != {'quote_id'}:
                     raise ValueError(path + ': 引用重试只允许独立quote_id，不能混用手写字段。')
-                resolve_quote_ids([node['quote_id']], package,
-                                  available_evidence_ids=available_evidence_ids)
+                resolve_at([node['quote_id']], path + '.quote_id', scalar=True)
                 return
-            if {'start_line', 'end_line', 'quote'} & set(node):
-                exact_reference(node, path)
-                return
+            if 'evidence_id' in node and 'quote' in node:
+                raise ValueError(path + ': 引用重试只允许当前可见Q-selector或空引用，禁止完整手写引用；不自动纠错。')
             for key, child in node.items():
                 child_path = f'{path}.{key}'
                 if isinstance(key, str) and key.endswith('_quote_ids'):
                     if key[:-len('_quote_ids')] + '_refs' in node:
                         raise ValueError(child_path + ': compact引用不能与手写refs混用。')
-                    resolve_quote_ids(child, package, available_evidence_ids=available_evidence_ids)
+                    resolve_at(child, child_path)
                 elif isinstance(key, str) and key.endswith('_refs'):
                     if isinstance(child, list) and all(isinstance(ref, str) for ref in child):
-                        resolve_quote_ids(child, package, available_evidence_ids=available_evidence_ids)
+                        resolve_at(child, child_path)
                     elif isinstance(child, list) and all(
                             isinstance(ref, dict) and set(ref) == {'quote_id'} for ref in child):
-                        walk(child, child_path)
-                    elif isinstance(child, list) and all(
-                            isinstance(ref, dict) and set(ref) == fields for ref in child):
-                        walk(child, child_path)
+                        resolve_at([ref['quote_id'] for ref in child], child_path)
                     else:
-                        raise ValueError(child_path + ': 引用重试数组须全部为独立quote_id、裸Q-ID字符串、精确完整引用或空数组，不能混用。')
+                        raise ValueError(child_path + ': 引用重试数组只允许独立quote_id、裸Q-ID字符串或空数组，禁止手写完整引用和混用；不自动纠错。')
                 else:
                     walk(child, child_path)
     walk(value, '$')
@@ -223,8 +227,7 @@ def reference_diagnostics(value, package, *, available_evidence_ids=None):
                 if set(node) != {'quote_id'} or not isinstance(oid, str) or oid not in choices:
                     unknown_identity(path, '未知quote_id或与手写引用混用；仅选择输入目录中的独立quote_id。')
                 return
-            if 'evidence_id' in node and (reference_position or
-                    {'start_line', 'end_line', 'quote'} & set(node)):
+            if 'evidence_id' in node and (reference_position or 'quote' in node):
                 oid = node['evidence_id']
                 item = evidence.get(oid) if isinstance(oid, str) else None
                 if item is None:
@@ -292,6 +295,15 @@ def reference_diagnostics(value, package, *, available_evidence_ids=None):
                                 if (oid, number) in by_line][:6]}
                             for oid in material_ids]
                         diagnostics[-1]['instruction'] += '材料编号只标识整份材料，不是引用。须显式选择支持当前主张的原文Q-ID；这些开头行仅用于定位，不能自动充当事实依据。'
+                    seen = set()
+                    for index, ref in enumerate(child):
+                        if len(diagnostics) >= 24:
+                            return
+                        if not isinstance(ref, str) or ref not in choices or ref in seen:
+                            unknown_identity(f'{child_path}[{index}]',
+                                '该项引用ID无效、重复或本阶段不可见；仅从当前目录重新选择，不自动纠错。')
+                        if isinstance(ref, str):
+                            seen.add(ref)
                 else:
                     walk(child, child_path, isinstance(key, str) and key.endswith('_refs'))
 

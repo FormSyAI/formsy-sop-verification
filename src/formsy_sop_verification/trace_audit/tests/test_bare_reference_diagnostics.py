@@ -57,7 +57,25 @@ class BareReferenceDiagnosticsTests(unittest.TestCase):
                                   'proof': {'counterexample_refs': ['Q-unknown']}}]}
         feedback = self.diagnose(value)
         self.assertEqual([item['path'] for item in feedback],
-                         ['$.comparisons[0].proof.counterexample_refs'])
+                         ['$.comparisons[0].proof.counterexample_refs',
+                          '$.comparisons[0].proof.counterexample_refs[0]'])
+
+    def test_bad_child_index_is_precise_without_echoing_hidden_or_malformed_id(self):
+        with self.assertRaises(ValueError) as scalar:
+            validate_quote_id_retry({'choice': {'quote_id': 'Q-unknown'}}, self.package)
+        self.assertTrue(str(scalar.exception).startswith('$.choice.quote_id:'))
+        self.assertNotIn('quote_id[0]', str(scalar.exception))
+        for bad in ('Q-96e38030abceca6d07', 'Q-1507cfacdf438fb', self.ids['H'][0]):
+            value = {'atomic_checks': [{'evidence_refs': [self.ids['S'][0], bad]}]}
+            before = copy.deepcopy(value)
+            feedback = self.diagnose(value)
+            self.assertEqual([d['path'] for d in feedback],
+                ['$.atomic_checks[0].evidence_refs', '$.atomic_checks[0].evidence_refs[1]'])
+            with self.assertRaisesRegex(ValueError, r'\$\.atomic_checks\[0\]\.evidence_refs\[1\]') as raised:
+                validate_quote_id_retry(value, self.package, available_evidence_ids=self.visible)
+            self.assertNotIn(bad, str(raised.exception))
+            self.assertNotIn(bad, json.dumps(feedback))
+            self.assertEqual(value, before)
 
     def test_stale_content_or_version_qids_remain_unknown(self):
         value = {'source_refs': [self.ids['S'][0]]}

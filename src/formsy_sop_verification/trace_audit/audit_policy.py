@@ -1,13 +1,34 @@
 """Deterministic gates for scoped automatic review, separate from full SOP closure."""
 import ast
+import copy
+import hashlib
+import io
+import json
+import math
 import re
+import tokenize
 from .run_evidence import external_test_path
+from .sop_contracts import VERSION
 
 PASS, FAIL, UNKNOWN, NA = '满足', '不满足', '未核查', '不适用'
+LOCAL_FAILURE_ITEMS = {'FIX02': 'FIX02.C01.I02', 'FIX03': 'FIX03.C01.I01'}
 HUMAN = re.compile(r'人工(?:进行|执行|完成|提供)?(?:审核|复核|评审|审查|签署|签字|确认|审批|验收)|人审|'
                    r'独立(?:关闭)?(?:复核|审核|评审|审查)|确认记录|human\s+(?:review|approval|signoff)|'
                    r'manual\s+(?:review|approval)|independent\s+review', re.I)
 CLOSURE = re.compile(r'正式关闭|(?:独立|本轮|本次)(?:\s*SOP\s*)?关闭(?:复核|审核|确认|记录|材料|证据|条件|门槛)')
+
+SOURCE_SYNTAX_PROMPT = '''target_source_syntax_index只提供同任务、同目标可见源码的词法定位，须回读对应原文；location的行从1起、列为从0起的UTF-8字节位置。syntax_facts中的lambda形参、同词法作用域的Name绑定、调用参数、字符串selector、raises和assert须分别核对；不推断别名、动态绑定或跨函数数据流。相同形参名与不同形参名、默认入口与显式selector、预期异常与预期成功是不同场景。存在同名且预期异常的测试，不证明同名成功行为已覆盖，也不能写成没有任何同名测试；显式selector的成功测试不自动覆盖未传selector的真实入口。注释中的示例不是活动测试。只写已定位的具体缺口，不能由一个遗漏推导现有测试全都使用另一输入。
+局部helper新增守卫只证明该helper对应分支的性质，不能据此断言缺少完整目标调用链的公开入口也不会抛错。入口、分派、参数变换及其它可能失败步骤未闭合时，公开入口的无异常性质仍未核查；不得悄悄缩成helper局部性质再判整个验收满足。完整静态路径或匹配对象、输入、目标版本的受信实际观察均可支持，不额外强制执行、输出大小写或容器合同。
+组合/归约链中的输入元素、每步乘积和最终组边界分别求值；中间乘积丢失边界不等于最终组边界必错。最终恰回默认值时仍可能正确，须按实际输入的首尾端点核对，不能要求所有阶段均非默认。baseline或反例混淆这些阶段时明确保留范围缺口，不用候选描述代替源码与原用户示例。
+测试函数名仅作定位，不是测试行为或布局事实。lambda_physical_line_groups按lambda实际起始物理行分组；explicit_line_continuation_lines只列源码中实际续行符，已排除字符串/注释。物理行与逻辑行不同，不能按测试名或用户另一个多行示例猜测当前断言跨行。helper与产品入口、显式selector与默认调用须分别核合同；未证明同合同前，不能要求删除或反转helper已有预期异常断言，补目标入口覆盖即可。复检建议按产品公开返回类型及return语句核期望；链式对象返回与其内部AST属性不同，不能把内部结构写成公开表达式的直接返回值。
+short_circuit_syntax列布尔操作数的源码顺序；判断属性访问、类型守卫和失败路径须按完整表达式短路语义推导。沿调用链先核下层实际收到的实参，区分外层方法调用、lambda节点和lambda body，不能用外层参数数量解释下层AST检查。递归遍历中的层级或状态参数须逐层列出父节点更新、子调用实参和返回值；不能用默认值或父节点更新前的旧值直接代入深层节点，源码注释也不能替代实际状态传播。比较两版时沿同一输入分别展开完整路径，局部表达式相同或不同都不能独自证明完整输出相同或不同。历史tool/assistant中的异常只证明历史观察；目标已增加守卫或改变路径时须重新检查目标调用链，不能把已恢复的历史异常作为当前版本的直接反例或根因。静态推导与受信实际运行仍分开。全部reason、observed、根因mechanism、findings.summary须保留同一范围限定，不能只修正详细验收理由却在摘要声称没有任何同类测试。
+adjacent_return_syntax只列同一语句列表里相邻return的原文顺序及表达式AST是否相同，不证明执行或全路径等价。先对照diff的新增/删除/保留行与目标源码，不能把后一条保留语句的不可达属性写到前一条新增语句上。实质范围越出须给同范围有效义务与已确认的实质影响，不能把任意新增行自动等同越界；冗余清理可以建议，若违反独立质量义务须另给对应依据，不补造用户禁止或豁免真实质量要求。
+注册表、处理器分派及重复键须分别沿父版和目标版的完整注册顺序核最终绑定；某类声明了键不等于该输入最终命中此类。后续覆盖、导入顺序或调用前提未明确时保留未知；父版未实际可达的处理器字段不能被写成本次改动丢失的原有正常行为。
+class_definition_syntax按源码词法顺序列类、bases和类体直接赋值；literal_value仅为直接字面量，动态表达式不求值。module_top_level=false的声明不证明会执行。parent_class_definitions仅附精确Commit父版本、同路径同任务的类定位，version_role=parent不能作为目标证明；这些定位不执行metaclass，也不计算注册结果。
+duplicate_class_list_literals仅聚合同一源码版本中不同顶层类的同名属性、相同字符串列表值，保留原声明顺序和引用；last_lexical_declaration仅指最后一个词法声明，runtime_binding_verified=false。类体重新赋值、动态修改、decorator/metaclass及实际执行均未验证，不能由该聚合直接推出最终注册、可达路径或兼容反例。
+证据齐全与被审实现满足是不同判断维度：条款核查原错误、代码、调用路径或合同材料是否齐全时，业务反例可能正是完整证据，不能仅因实现违反合同就将证据齐全判失败；业务正确性在对应条件另判。始终核固定audit_object和judgment_dimension，不偷换对象或维度。
+反例须在该验收实际观察的时点沿完整有效路径求值；前置异常后尚未发生的状态不能虚构，中间值错误也不能自动推出最终观察值错误。全任务、兼容边界和范围条款须核对全部实质hunk及用户范围，局部验收正例不能代替完整条款满足。候选矩阵或发现中的矛盾只作为重核线索，须回对应目标源码逐字核对，不把另一份候选当独立事实或直接传播其结论。
+config_reference_syntax的reference_only只定位显式配置引用；凭据引用存在不等于明文秘密、泄漏或保护已验证。缺少生命周期/保护/实际验证证据可保留未核查，不能写成材料中没有任何凭据引用，也不能由缺证据证明目标中不存在秘密。'''
 
 
 def _formal_condition(value):
@@ -22,35 +43,330 @@ def _test_path(path):
     return bool(re.search(r'(^|[/\\])(?:tests?|specs?|__tests__|audit-tests)([/\\]|$)|(^|[/\\])test_|_test\.|\.(?:test|spec)\.', path, re.I))
 
 
+def _syntax_location(node):
+    """[start line, start column, end line, end column]; columns are UTF-8 byte offsets."""
+    return [node.lineno, node.col_offset, node.end_lineno, node.end_col_offset]
+
+
+def _syntax_name(node):
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        parent = _syntax_name(node.value)
+        return (parent or '<' + type(node.value).__name__ + '>') + '.' + node.attr
+    return None
+
+
+def _explicit_line_continuation_lines(content):
+    continuations = {number: len(line.rstrip('\n')) - 1
+        for number, line in enumerate(io.StringIO(content, newline=None), 1)
+        if line.rstrip('\n').endswith('\\')}
+    # Explicit joins have no token; backslashes inside strings/comments belong to tokens.
+    if continuations:
+        for token in tokenize.generate_tokens(io.StringIO(content, newline=None).readline):
+            for number in range(token.start[0], token.end[0] + 1):
+                if (number in continuations
+                        and token.start <= (number, continuations[number]) < token.end):
+                    del continuations[number]
+    return list(continuations)
+
+
+def _test_syntax_facts(function, continuation_lines):
+    """Record lexical facts only: do not resolve names, execute or infer coverage."""
+    nodes, scopes = [], {}
+    pending = [(node, function) for node in reversed(function.body)]
+    while pending:
+        node, scope = pending.pop()
+        nodes.append(node)
+        scopes[node] = scope
+        body = getattr(node, 'body', [])
+        body = body if isinstance(body, list) else [body]
+        children = [(child, node if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef,
+                     ast.ClassDef, ast.Lambda)) and child in body else scope)
+                    for child in ast.iter_child_nodes(node)]
+        pending.extend(reversed(children))
+    nodes.sort(key=lambda node: (getattr(node, 'lineno', 0), getattr(node, 'col_offset', 0),
+                                getattr(node, 'end_lineno', 0), getattr(node, 'end_col_offset', 0)))
+
+    def located(node):
+        fact = {'location': _syntax_location(node)}
+        if scopes[node] is not function:
+            fact['scope_location'] = _syntax_location(scopes[node])
+            fact['scope_name'] = getattr(scopes[node], 'name', '<lambda>')
+        return fact
+
+    facts = {'scope': 'lexical_only'}
+    lambdas = [node for node in nodes if isinstance(node, ast.Lambda)]
+    if lambdas:
+        facts['lambdas'] = [{**located(node), 'parameters':
+            [arg.arg for arg in node.args.posonlyargs + node.args.args]
+            + (['*' + node.args.vararg.arg] if node.args.vararg else [])
+            + [arg.arg for arg in node.args.kwonlyargs]
+            + (['**' + node.args.kwarg.arg] if node.args.kwarg else [])} for node in lambdas]
+    line_groups = {}
+    for node in lambdas:
+        line_groups.setdefault(node.lineno, []).append(_syntax_location(node))
+    groups = [{'line': line, 'lambda_locations': locations}
+              for line, locations in line_groups.items() if len(locations) >= 2]
+    if groups:
+        facts['lambda_physical_line_groups'] = groups
+    continuations = [line for line in continuation_lines if function.lineno <= line <= function.end_lineno]
+    if continuations:
+        facts['explicit_line_continuation_lines'] = continuations
+    bindings, bound_names = [], set()
+    for node in nodes:
+        if isinstance(node, (ast.Assign, ast.AnnAssign, ast.NamedExpr)) and isinstance(node.value, ast.Lambda):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                if isinstance(target, ast.Name):
+                    bindings.append({**located(node), 'name': target.id,
+                                     'lambda_location': _syntax_location(node.value)})
+                    bound_names.add((target.id, scopes[node]))
+    if bindings:
+        facts['lambda_bindings'] = bindings
+    calls, raises, assertions = [], [], []
+    for node in nodes:
+        if isinstance(node, ast.Call):
+            arguments, strings, names = [], [], []
+            for key, arg in ([({'position': i}, arg) for i, arg in enumerate(node.args)]
+                             + [({'keyword': kw.arg}, kw.value) for kw in node.keywords]):
+                if isinstance(arg, ast.Lambda):
+                    arguments.append({**key, 'lambda_location': _syntax_location(arg)})
+                elif isinstance(arg, ast.Name):
+                    names.append({**key, 'name': arg.id})
+                    if (arg.id, scopes[node]) in bound_names:
+                        arguments.append({**key, 'lexical_name': arg.id})
+                elif isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    strings.append({**key, 'value': arg.value})
+            lambda_callee = isinstance(node.func, ast.Lambda)
+            if arguments or lambda_callee or strings and names:
+                call = {**located(node), 'callee': _syntax_name(node.func) or type(node.func).__name__}
+                if arguments:
+                    call['lambda_arguments'] = arguments
+                elif names:
+                    call['name_arguments'] = names
+                if lambda_callee:
+                    call['lambda_callee_location'] = _syntax_location(node.func)
+                if strings:
+                    call['string_arguments'] = strings
+                calls.append(call)
+        elif isinstance(node, (ast.With, ast.AsyncWith)):
+            for item in node.items:
+                context = item.context_expr
+                if isinstance(context, ast.Call) and _syntax_name(context.func) == 'pytest.raises':
+                    exception = context.args[0] if context.args else next(
+                        (kw.value for kw in context.keywords if kw.arg == 'expected_exception'), None)
+                    raised = {**located(node), 'body_location':
+                              [*_syntax_location(node.body[0])[:2], *_syntax_location(node.body[-1])[2:]]}
+                    if exception is not None:
+                        raised['exception_location'] = _syntax_location(exception)
+                        names = exception.elts if isinstance(exception, ast.Tuple) else [exception]
+                        raised['exception_names'] = [_syntax_name(name) or type(name).__name__ for name in names]
+                    raises.append(raised)
+        elif isinstance(node, ast.Assert):
+            assertions.append(_syntax_location(node))
+    for key, value in [('calls', calls), ('raises', raises), ('asserts', assertions)]:
+        if value:
+            facts[key] = value
+    return facts
+
+
+def _class_definition_sites(tree, source):
+    """Locate declarations and literal attributes; never execute class bodies."""
+    content = source['content']
+    lines = content.splitlines()
+    sites = []
+    classes = sorted((node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)),
+                     key=lambda node: (node.lineno, node.col_offset))
+    for order, node in enumerate(classes, 1):
+        attributes = []
+        for assignment in node.body:
+            if not isinstance(assignment, (ast.Assign, ast.AnnAssign)):
+                continue
+            targets = assignment.targets if isinstance(assignment, ast.Assign) else [assignment.target]
+            value = assignment.value
+            values = value.elts if isinstance(value, (ast.List, ast.Tuple)) else [value]
+            literal = all(isinstance(item, ast.Constant)
+                          and type(item.value) in (str, int, float, bool, type(None))
+                          and (not isinstance(item.value, float) or math.isfinite(item.value)) for item in values)
+            for target in targets:
+                if not isinstance(target, ast.Name):
+                    continue
+                attribute = {'name': target.id, 'location': _syntax_location(assignment),
+                             'value_node_type': type(value).__name__,
+                             'value_location': _syntax_location(value) if value else None,
+                             'is_literal': literal}
+                if literal:
+                    attribute['literal_value'] = ([item.value for item in values]
+                                                 if isinstance(value, (ast.List, ast.Tuple)) else value.value)
+                attributes.append(attribute)
+        header_end = max(node.lineno, node.body[0].lineno - 1)
+        sites.append({'kind': 'class_definition_syntax', 'name': node.name,
+            'syntax_facts': {'scope': 'lexical_only', 'lexical_order': order,
+                'location': _syntax_location(node), 'module_top_level': node in tree.body,
+                'bases': [{'source': ast.get_source_segment(content, base),
+                           'location': _syntax_location(base)} for base in node.bases],
+                'attributes': attributes},
+            'reference': {'evidence_id': source['id'], 'start_line': node.lineno,
+                          'end_line': header_end, 'quote': '\n'.join(lines[node.lineno - 1:header_end])}})
+    return sites
+
+
+def _duplicate_class_list_literals(sites):
+    """Group existing lexical declarations, never infer effective class attributes."""
+    groups = {}
+    for site in sites:
+        if site['kind'] != 'class_definition_syntax':
+            continue
+        facts = site['syntax_facts']
+        if not facts['module_top_level']:
+            continue
+        for attribute in facts['attributes']:
+            values = attribute.get('literal_value')
+            if (attribute['value_node_type'] != 'List' or not attribute['is_literal']
+                    or not all(isinstance(value, str) for value in values)):
+                continue
+            declaration = {'class_name': site['name'], 'lexical_order': facts['lexical_order'],
+                'class_location': copy.deepcopy(facts['location']),
+                'attribute_location': copy.deepcopy(attribute['location']),
+                'class_reference': copy.deepcopy(site['reference'])}
+            for value in dict.fromkeys(values):
+                groups.setdefault((attribute['name'], value), []).append(copy.deepcopy(declaration))
+    return [{'attribute_name': name, 'string_value': value, 'scope': 'lexical_only',
+             'runtime_binding_verified': False, 'declarations': declarations,
+             'last_lexical_declaration': copy.deepcopy(declarations[-1])}
+            for (name, value), declarations in groups.items()
+            if len({tuple(row['class_location']) for row in declarations}) > 1]
+
+
+def _unittest_method_candidates(tree):
+    """Locate TestCase-like declarations without resolving imports or collection."""
+    if tree is None:
+        return {}
+    bases = {'unittest.TestCase'}
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            bases.update((alias.asname or alias.name) + '.TestCase'
+                         for alias in node.names if alias.name == 'unittest')
+        elif isinstance(node, ast.ImportFrom) and node.module == 'unittest':
+            bases.update(alias.asname or alias.name for alias in node.names if alias.name == 'TestCase')
+        elif isinstance(node, ast.Assign) and _syntax_name(node.value) in bases:
+            bases.update(target.id for target in node.targets if isinstance(target, ast.Name))
+    classes = sorted((node for node in ast.walk(tree) if isinstance(node, ast.ClassDef)),
+                     key=lambda node: (node.lineno, node.col_offset))
+    local_names = {node.name for node in classes}
+    methods = {}
+    for owner in classes:
+        references = [_syntax_name(base) for base in owner.bases]
+        candidates = [ref for ref in references if ref and (ref in bases or
+                      ref.rsplit('.', 1)[-1].endswith('TestCase') and ref not in local_names)]
+        if candidates:
+            if owner in tree.body:
+                bases.add(owner.name)
+            methods.update({method: (owner.name, candidates) for method in owner.body
+                            if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+                            and method.name.startswith('test') and not method.name.startswith('test_')})
+    return methods
+
+
 def target_source_index(task, package):
-    """Index visible Python syntax; a locator never proves trust, flow or coverage."""
+    """Index scoped syntax; a locator never proves trust, flow or coverage."""
     result = []
     for source in package.get('evidence', []):
         path = _path(source)
-        if (source.get('kind') != 'source' or not path.endswith('.py')
+        if (source.get('kind') != 'source'
                 or source.get('version_id') not in task.get('target_commit_ids', [])
                 or not _allowed(source, task)):
             continue
-        try:
-            tree = ast.parse(source.get('content', ''))
-        except (SyntaxError, ValueError):
-            continue
-        lines = source['content'].splitlines(keepends=True)
+        content = source.get('content', '')
+        lines = content.splitlines(keepends=True)
         sites = []
-        for node in ast.walk(tree):
+        for line_number, line in enumerate(lines, 1):
+            for match in re.finditer(r'\$\{\{\s*secrets\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}', line):
+                sites.append({'kind': 'config_reference_syntax', 'name': 'secrets.' + match.group(1),
+                    'label': 'reference_only', 'reference': {'evidence_id': source['id'],
+                    'start_line': line_number, 'end_line': line_number, 'quote': match.group(0)}})
+        try:
+            tree = ast.parse(content) if path.endswith('.py') else None
+        except (SyntaxError, ValueError):
+            tree = None
+        parent_classes = []
+        if tree is not None:
+            sites.extend(_class_definition_sites(tree, source))
+            parents = {commit.get('parent') for commit in package.get('commits', [])
+                       if commit.get('sha') == source['version_id'] and commit.get('parent')}
+            for parent in package.get('evidence', []):
+                if (parent.get('kind') != 'source' or parent.get('version_id') not in parents
+                        or _path(parent) != path or not _allowed(parent, task)):
+                    continue
+                try:
+                    definitions = _class_definition_sites(ast.parse(parent.get('content', '')), parent)
+                except (SyntaxError, ValueError):
+                    continue
+                if definitions:
+                    parent_row = {'evidence_id': parent['id'], 'path': path,
+                        'version_id': parent['version_id'], 'version_role': 'parent',
+                        'sites': definitions}
+                    duplicates = _duplicate_class_list_literals(definitions)
+                    if duplicates:
+                        parent_row['duplicate_class_list_literals'] = duplicates
+                    parent_classes.append(parent_row)
+        unittest_methods = _unittest_method_candidates(tree) if _test_path(path) else {}
+        continuation_lines = (_explicit_line_continuation_lines(content)
+                              if tree is not None and _test_path(path) else [])
+        for node in ast.walk(tree) if tree is not None else []:
+            for _, statements in ast.iter_fields(node):
+                if not isinstance(statements, list):
+                    continue
+                for first, second in zip(statements, statements[1:]):
+                    if isinstance(first, ast.Return) and isinstance(second, ast.Return):
+                        sites.append({'kind': 'adjacent_return_syntax', 'label': 'lexical_order_only',
+                            'same_return_expression_syntax': ast.dump(first) == ast.dump(second),
+                            'returns': [{'location': _syntax_location(statement), 'reference': {
+                                'evidence_id': source['id'], 'start_line': statement.lineno,
+                                'end_line': statement.end_lineno,
+                                'quote': ''.join(lines[statement.lineno - 1:statement.end_lineno]).rstrip('\r\n')}}
+                                for statement in (first, second)]})
             test = _test_path(path) and isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test_')
             call = isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and (
                 node.func.attr == 'json' or any(isinstance(arg, ast.Constant) and isinstance(arg.value, str)
                 and (arg.value.startswith(('https://', 'http://', '/'))) for arg in node.args))
-            if test or call:
-                sites.append({'kind': 'test_function' if test else 'call_syntax',
-                    'name': node.name if test else ast.get_source_segment(source['content'], node.func),
+            unittest_candidate = node in unittest_methods
+            if test or unittest_candidate or call:
+                site = {'kind': 'test_function' if test else 'unittest_method_candidate' if unittest_candidate else 'call_syntax',
+                    'name': node.name if test or unittest_candidate else ast.get_source_segment(source['content'], node.func),
+                    'reference': {'evidence_id': source['id'], 'start_line': node.lineno,
+                                  'end_line': node.end_lineno,
+                                  'quote': ''.join(lines[node.lineno - 1:node.end_lineno]).rstrip('\r\n')}}
+                if test or unittest_candidate:
+                    site['syntax_facts'] = _test_syntax_facts(node, continuation_lines)
+                if unittest_candidate:
+                    owner, references = unittest_methods[node]
+                    site.update(label='lexical_candidate_only', owner_class=owner,
+                                candidate_base_references=references, inheritance_verified=False,
+                                collection_verified=False)
+                sites.append(site)
+            elif (not _test_path(path) and isinstance(node, ast.BoolOp)
+                  and any(isinstance(child, ast.Attribute) or isinstance(child, ast.Call)
+                          and _syntax_name(child.func) == 'isinstance' for child in ast.walk(node))):
+                sites.append({'kind': 'short_circuit_syntax', 'name': type(node.op).__name__,
+                    'label': 'evaluation_order_only',
+                    'later_operands_require': 'all_previous_truthy' if isinstance(node.op, ast.And) else 'all_previous_falsy',
+                    'operands': [{'node_type': type(value).__name__, 'location': _syntax_location(value),
+                                  'source': ast.get_source_segment(content, value)}
+                                 for value in node.values],
                     'reference': {'evidence_id': source['id'], 'start_line': node.lineno,
                                   'end_line': node.end_lineno,
                                   'quote': ''.join(lines[node.lineno - 1:node.end_lineno]).rstrip('\r\n')}})
-        if sites:
-            result.append({'evidence_id': source['id'], 'path': path, 'version_id': source['version_id'],
-                           'line_count': len(lines), 'sites': sites})
+        if sites or parent_classes:
+            row = {'evidence_id': source['id'], 'path': path, 'version_id': source['version_id'],
+                   'line_count': len(lines), 'sites': sites}
+            duplicates = _duplicate_class_list_literals(sites)
+            if duplicates:
+                row['duplicate_class_list_literals'] = duplicates
+            if parent_classes:
+                row['parent_class_definitions'] = parent_classes
+            result.append(row)
     return result
 
 
@@ -75,12 +391,117 @@ def _aggregate(values):
     return PASS if relevant and all(v == PASS for v in relevant) else UNKNOWN
 
 
-def apply_policy(result, package):
+def _local_failure_item(check, package):
+    iid = LOCAL_FAILURE_ITEMS.get(check['rule_id'])
+    for rule in package.get('sop_catalog', {}).get('rules', []):
+        for condition in rule.get('conditions', []):
+            contract = condition.get('contract', {})
+            if contract.get('origin') != 'library_interpretation' or contract.get('version') != VERSION:
+                continue
+            for item in contract.get('items', []):
+                if item.get('id') == iid and item.get('failure_review', {}).get('version') == VERSION:
+                    return {'item': item, 'source_ref': condition.get('source_ref')}
+    return None
+
+
+def local_failure_binding(check, task, package):
+    """Bind a program-owned review to this candidate and its scoped original inputs."""
+    def digest(value):
+        return hashlib.sha256(json.dumps(value, ensure_ascii=False, sort_keys=True,
+                                         separators=(',', ':')).encode()).hexdigest()
+    versions = set(task.get('commit_ids', [])) | set(task.get('target_commit_ids', []))
+    versions |= {c.get('parent') for c in package.get('commits', []) if c.get('sha') in versions}
+    user_ids = _ids(task.get('requirement_refs', []))
+    user_ids.update(eid for point in task.get('acceptance_points', []) for eid in _ids(point.get('requirement_refs', [])))
+    sources = [{key: item.get(key) for key in ('id', 'kind', 'path', 'version_id', 'target_ids')}
+               | {'content_sha256': hashlib.sha256(item.get('content', '').encode()).hexdigest()}
+               for item in package.get('evidence', []) if _allowed(item, task)
+               and (not item.get('version_id') or item.get('version_id') in versions)
+               and (item.get('kind') != 'user_requirement' or item['id'] in user_ids)]
+    frozen_task = {key: task.get(key) for key in ('id', 'title', 'goal', 'requirement_refs', 'commit_ids',
+                   'target_commit_ids', 'acceptance_points', 'superseded_requirements')}
+    return {'task_id': task['id'], 'rule_id': check['rule_id'],
+            'target_commit_ids': sorted(task.get('target_commit_ids', [])),
+            'atomic_item_id': LOCAL_FAILURE_ITEMS[check['rule_id']],
+            'candidate_sha256': digest(check['local_failure_candidate']),
+            'input_sha256': digest({'task': frozen_task, 'sources': sources,
+                'changes': [c for c in package.get('changes', []) if c.get('commit_id') in versions],
+                'rules': package.get('rules', []), 'rule_source': package.get('rule_source'),
+                'fixed_item': _local_failure_item(check, package),
+                'contract_sha256': package.get('sop_catalog', {}).get('contract_sha256'),
+                'runs': [r for r in package.get('run_verification', []) if r.get('commit_sha') in versions]})}
+
+
+
+def _local_failure_outcome(check, task, package):
+    check.setdefault('local_failure_candidate', {key: copy.deepcopy(check.get(key)) for key in
+        ('scope', 'reason', 'claim_kind', 'evidence_refs', 'counter_refs')})
+    check['local_failure_candidate']['result'] = FAIL
+    binding = local_failure_binding(check, task, package)
+    review = check.get('local_failure_review', {})
+    inconsistent = (review.get('binding') == binding and review.get('status') == 'completed' and
+        (type(review.get('confirmed')) is not bool
+         or review.get('effective_result') != (FAIL if review.get('confirmed') is True else UNKNOWN)
+         or review.get('confirmed') is True and
+            (review.get('relation') != 'direct_counterexample' or review.get('scope_consistency') != 'same_scope')))
+    if inconsistent:
+        review = {'status': 'pending', 'confirmed': False, 'effective_result': UNKNOWN, 'binding': binding,
+                  'reason': '复核回执状态自相矛盾，须重新核对；原模型失败候选尚未获同范围支持。',
+                  'invalidated_review': copy.deepcopy(review)}
+        check['local_failure_review'] = review
+    if review.get('binding') != binding or review.get('status') not in {'pending', 'completed', 'failed'}:
+        review = {'status': 'pending', 'confirmed': False, 'effective_result': UNKNOWN,
+                  'binding': binding, 'reason': '原模型不满足候选待同范围独立反例复核；尚未确认实际违约。'}
+        check['local_failure_review'] = review
+    confirmed = (review.get('status') == 'completed' and review.get('confirmed') is True
+                 and review.get('effective_result') == FAIL
+                 and review.get('relation') == 'direct_counterexample'
+                 and review.get('scope_consistency') == 'same_scope')
+    check['reason'] = review['reason']
+    if review.get('status') == 'completed':
+        answer = review.get('review', {})
+        check['evidence_refs'] = copy.deepcopy(answer.get('obligation_refs', []) + answer.get('counterexample_refs', []))
+        check['counter_refs'] = []
+    return FAIL if confirmed else UNKNOWN
+
+
+def _automatic_review(result):
+    automatic = _aggregate([c['automated_result'] for c in result.get('checks', [])
+                            if c.get('automated_result') != NA])
+    if automatic == PASS and result.get('unmapped_changes'):
+        automatic = UNKNOWN
+    complete = all(c.get('local_failure_review', {}).get('status') not in {'pending', 'failed'}
+                   for c in result.get('checks', []))
+    result['automatic_review'] = {'status': 'completed' if complete else 'incomplete',
+        'analysis_complete': complete, 'outcome': automatic,
+        'scope': '需求、实现、断言与受信运行的自动可验证子集；不声明真实业务验收或正式 SOP 关闭。'}
+
+
+def project_local_failures(result, package, task_ids):
+    tasks = {task['id']: task for task in result['tasks'] if task['id'] in task_ids}
+    changed = False
+    for check in result.get('checks', []):
+        if check.get('task_id') not in tasks or not check.get('local_failure_candidate'):
+            continue
+        if check.get('local_failure_base_result') == FAIL:
+            continue
+        outcome = _local_failure_outcome(check, tasks[check['task_id']], package)
+        check.update(automated_result=outcome, sop_result=outcome, result=outcome)
+        for proof in check.get('gate_details', []):
+            if proof['id'] == check['rule_id'] + '-local-counterexample-review':
+                proof.update(met=outcome == FAIL, reason=check['reason'])
+        changed = True
+    if changed:
+        _automatic_review(result)
+    return result
+
+def apply_policy(result, package, *, task_ids=None):
     evidence = {e['id']: e for e in package.get('evidence', [])}
     changes = {c['id']: c for c in package.get('changes', [])}
     rules = {r['id']: r for r in package.get('rules', [])}
     runs = package.get('run_verification', [])
     acceptance_checks = result.get('acceptance_checks', [])
+    chosen = None if task_ids is None else set(task_ids)
     constraints, coverage = [], []
     tasks = {t['id']: t for t in result.get('tasks', [])}
     globally_mapped = {cid for row in acceptance_checks if row.get('task_id') in tasks
@@ -118,6 +539,18 @@ def apply_policy(result, package):
     constrained_rules = {c['rule_id'] for c in constraints}
 
     for task in result.get('tasks', []):
+        if chosen is not None and task['id'] not in chosen:
+            old_rows = [a for a in acceptance_checks if a.get('task_id') == task['id']]
+            for cid, change in changes.items():
+                if change.get('commit_id') not in task.get('commit_ids', []):
+                    continue
+                linked = [a['acceptance_id'] for a in old_rows if cid in a.get('change_ids', [])]
+                relations = [{**relation, 'task_id': task['id'], 'acceptance_id': a['acceptance_id']}
+                             for a in old_rows for relation in a.get('change_relations', [])
+                             if relation.get('change_id') == cid]
+                coverage.append({'task_id': task['id'], 'change_id': cid,
+                                 'acceptance_ids': linked, 'relations': relations, 'mapped': bool(linked)})
+            continue
         target = set(task.get('target_commit_ids', []))
         related = set(task.get('commit_ids', []))
         points = task.get('acceptance_points', [])
@@ -360,7 +793,23 @@ def apply_policy(result, package):
             else:
                 details.append('尚未定义该条款的机器证据门槛，保留未知。')
                 gate('defined-policy', False, details[-1])
-            if local == FAIL and rid in {'FIX01', 'FIX02', 'FIX03', 'FIX04'}:
+            native_local_review = rid in LOCAL_FAILURE_ITEMS and _local_failure_item(check, package) is not None
+            if rid in LOCAL_FAILURE_ITEMS and not native_local_review and check.get('local_failure_candidate'):
+                candidate = check.pop('local_failure_candidate')
+                check.update({key: copy.deepcopy(candidate[key]) for key in
+                              ('scope', 'reason', 'claim_kind', 'evidence_refs', 'counter_refs')})
+                check.pop('local_failure_review', None)
+                check.pop('local_failure_base_result', None)
+            if local == FAIL and native_local_review:
+                check['local_failure_base_result'] = outcome
+                if outcome == FAIL and check.get('local_failure_candidate'):
+                    _local_failure_outcome(check, task, package)
+                    check['reason'] = '验收点已有不满足；原自由反例是否成立另列复核。' + '；'.join(
+                        a.get('reason', '') for a in rows if a.get('result') == FAIL)
+            if local == FAIL and native_local_review and outcome != FAIL:
+                outcome = _local_failure_outcome(check, task, package)
+                gate('local-counterexample-review', outcome == FAIL, check['reason'])
+            elif local == FAIL and rid in {'FIX01', 'FIX02', 'FIX03', 'FIX04'}:
                 outcome = FAIL
                 gate('local-counterexample', False, '保留模型已定位的反例；机器门槛不会把不满足提升为满足。')
             elif local == FAIL and rid not in {'FIX05', 'FIX06'}:
@@ -447,13 +896,7 @@ def apply_policy(result, package):
     result['original_sop'] = {'formal_closed': False, 'unassessed_conditions': constraints,
                               'status': '未确认', 'reason': '自动审计完成与原 SOP 正式关闭分别记录。'}
     result['formal_closed'] = False
-    automatic = _aggregate([c['automated_result'] for c in result.get('checks', [])
-                            if c.get('automated_result') != NA])
-    if automatic == PASS and result['unmapped_changes']:
-        automatic = UNKNOWN
-    result['automatic_review'] = {'status': 'completed', 'analysis_complete': True,
-                                  'outcome': automatic,
-                                  'scope': '需求、实现、断言与受信运行的自动可验证子集；不声明真实业务验收或正式 SOP 关闭。'}
+    _automatic_review(result)
     for finding in result.get('findings', []):
         if finding.get('category') == 'evidence_gap' and _formal_condition(' '.join(str(finding.get(k, ''))
                 for k in ['summary', 'improvement', 'verification'])):

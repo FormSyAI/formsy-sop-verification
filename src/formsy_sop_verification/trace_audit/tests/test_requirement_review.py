@@ -1,12 +1,16 @@
 """Intent classification is an explicit gate, not a keyword-based user parser."""
 import copy
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
 from .. import audit_engine as engine
 from ..reference_repair import _quote_choices, repair_references
 from ..requirement_review import (REQUIREMENT_REVIEW_SYSTEM, validate_requirement_review,
-                                summary_review_units)
-from .test_engine import RULES, reference, synthetic_payload, summary_support_for
+                                RequirementSummarySupportError, summary_review_units)
+from .test_engine import RULES, reference, scripted_result, synthetic_payload, summary_support_for
+from .test_requirement_isolation import baseline_for, support_for
 
 
 ORIGINAL_ISSUE = '\n'.join([
@@ -115,6 +119,72 @@ class RequirementIntentReviewTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '超出候选'):
             self.validate()
 
+    def test_provenance_error_keeps_rejected_review_only_after_all_refs_are_valid(self):
+        self.review['tasks'][0]['acceptance_points'][0]['source_refs'].append(reference(
+            next(item for item in self.package['evidence'] if item['kind'] == 'user_requirement'), 2))
+        before = copy.deepcopy((self.package, self.tasks, self.review))
+        with self.assertRaises(engine.RequirementProvenanceError) as raised:
+            self.validate()
+        self.assertEqual(raised.exception.review, self.review)
+        raised.exception.review['tasks'][0]['acceptance_points'][1]['reason'] = 'changed copy'
+        self.assertEqual((self.package, self.tasks, self.review), before)
+        # An earlier source gap must not turn a later invalid quote into trusted feedback.
+        self.review['tasks'][0]['acceptance_points'][-1]['source_refs'][0]['quote'] = 'not in user source'
+        with self.assertRaises(ValueError) as invalid:
+            self.validate()
+        self.assertNotIsInstance(invalid.exception, engine.RequirementProvenanceError)
+
+    def test_source_gap_keeps_program_summary_and_delivery_rejections_without_changing_review(self):
+        for defect in ('summary', 'test_delivery'):
+            with self.subTest(defect=defect):
+                package, tasks, review = fixtures()
+                user = next(item for item in package['evidence'] if item['kind'] == 'user_requirement')
+                row = review['tasks'][0]
+                point = row['acceptance_points'][0]
+                if defect == 'summary':
+                    tasks[0]['goal'] = 'The output is a string.'
+                    row['summary_checks'][1].update(fragments=[{
+                        'text': tasks[0]['goal'], 'source_class': 'diagnostic_hypothesis',
+                        'presentation': 'asserted_fact', 'source_refs': [reference(user, 3)]}])
+                else:
+                    tasks[0]['acceptance_points'][0]['kind'] = 'test_delivery'
+                    point['source_class'] = 'reported_problem'
+                    row['acceptance_points'][1]['duplicate_of'] = ''
+                # The existing gate still rejects without a provenance conflict.
+                with self.assertRaises(engine.RequirementSupportError):
+                    self.validate(review, tasks, package)
+                point['source_refs'].append(reference(user, 2))
+                before = copy.deepcopy((package, tasks, review))
+                with self.assertRaises(engine.RequirementProvenanceError) as raised:
+                    self.validate(review, tasks, package)
+                self.assertEqual(raised.exception.review, review)
+                self.assertIn(defect, [issue['kind'] for issue in raised.exception.program_rejections])
+                self.assertTrue(all(issue['reason'] for issue in raised.exception.program_rejections))
+                self.assertEqual((package, tasks, review), before)
+                row['acceptance_points'][-1]['source_refs'][0]['quote'] = 'not in user source'
+                with self.assertRaises(ValueError) as invalid:
+                    self.validate(review, tasks, package)
+                self.assertNotIsInstance(invalid.exception, engine.RequirementProvenanceError)
+
+    def test_summary_error_keeps_simultaneous_delivery_program_rejection_without_source_gap(self):
+        user = next(item for item in self.package['evidence'] if item['kind'] == 'user_requirement')
+        self.tasks[0]['goal'] = 'The output is a string.'
+        row = self.review['tasks'][0]
+        row['summary_checks'][1]['fragments'] = [{
+            'text': self.tasks[0]['goal'], 'source_class': 'diagnostic_hypothesis',
+            'presentation': 'asserted_fact', 'source_refs': [reference(user, 3)]}]
+        self.tasks[0]['acceptance_points'][0]['kind'] = 'test_delivery'
+        row['acceptance_points'][0]['source_class'] = 'reported_problem'
+        row['acceptance_points'][1]['duplicate_of'] = ''
+        before = copy.deepcopy((self.package, self.tasks, self.review))
+        with self.assertRaises(RequirementSummarySupportError) as raised:
+            self.validate()
+        self.assertEqual({issue['kind'] for issue in raised.exception.program_rejections},
+                         {'summary', 'test_delivery'})
+        self.assertTrue(row['summary_checks'][1]['supported'])
+        self.assertTrue(row['acceptance_points'][0]['supported'])
+        self.assertEqual((self.package, self.tasks, self.review), before)
+
     def test_distinct_boundary_scope_and_test_delivery_remain_independent(self):
         message = 'Fix the parse error.\nFor empty input return an empty list.\nDo not change the public API.\nAdd regression assertions for both inputs.'
         payload = synthetic_payload()
@@ -136,6 +206,95 @@ class RequirementIntentReviewTests(unittest.TestCase):
         validated = self.validate({'tasks': [row]}, [task], package)
         engine.validate_requirement_support(validated, [task], package)
         self.assertTrue(all(p['supported'] for p in validated['tasks'][0]['acceptance_points']))
+
+    def test_test_delivery_requires_explicit_request_without_rewriting_candidate(self):
+        for classification in ('reported_problem', 'compatibility_constraint'):
+            with self.subTest(classification=classification):
+                tasks, review = copy.deepcopy((self.tasks, self.review))
+                tasks[0]['acceptance_points'][0]['kind'] = 'test_delivery'
+                review['tasks'][0]['acceptance_points'][0]['source_class'] = classification
+                review['tasks'][0]['acceptance_points'][1]['duplicate_of'] = ''
+                before = copy.deepcopy((tasks, review, self.package))
+                with self.assertRaises(engine.RequirementSupportError) as raised:
+                    self.validate(review, tasks)
+                rejected = raised.exception.review
+                self.assertFalse(rejected['tasks'][0]['supported'])
+                self.assertEqual(rejected['tasks'][0]['acceptance_points'], review['tasks'][0]['acceptance_points'])
+                self.assertEqual(engine.exclude_unsupported_points(tasks, rejected), (None, []))
+                self.assertEqual((tasks, review, self.package), before)
+
+    def test_rejected_uncertain_test_delivery_keeps_original_reason(self):
+        tasks, review = copy.deepcopy((self.tasks, self.review))
+        tasks[0]['acceptance_points'][0]['kind'] = 'test_delivery'
+        point = review['tasks'][0]['acceptance_points'][0]
+        point.update(supported=False, source_class='uncertain',
+                     reason='用户只提供期望计算，未明确要求交付测试源码。')
+        review['tasks'][0]['acceptance_points'][1]['duplicate_of'] = ''
+        self.assertEqual(self.validate(review, tasks), review)
+
+    def test_explicit_existing_test_assertion_update_remains_supported(self):
+        payload = synthetic_payload()
+        payload['trace']['messages'] = [{'role': 'user', 'content':
+            'Update the existing test_real_function assertion from 11 to 9.'}]
+        package = engine.normalize(payload, RULES)
+        tasks = baseline_for(package)['tasks']
+        tasks[0]['acceptance_points'][0].update(kind='test_delivery',
+            requirement='更新现有test_real_function断言，从11改为9。')
+        review = support_for(tasks)
+        self.assertEqual(self.validate(review, tasks, package), review)
+
+    def test_expected_calculation_delivery_conflict_reextracts_once_or_stops_unfrozen(self):
+        message = 'The existing test_real_function() should be calculated as follows: result == 9, not 11.'
+        payload = synthetic_payload()
+        payload['trace']['messages'] = [{'role': 'user', 'content': message}]
+        package = engine.normalize(payload, RULES)
+        candidate = baseline_for(package)
+        task = candidate['tasks'][0]
+        task.update(title='修复复杂度计数', goal='给定片段的复杂度应为9。')
+        task['acceptance_points'][0].update(kind='test_delivery', requirement='交付期望值为9的测试源码。')
+        test = self
+        for persistent in (False, True):
+            with self.subTest(persistent=persistent):
+                calls, responses, first_candidate = [], [], []
+
+                class Client:
+                    def complete(client, system, request, directory, stage):
+                        calls.append(stage)
+                        if stage.startswith('task-extraction'):
+                            value = copy.deepcopy(candidate)
+                            if '-recheck-' in stage:
+                                test.assertIn('测试交付', request['requirement_support_feedback'][0])
+                                test.assertEqual(request['previous_unfrozen_candidate'], first_candidate)
+                                if not persistent:
+                                    value['tasks'][0]['acceptance_points'][0].update(
+                                        kind='behavior', requirement='给定片段的复杂度应为9。')
+                        elif stage.startswith('requirement-review'):
+                            if stage == 'requirement-review-1':
+                                first_candidate[:] = copy.deepcopy(request['candidate_tasks'])
+                            value = support_for(request['candidate_tasks'])
+                            value['tasks'][0]['acceptance_points'][0].update(source_class='reported_problem',
+                                reason='用户说明现有测试示例应计算为9，未明确要求交付测试源码。')
+                        else:
+                            value = scripted_result(request)
+                        responses.append((value, copy.deepcopy(value)))
+                        return value
+
+                with tempfile.TemporaryDirectory() as directory:
+                    if persistent:
+                        with self.assertRaisesRegex(ValueError, '无法建立受用户原话支持'):
+                            engine.analyze(package, Client(), directory)
+                        self.assertFalse((Path(directory) / 'frozen-tasks.json').exists())
+                        self.assertNotIn('analysis-1', calls)
+                    else:
+                        result = engine.analyze(package, Client(), directory)
+                        frozen = json.loads((Path(directory) / 'frozen-tasks.json').read_text())
+                        self.assertEqual(frozen['tasks'], result['tasks'])
+                        self.assertEqual(frozen['tasks'][0]['acceptance_points'][0]['kind'], 'behavior')
+                        self.assertEqual(frozen['excluded_candidates'], [])
+                    self.assertTrue((Path(directory) / 'requirement-review.validation.json').exists())
+                self.assertEqual(calls[:4], ['task-extraction-1', 'requirement-review-1',
+                    'task-extraction-recheck-1', 'requirement-review-recheck-1'])
+                self.assertTrue(all(value == original for value, original in responses))
 
     def test_same_obligation_can_be_deduplicated_without_diagnosis_class(self):
         point = self.review['tasks'][0]['acceptance_points'][1]

@@ -32,23 +32,54 @@
     {
       "path": "audit_engine.py",
       "upstream_sha256": "e5a53136d7c478cc3061718f240dbe08815e6565558a552166ed26e3ac2ff143",
-      "packaged_sha256": "0cf06e4afd40faf9f6cd2ae5ae58eceb8c4c8869eff9b33af51fb5e31497de40",
+      "packaged_sha256": "a06d71806f6bf2c7ed4014db186e79df99d58b4ea24f787b4eb535cb2bb1e4be",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local selector-only citation retry, preserved sibling recovery, and explicit historical-versus-target narrative scope",
+        "local shared syntax-fact guidance for static target reasoning and test-scope limits",
+        "local explicit optional-advice output contract and item-specific validation feedback; no inferred fixes or missing evidence waiver",
+        "local field-scoped assertion source mismatch feedback; preserve rejection and require target-source reselection",
+        "clarify same-obligation restatement extraction and bind test-delivery narratives to frozen test_delivery points in analysis and counter-review",
+        "legacy service metadata records actual client provider and endpoint without changing frozen task or request settings",
+        "rejected nonduplicate test_delivery requires whole title/goal/point re-extraction; duplicate-only pruning and supported delivery preserved",
+        "preserve independent source gaps and all program rejections together during bounded whole-baseline re-extraction",
+        "generation closes title/goal object identifiers, trigger and expected-result provenance during whole-baseline extraction without altering validators or two-round limit",
+        "specific hunk relation error feedback includes field/task/acceptance, commit/diff identity and actual changed-line selectors; no source-to-diff citation migration",
+        "shared analysis/counter-review distinguishes preferred alternate patches from frozen requirements, explicit same-scope rule obligations and evidenced necessary compatibility contracts; unexplained hunk purpose remains uncertain",
+        "program-owned free-failure review fields are removed from raw model checks; selected-task supplementation preserves untouched checks; findings require evidenced obligations and version-correct suggested test expectations",
+        "isolated next-round model input lists exact visible changed-line selectors per hunk before analysis; no citation migration, validation or attempt-limit change",
+        "isolated guidance preserves incomplete final-output inference in findings; a leaf return constant cannot prove an untraced API or SQL result",
+        "baseline guidance separates input elements, intermediate composition and final boundary without inventing nondefault-output obligation",
+        "local behavior-first baseline guidance keeps explicit user causes only with complete original causal source and mood; no automatic summary or reference repair"
       ]
     },
     {
       "path": "reference_repair.py",
       "upstream_sha256": "9dfb826d078266003099ca6f32587578c21ee764e31f4eee66feb80c8158cd2b",
-      "packaged_sha256": "9dfb826d078266003099ca6f32587578c21ee764e31f4eee66feb80c8158cd2b",
-      "adaptations": []
+      "packaged_sha256": "4df97b8bfb7ab739c4fd342ac794af3e739788f91a125a1d9feb32a5c3fe5fe6",
+      "adaptations": [
+        "local selector-only citation retry, preserved sibling recovery, and explicit historical-versus-target narrative scope",
+        "local per-child invalid citation path feedback without echoing hidden or malformed IDs; strict selector and attempt limits unchanged"
+      ]
     },
     {
       "path": "audit_policy.py",
       "upstream_sha256": "cb63c15f9d45b4f955302d75db3a105cfe8e7bb6b03bbdf6d3e23b99afe62bb6",
-      "packaged_sha256": "d7591f67d9e4d7d72356f59635982a7f16a34ae9f81cefcbeb04284ff833f4d9",
+      "packaged_sha256": "6061d88838e4458ac71cbd3b97d15b2de6f9e3b081c7b464539baff7f3b65817",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local lexical source locators for lambda parameters, selectors, expected exceptions, assertions, ordered short-circuit operands and literal credential references; no execution or coverage inference",
+        "local lexical source locators for lambda parameters, physical lines, code-only continuations, selectors, expected exceptions, assertions, ordered short-circuit operands and literal credential references; no execution or coverage inference",
+        "local reasoning guidance for explicit recursive parameter propagation; lexical index still makes no cross-function inference",
+        "local complete observation-path and all-hunk compatibility/scope guidance; candidate contradictions require direct source recheck, never independent evidence",
+        "clarify complete parent/target registry binding and distinguish evidence completeness from business compliance in shared source guidance",
+        "lexical class declarations, ordered constant attribute locators and exact selected-parent metadata; no execution or runtime-binding claim",
+        "lexical unittest test-prefix method candidates with explicit unverified inheritance/collection; existing pytest locators unchanged",
+        "native FIX02/FIX03 free failure candidates require input/task/target/atomic-item-bound independent review; inconsistent receipts remain pending, actual acceptance failures retained, legacy nonnative entry unchanged",
+        "aggregate duplicate string-list literals from distinct top-level class declaration sites within one source/version; lexical order and exact locators retained without claiming runtime registry bindings",
+        "isolated adjacent-return lexical locators preserve same-block source order and expression syntax only; distinguish actual diff provenance/material scope from optional cleanup without waiving real quality obligations",
+        "shared composition observation-stage guidance and lexical adjacent-return index; no runtime reachability or business outcome inference",
+        "local guidance distinguishes helper branch safety from a public-entry no-exception property with missing dispatch/argument path; static complete proof or verified same-input target observation remains allowed without new runtime obligation"
       ]
     },
     {
@@ -68,9 +99,21 @@
     {
       "path": "sop_audit.py",
       "upstream_sha256": "f4ab4b36c30ee73905d47013456153db9aadba449c40c21507a35e6767cf9c08",
-      "packaged_sha256": "e2dddf8f13c71c029e25133c9c89df75a17a282458e85a3db987131059d891ab",
+      "packaged_sha256": "511d892c9771a47e94eb4159f50984ac9fecf7c214316290288c3e2a38704ce8",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local selector-only citation retry, preserved sibling recovery, and explicit historical-versus-target narrative scope",
+        "local shared syntax-fact guidance for static target reasoning and credential-reference scope",
+        "local distinction between structurally invalid citations and insufficient definite evidence; bounded exclusion batch recovery after truncation",
+        "provide attempt directory for exclusion row validation history",
+        "explicit corrected user behavior takes priority over stale test assertions as a compatibility premise; test-design obligations remain separate",
+        "r12 interpretation 1.9.1 task reuse and audited credential object boundaries",
+        "independent bounded TC14.C01 adopted-source coverage review; source dates cannot be inferred from code hashes or same-label maintenance materials",
+        "register explicit unknown atomic items for unsupported human/uncertain/failed condition branches without replacing existing sibling judgments",
+        "shared-budget independent free-failure review and explicit incomplete/unknown aggregation; native matrix and confirmed failures preserved",
+        "round022: route original Agent sources to TC14 classification; actionable exclusion/date feedback; require complete property and version scope for path/resolution candidates (prompt guidance still requires real semantic review)",
+        "isolated next-repair candidate: own-rule baseline and direct-parent original trigger guidance; complete-property/path/license subjects; align direct requirement date exception, all real semantic acceptance pending",
+        "native SEC06.C02 satisfied-candidate bounded review in existing call budget"
       ]
     },
     {
@@ -82,43 +125,65 @@
     {
       "path": "sop_judgments.py",
       "upstream_sha256": "d867b05f9ff77d920a9938c773d6fbe13ffc29467e3f80bea39a536f653dded3",
-      "packaged_sha256": "692df2de601e7dfa35f2b03554c73c5a98aab85ad1018bcffde558cddcdd422b",
+      "packaged_sha256": "7d3e90d6c7136978c03b4de5be0bf72dec3683e2555218abec5c18273d6c097a",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local distinction between structurally invalid citations and insufficient definite evidence; bounded exclusion batch recovery after truncation",
+        "native FIX02 reverse-purpose PASS cannot contradict unresolved final-target change coverage; retain candidate, downgrade only unsupported atomic obligation and preserve known failure",
+        "round022: native task-rule baseline own identity/version evidence guard; preserve rejected model candidate",
+        "isolated next-repair candidate: rule adoption remains unverified despite identity, complete own sha256 prefix allowed, narrow native original-trigger direct-parent proof"
       ]
     },
     {
       "path": "sop_claim_review.py",
       "upstream_sha256": "1fc0fac86b6df3139fc9ee3789858a06b2b9e9e848696d747e86da3aa7bfea29",
-      "packaged_sha256": "aa53d0a195ea3c8e8e5dff65bc563eed286a84421768cfd97475d4508a7420a0",
+      "packaged_sha256": "e4249c09ff79f3acc222f733d4d4735f92b7b28d628ca0e49384b3b01f685208",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
-        "local bounded per-source recovery, explicit module scope, and concise mutually exclusive claim extraction"
+        "local bounded per-source recovery, explicit module scope, and concise mutually exclusive claim extraction",
+        "local selector-only citation retry, preserved sibling recovery, and explicit historical-versus-target narrative scope",
+        "local explicit original-observation versus comparison-source identities and per-claim version feedback; strict validators and retry budget retained",
+        "local original-observation source choices and version feedback; reject another tool event even for uncertain observed_event comparisons, without restricting general diagnosis",
+        "local edit_target binds intended path to the selected full proposition rather than another sentence retained in outer-line context; missing explicit intent remains null with observed_event preserved",
+        "route every definite claim comparison through independent full-proposition scope review, retaining full context and bounded review failure evidence",
+        "r12 interpretation 1.9.1 single-task reuse guidance in claim comparison and scope review",
+        "split only truncated multi-claim scope output using unchanged full propositions/evidence and shared budgets; preserve historical failures and successful siblings, never resend HTTP failures",
+        "isolated next-repair candidate: initial multi-item length splits output obligations under unchanged shared budget/full context; current no-review inference guidance is not certified extraction",
+        "isolated guidance distinguishes historical traceback error location from causal mechanisms without weakening causal evidence gates"
       ]
     },
     {
       "path": "sop_design.py",
       "upstream_sha256": "598a2064640749ccd41080e2015fc70d5ea0ed0c50f5746cb18d9538aac6e611",
-      "packaged_sha256": "2768115a9739c26c8074814ffc15c002cd600dd43da15fb51dfaf93531958de3",
+      "packaged_sha256": "a854cbc85b66b59bba2ec86620754cbee5a3021fd111b6ad4002099d950e2e05",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local complete parent and atomic response templates; no inferred parent judgment or validator relaxation"
       ]
     },
     {
       "path": "sop_scope.py",
       "upstream_sha256": "68732bccf47f339b074edffe43e4b6981697ad6efd3e60f34a6f69cedd44d6e4",
-      "packaged_sha256": "c234cc96b40b2350272f3fdbf83d6bece95504dc1d2aad026de56c65dccb0cb5",
+      "packaged_sha256": "cf953838714daa240b41ad6e858ce70ee1972881d1fc6632483ceb96da085b19",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "r12 interpretation 1.9.1 reuse and credential scope guidance shared by selection, conditions and independent review"
       ]
     },
     {
       "path": "sop_failures.py",
       "upstream_sha256": "4109750ab933899b76af61cbc6968fbe31db0c6b81f14b1fd8fcdf5d2218f63a",
-      "packaged_sha256": "34672a2e2c36125a55a7ce7772d52e372ca1b7ca1bdf565f5e4faf418d121341",
+      "packaged_sha256": "00849ff3b189e8211219f75828c0b3e005fbca29e6c88202fd23b6010581e6cf",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
-        "local prompt clarification of existing verified runtime evidence boundary; validators and budgets unchanged"
+        "local prompt clarification of existing verified runtime evidence boundary; validators and budgets unchanged",
+        "local selector-only citation retry, preserved sibling recovery, and explicit historical-versus-target narrative scope",
+        "local independent counterexample guidance for recovered historical errors, target short-circuit semantics and actual test scope",
+        "local scope-only grouping context and preservation of existing authoritative judgments; independent counterexample review retained for other failures",
+        "independent review distinguishes stale assertions from a user-required compatibility contract",
+        "r12 interpretation 1.9.1 shared scope guidance for independent failure review",
+        "reuse fixed native item counterexample validation for free legacy candidates with same-scope check; originals and independently supported obligations kept separate",
+        "isolated next-repair candidate: initial multi-item length splits counterexample output under same shared budget/full context, preserves root causes, authoritative failures and citation retry boundaries; effective registry/implicit prohibition guidance only"
       ]
     },
     {
@@ -132,26 +197,40 @@
     {
       "path": "sop_exclusions.py",
       "upstream_sha256": "96496004db27a4108940345b2091321856f9d94df687fe338fd2be3a41583910",
-      "packaged_sha256": "e3a90316b1683ed2ca93931f54071d25cf85d63bd5a3954cc8870fce5a5a8c97",
+      "packaged_sha256": "af472918adc91ef7a72310dd5381f7a771d17ab6640c61df6074267747d0f53b",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local distinction between structurally invalid citations and insufficient definite evidence; bounded exclusion batch recovery after truncation",
+        "clarify acceptance point ID choices; retry invalid exclusion items once with field feedback and retain per-batch validation artifacts",
+        "three-item initial exclusion batches keep full evidence and existing budgets; locked task-delivery external evidence may use scoped user/context input while product inputs and side effects retain source gates",
+        "r12 interpretation 1.9.1 shared scope guidance and preserve excluded input source inventory without promoting it to positive exclusion proof",
+        "generation distinguishes product entry behavior from test/fixture preprocessing without weakening scope proof",
+        "round022: explicit string-valued excluded_scope guidance without coercion or relaxed schema",
+        "isolated next-repair candidate: typed inventory exact-set errors reject all rows with precise feedback and reuse existing one invalid-item recovery; malformed transport/JSON/types unchanged"
       ]
     },
     {
       "path": "requirement_review.py",
       "upstream_sha256": "77adb58ba71a5f970f90a3b6d65c729b2e271ee606da88c04e08977e7390a560",
-      "packaged_sha256": "dda72e641d658feff06f071f617862bce432fa48afa56a5a9398b04fd00435dc",
+      "packaged_sha256": "7f89613738466d7aa1a6b3f65717df3cf0e7eed68e33683474857b98c63c7494",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local distinction between different example triggers and duplicate obligations",
+        "supported test_delivery requires explicit_request; inconsistent support triggers bounded re-extraction without changing historical candidates",
+        "require semantic distinctness explanation for prose/code/comment restatements without inferring new input or delivery obligations",
+        "complete and validate the original review before preserving its rejection feedback across source-gap re-extraction",
+        "local explicit per-fragment causal source closure guidance; neighboring/task-level refs do not support an unreferenced fragment, validator and bounded attempts unchanged"
       ]
     },
     {
       "path": "model_client.py",
       "upstream_sha256": "4f083a8ac505b4d91d32fc2b7165c63246847f85978edbc65fe953897eb19f51",
-      "packaged_sha256": "98f3d6f9a17e8446580c79ea274be11e0f57e88e313c3a5f6a38988a24105e9b",
+      "packaged_sha256": "24adac677143c12d34b57224fda46ae2de247921ba7829443ad2fb4a89742fd4",
       "adaptations": [
         "legacy private_config is environment-only; no dotenv reads",
-        "artifact writer also scrubs the explicit process API key"
+        "artifact writer also scrubs the explicit process API key",
+        "use shared allowlisted environment-only DeepSeek or Tencent TokenHub route, forbid redirects, expose actual provider metadata",
+        "preserve narrowly scoped native authorization audit facts while masking credential values and dictionary keys; strict JSON request instruction"
       ]
     },
     {
@@ -163,8 +242,10 @@
     {
       "path": "rules/语义审计判定规范.md",
       "upstream_sha256": "faf54d4ba33169994c353a4cf5aa4ceee5adc04dc9964b1b928c70c6c99aae6d",
-      "packaged_sha256": "faf54d4ba33169994c353a4cf5aa4ceee5adc04dc9964b1b928c70c6c99aae6d",
-      "adaptations": []
+      "packaged_sha256": "40c1700efbb4721a26192a79672cc1fc733ea6a3b781996ab2bec333693666eb",
+      "adaptations": [
+        "r12 interpretation revision 1.9.1; original machine contract remains 1.9 with unchanged registered rule identities"
+      ]
     },
     {
       "path": "rules/sop-library/catalog.json",
@@ -201,9 +282,10 @@
     {
       "path": "tests/test_bare_reference_diagnostics.py",
       "upstream_sha256": "633280783836be0dc4e1f7b06f7ae84e2da529392f423330958428fb864b9715",
-      "packaged_sha256": "2d0f92ef09b4d086c2154af7f52cdd9b877b875c2f66404b54bdb6b4b9175d21",
+      "packaged_sha256": "5944f253192a5e2b9e25561508adb843c1c758506c0b8503eb4fba7e36443b77",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "precise child-path diagnostics and hidden/malformed ID nondisclosure regressions"
       ]
     },
     {
@@ -217,7 +299,7 @@
     {
       "path": "tests/test_engine_quote_retry.py",
       "upstream_sha256": "15a03e843420224802ad2d40d014537941a3e955cb40460f4f37f79501d20c20",
-      "packaged_sha256": "1b336d0228923ff75b2c82585d14a27f3888d24392133a964df5a3a26b2bfd51",
+      "packaged_sha256": "6ed332520124ecae02c02a917e38c001e122435b4b1b61ed0bcd0854723e91e7",
       "adaptations": [
         "package-relative imports and qualified test mock targets"
       ]
@@ -241,33 +323,37 @@
     {
       "path": "tests/test_failure_retry_reason.py",
       "upstream_sha256": "71e3cdbc5fc699cecc0b4ea41d3e8f01a890ba2f8ff7cfc1de24a54309f6d0bd",
-      "packaged_sha256": "c193276450b242cb02f3add03552378d48c40aed71c92856411a4d4d45a137e2",
+      "packaged_sha256": "1983dc5e53b73c6e02ab872440f861da90864f6b8b99c12e6ab8aab749237576",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local selector-only citation retry and explicit historical-versus-target narrative scope regression"
       ]
     },
     {
       "path": "tests/test_reference_reason_recovery.py",
       "upstream_sha256": "855d9edab985a2d9995aab5726bb3b3f9394c6496af27736bacd070c50a57311",
-      "packaged_sha256": "5650c32a53a5c7112d2985b0670b884e1de002798b240a2323a281c3d69eb130",
+      "packaged_sha256": "fa901532c10414b3791631b816eabe8fd159870e3b09c96d99649f0af401fc89",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "local selector-only citation retry and explicit historical-versus-target narrative scope regression"
       ]
     },
     {
       "path": "tests/test_requirement_isolation.py",
       "upstream_sha256": "6b598c98f53790dc3cc703952b668d610a066b5fe6bbecd376ed2307c76f9ecd",
-      "packaged_sha256": "40360f3b1c6246ce00acfa77021211534a46ebe17c55089096da0ba57802f723",
+      "packaged_sha256": "0e18d85b8d3196537b01c81bf2c5ce5add23cdd5cda346a59759a635d024956e",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "regressions for stale summary prevention, immutable original candidates, bounded recovery and persistent rejection before freeze"
       ]
     },
     {
       "path": "tests/test_requirement_review.py",
       "upstream_sha256": "210166a1bc944fcddfe0067aad1407a76b5bfad5718a43d2610daef298f1fe0a",
-      "packaged_sha256": "cb072943e11241e367b59bcff0bcaf41df06fcfb157a277bbb9ddbe827773dae",
+      "packaged_sha256": "e7c4a8bd4420414e6f302712624842051fee07ff8035f5ed8b0cea40dda54d3a",
       "adaptations": [
-        "package-relative imports and qualified test mock targets"
+        "package-relative imports and qualified test mock targets",
+        "public regressions for test-delivery classification conflict, explicit edits, unchanged candidates and bounded extraction recovery"
       ]
     },
     {
@@ -281,7 +367,7 @@
     {
       "path": "tests/test_sop_audit.py",
       "upstream_sha256": "55cc9263fa7cd5fd98be72e9e0952abfc5d37f1cc2347011e1f4ffb17d38c76d",
-      "packaged_sha256": "194db6a074ae7867dd0e1a665c2705fee7a375ed48a902c1fe9b78f2eea0e81e",
+      "packaged_sha256": "300b44ea35db6a3ba10772b294cfcae87e8fa57435a215c50c991bb701557e30",
       "adaptations": [
         "package-relative imports and qualified test mock targets"
       ]
@@ -289,19 +375,26 @@
     {
       "path": "tests/test_sop_claim_review.py",
       "upstream_sha256": "7fd3f16e4e5725f72d48ea2bc2a19ff248f957d2461b58b094ea9562c024890f",
-      "packaged_sha256": "3426e72c136d3faebe1c5d69878e4416423cd8e1a62d703f1cd6f4db95fa8dea",
+      "packaged_sha256": "4b212fe186ba5507e033161d5f714bc4cacc21f997bd9e085195d74cdd4ade84",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
-        "local module-scope regression and extraction callback compatibility"
+        "local module-scope regression and extraction callback compatibility",
+        "local selector-only citation retry and explicit historical-versus-target narrative scope regression",
+        "local original-observation version feedback and strict recovery regressions",
+        "local same-outer-line and later-line intent-isolation regressions with same-proposition positive cases and null observed-event retention",
+        "verify ordinary fact and mixed inference scope review, frozen candidates, failure and cap retention",
+        "isolated regression: initial length splitting full context; no late/singleton/nonlength split"
       ]
     },
     {
       "path": "tests/test_sop_failures.py",
       "upstream_sha256": "aa1cc86cb1ee8c824dfe99731e053ec3e705574a2ed581b7d430944c6fe9c85f",
-      "packaged_sha256": "79129ec274979e8bde8321ee8c10cf8aac5b52fdc54fee9dc4adbdc425784853",
+      "packaged_sha256": "da2b487789d60d1bbcf7ad8444625375978ffa884629b7d904988183681a0806",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
-        "local strict rejection and bounded recovery tests for unverified runtime log citations"
+        "local strict rejection and bounded recovery tests for unverified runtime log citations",
+        "local selector-only citation retry and explicit historical-versus-target narrative scope regression",
+        "isolated regression: initial counterexample length split, full context and original parent recovery records; singleton/late/nonlength failures unchanged"
       ]
     },
     {
@@ -311,6 +404,125 @@
         "local regression for source isolation, fail-closed envelopes, intent classification and bounded reasons"
       ],
       "packaged_sha256": "91d2047a4e8dda31eb5d4c6583163972106bba6d679831e31c5edfa0f336dd8c"
+    },
+    {
+      "path": "tests/test_selector_only_retry.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "8a6258c279010b5e6443cf5b00bf937137e1403cdab275c01d4bb17de2d2d9cf",
+      "adaptations": [
+        "local public regression for quoted JSON-envelope punctuation, selector-only retries and metadata scope boundaries"
+      ]
+    },
+    {
+      "path": "tests/semantic_fixtures_v3/citation-json-punctuation.json",
+      "upstream_sha256": null,
+      "packaged_sha256": "3ba603f8c929ce70fc0e1dbda43e55027a18056c05544e2d9af40cabefdf012c",
+      "adaptations": [
+        "local public regression for quoted JSON-envelope punctuation, selector-only retries and metadata scope boundaries"
+      ]
+    },
+    {
+      "path": "tests/test_source_syntax_index.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "c29186b3b3c82ae8b79705bfea423bf7e375656d3ec29bbb0f1cfaff79318ee4",
+      "adaptations": [
+        "local lexical syntax locators and task/version/scope exclusion regressions",
+        "duplicate class list literals preserve exact parent/target separation, repeated class-name locations and unverified dynamic runtime scope",
+        "isolated adjacent-return regressions: same block/order/exact quote, expression AST, no across-block/statement/version/task inference"
+      ]
+    },
+    {
+      "path": "tests/test_sop_design.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "92e9a0841974c7cd3a926b865ddce9147ac9b8079a21968a9fad68695dcee72d",
+      "adaptations": [
+        "local complete design response contract and strict missing-parent rejection regressions"
+      ]
+    },
+    {
+      "path": "tests/test_analysis_relation_contract.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "6109a4030685b1be59481e8c0bbde5e5ef8d407d5d4ab3240e86db5a97301fc2",
+      "adaptations": [
+        "local real retry-gate regression for missing causal relation fields, with strict rejection retained"
+      ]
+    },
+    {
+      "path": "tests/test_improvement_contract.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "a18236677c96d1c4614607ef58a6f32036656605327b3b8a802e625be8f4cbb8",
+      "adaptations": [
+        "local offline regression for optional advice on satisfied evidence-complete candidates, strict evidence gates and bounded repair retention"
+      ]
+    },
+    {
+      "path": "tests/test_change_purpose_consistency.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "90dc504cb2a234e59d82f386e414cc37a16ec67d51727be61e60d18ca2a4850e",
+      "adaptations": [
+        "public reverse-purpose consistency regressions for source/task/version scope, sibling results, custom rules and idempotent aggregation"
+      ]
+    },
+    {
+      "path": "sop_source_review.py",
+      "origin": "local addition; no upstream module",
+      "packaged_sha256": "4ca1f09a661c8e590bb84f3919e4c042a51789bf3139d22425de057a26bb97ef",
+      "adaptations": [
+        "native TC14.C01 satisfied-candidate review with full adoption inventory, per-basis version/date/location/applicability, strict scoped citations and preserved candidate/effective properties",
+        "aggregate only already validated source adoption refs with explicit basis links; original model refs and source/identity/version/property gates preserved",
+        "round022: reuse own-version matcher without changing date/adoption requirements"
+      ]
+    },
+    {
+      "path": "tests/test_local_failure_review.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "9cc584d573b8e68c5033af264d7faaffdf68111b73adb3a0121b1ea886abe63a",
+      "adaptations": [
+        "local fake-client regressions for independent obligation/scope review, receipt ownership and inconsistency, version/input binding, shared budget, old-entry compatibility and preserved actual failures"
+      ]
+    },
+    {
+      "path": "tests/test_rule_baseline_version.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "7b98b6cf097fb231d5bcc1c9053a59d239b564b989f452666f9584e97c6f022b",
+      "adaptations": [
+        "round022: task-rule baseline version and original-statement scope boundaries",
+        "isolated regression: unsupported choice UNKNOWN; exact own hash prefix, all-status invalid citations preserved"
+      ]
+    },
+    {
+      "path": "tests/test_sop_evidence_gaps.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "fde89805268e5ef17db4eb8713f95749664707b5a60c6335f1c93b835826320e",
+      "adaptations": [
+        "round022: strict empty-string versus array excluded_scope regression",
+        "isolated regression: original trigger direct-parent limits and inventory exact-set diagnostics/recovery/retained failures"
+      ]
+    },
+    {
+      "path": "tests/test_hunk_reference_feedback.py",
+      "upstream_sha256": null,
+      "adaptations": [
+        "isolated regression for upfront exact changed-line selector scope, canonical Q IDs, hidden diff exclusion and immutable requirement input"
+      ],
+      "packaged_sha256": "e15955d453dadf945465a555ce2fae91716dce9916819055514cd79f36b07aae"
+    },
+    {
+      "path": "sop_credential_review.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "e3163f90fff99e0109dbfe580c8e9d610e069d892e8ab092baa2a1d320fa7fc0",
+      "adaptations": [
+        "local bounded native SEC06.C02 full-property review; preserves candidates, five surfaces and caller credential path, exact references and shared budgets; uncertain evidence stays UNKNOWN, no propagated FAIL"
+      ]
+    },
+    {
+      "path": "tests/test_sop_credential_review.py",
+      "upstream_sha256": null,
+      "packaged_sha256": "898a0ca1e7918823b45a733af8b67a84e25505360efdb6744331f73f6e28f773",
+      "adaptations": [
+        "offline SEC06 review schema, scope/privacy, shared-budget hook and candidate preservation regressions, not model semantic proof"
+      ]
     }
-  ]
+  ],
+  "runtime_modules_scope": "Original upstream frozen kernel; local extensions and exact packaged bytes are listed under files."
 }

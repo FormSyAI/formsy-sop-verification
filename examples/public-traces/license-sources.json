@@ -1,0 +1,84 @@
+{
+  "checked_at": "2026-10-14T13:15:34.331131+00:00",
+  "dataset_license_review_snapshots": {
+    "SWE-agent-trajectories": {
+      "revision": "68195a1450865274106246d0d0296a1d6807b88e",
+      "last_modified": "2024-12-23T12:42:05.000Z",
+      "license": "cc-by-4.0"
+    },
+    "SWE-bench-extra": {
+      "revision": "11dcbfb30e19552df2a2f8030bd764adc95c92a5",
+      "last_modified": "2025-05-28T16:27:57.000Z",
+      "license": "cc-by-4.0"
+    }
+  },
+  "files": [
+    {
+      "scope": "Melevir/cognitive_complexity code",
+      "license": "MIT",
+      "file": "licenses/Melevir-cognitive_complexity-MIT.txt",
+      "source_url": "https://raw.githubusercontent.com/Melevir/cognitive_complexity/master/LICENSE",
+      "sha256": "606ac64848bc8293ed15cb9195dab80b75907c5826156c2139fe8f9df37db1fc",
+      "code_license_declaration_url": "https://raw.githubusercontent.com/Melevir/cognitive_complexity/aa428ca731bc0461cc9f95956ff4816154495729/setup.py",
+      "version_note": "Current upstream master notice; exact base setup.py independently declares MIT and matches the frozen source. Base has no standalone LICENSE."
+    },
+    {
+      "scope": "akolar/ogn-lib code",
+      "license": "MIT",
+      "file": "licenses/akolar-ogn-lib-MIT.txt",
+      "source_url": "https://raw.githubusercontent.com/akolar/ogn-lib/fb920126739e2ac5dba17b6dd14b718b1952090f/LICENSE.md",
+      "sha256": "27a0706e3b3bc74154558b79eae9c88ef3ea586d05d16b15c270033deff5e902",
+      "code_license_declaration_url": "https://raw.githubusercontent.com/akolar/ogn-lib/fb920126739e2ac5dba17b6dd14b718b1952090f/LICENSE.md",
+      "version_note": "Full MIT notice copied from the exact public base commit."
+    },
+    {
+      "scope": "DCC-Lab/RayTracing code",
+      "license": "MIT",
+      "file": "licenses/DCC-Lab-RayTracing-MIT.txt",
+      "source_url": "https://raw.githubusercontent.com/DCC-Lab/RayTracing/92c62c400ca31119d4896422f4fba2bd030d3739/LICENSE",
+      "sha256": "e4ca3b4bab3452889ab38249c31ad734a902f2d11bc57044ea380247c31d6222",
+      "code_license_declaration_url": "https://raw.githubusercontent.com/DCC-Lab/RayTracing/92c62c400ca31119d4896422f4fba2bd030d3739/LICENSE",
+      "version_note": "Full MIT notice copied from the exact public base commit."
+    },
+    {
+      "scope": "tobymao/sqlglot code",
+      "license": "MIT",
+      "file": "licenses/tobymao-sqlglot-MIT.txt",
+      "source_url": "https://raw.githubusercontent.com/tobymao/sqlglot/d92a5b73895ed3d843f44e4b24b68bf283376ee6/LICENSE",
+      "sha256": "008dfffe61d97ceb73637125b91fe9218066dffa44ed36d5c7ba9a1f1a19d75e",
+      "code_license_declaration_url": "https://raw.githubusercontent.com/tobymao/sqlglot/d92a5b73895ed3d843f44e4b24b68bf283376ee6/LICENSE",
+      "version_note": "Full MIT notice copied from the exact public base commit."
+    },
+    {
+      "scope": "Dataset terms/attribution",
+      "file": "licenses/CC-BY-4.0.txt",
+      "source_url": "https://creativecommons.org/licenses/by/4.0/legalcode.txt",
+      "sha256": "9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411"
+    },
+    {
+      "scope": "Dataset terms/attribution",
+      "file": "licenses/SWE-agent-trajectories-card.md",
+      "source_url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories/resolve/68195a1450865274106246d0d0296a1d6807b88e/README.md",
+      "sha256": "81cbf0ee9f00e45aff9eb90ebe7f59e714ca7135b9b78a90d5227f866021f564"
+    },
+    {
+      "scope": "Dataset terms/attribution",
+      "file": "licenses/SWE-bench-extra-card.md",
+      "source_url": "https://huggingface.co/datasets/nebius/SWE-bench-extra/resolve/11dcbfb30e19552df2a2f8030bd764adc95c92a5/README.md",
+      "sha256": "1ddf148e05cce5e300b6b94d77bdfbc9f1a5424f2fb135d0591f3a8b6a4a1bdb"
+    },
+    {
+      "scope": "Upstream generator notice",
+      "file": "licenses/LLAMA-3.1-LICENSE.txt",
+      "source_url": "https://raw.githubusercontent.com/meta-llama/llama-models/main/models/llama3_1/LICENSE",
+      "sha256": "bf2eac60b81e5c5f779fc3b4849d3bfacfd63f97f3eb68b44e9c6868c5801712"
+    },
+    {
+      "scope": "Upstream generator notice",
+      "file": "licenses/LLAMA-3.1-USE-POLICY.md",
+      "source_url": "https://raw.githubusercontent.com/meta-llama/llama-models/main/models/llama3_1/USE_POLICY.md",
+      "sha256": "f456a3f5b15ab588c84d06cf095a245bfee0bbc1620b48ed00af2cca4a711735"
+    }
+  ],
+  "scope_note": "Dataset and code licenses remain separate. Snapshot revisions identify the license review, not an asserted original download revision. Current notices are identified by URL, date and exact content digest when a commit API revision could not be resolved."
+}

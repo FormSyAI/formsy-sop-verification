@@ -1,10 +1,15 @@
 """DeepSeek JSON calls. Keys stay in environment/private config, never in artifacts."""
 import json
+import hashlib
 import os
 import re
 import urllib.error
 import urllib.request
 from pathlib import Path
+
+from ..model_client import NoProviderRedirects, provider_configuration
+from ..failure_reporting import PROVIDER_TIMEOUT_SECONDS
+from ..core import decode_json
 
 
 def private_config(root):
@@ -22,7 +27,7 @@ SECRET_ASSIGNMENT = re.compile(
     + SECRET_VALUE + r')')
 
 
-def redact(text, secrets=()):
+def _redact_text(text, secrets=()):
     text = str(text)
     for secret in secrets:
         if secret:
@@ -37,7 +42,7 @@ def redact(text, secrets=()):
             continue
         try:
             _, length = decoder.raw_decode(text[match.end():])
-        except ValueError:
+        except (ValueError, RecursionError):
             continue
         original = text[match.end():match.end() + length]
         pieces.extend((text[cursor:match.end()], '"[REDACTED]"' + '\n' * original.count('\n')))
@@ -53,12 +58,53 @@ def redact(text, secrets=()):
     return SECRET_ASSIGNMENT.sub(replace_value, text)
 
 
-def redact_value(value, secrets=()):
+def _semantic_authorization(value, path):
+    prefix = list(path)
+    while prefix and prefix[0] in {'payload', 'previous_candidate', 'report'}:
+        prefix.pop(0)
+    if (len(prefix) not in (3, 5) or prefix[0] not in {'conditions', 'sop_condition_checks'}
+            or type(prefix[1]) is not int or prefix[-1] != 'semantic_basis'
+            or len(prefix) == 5 and (prefix[2] != 'atomic_checks' or type(prefix[3]) is not int)):
+        return False
+    contract = value.get('authorization')
+    return (value.get('basis_type') == 'authorization_contract' and value.get('dimension') == 'authorization'
+            and value.get('audit_object') in ('task_delivery', 'target_product')
+            and isinstance(contract, dict) and set(contract) == {'subject', 'destination', 'action', 'boundary'}
+            and all(isinstance(item, str) and item.strip() for item in contract.values()))
+
+
+def redact(text, secrets=()):
+    text = str(text)
+    try:
+        value = decode_json(text.encode('utf-8'))
+    except (ValueError, UnicodeError, RecursionError):
+        return _redact_text(text, secrets)
+    if isinstance(value, (dict, list)):
+        safe = redact_value(value, secrets)
+    elif isinstance(value, str):
+        safe = redact(value, secrets)
+    else:
+        return _redact_text(text, secrets)
+    return json.dumps(safe, ensure_ascii=False) if safe != value else text
+
+
+def redact_value(value, secrets=(), *, _path=()):
     if isinstance(value, dict):
-        return {key: '[REDACTED]' if SECRET_KEY.fullmatch(str(key)) else redact_value(item, secrets)
-                for key, item in value.items()}
+        semantic = _semantic_authorization(value, _path)
+        result = {}
+        for key, item in value.items():
+            safe_key = _redact_text(key, secrets) if isinstance(key, str) else key
+            if key == 'authorization' and semantic:
+                # This is an audit fact, but each field can still contain credentials.
+                result[safe_key] = {field: re.sub(r'(?i)(\b(?:bearer|basic)\s+)[^\s,;}"\']+', r'\1[REDACTED]',
+                    re.sub(r'(?i)(\btoken\s*[=:]\s*)(' + SECRET_VALUE + r')', r'\1"[REDACTED]"',
+                           redact(text, secrets))) for field, text in item.items()}
+            else:
+                result[safe_key] = ('[REDACTED]' if SECRET_KEY.fullmatch(str(key))
+                               else redact_value(item, secrets, _path=(*_path, key if isinstance(key, str) else None)))
+        return result
     if isinstance(value, list):
-        return [redact_value(item, secrets) for item in value]
+        return [redact_value(item, secrets, _path=(*_path, index)) for index, item in enumerate(value)]
     if isinstance(value, str):
         return redact(value, secrets)
     return value
@@ -79,44 +125,56 @@ class DeepSeekClient:
     def __init__(self, root):
         config = private_config(root)
         self.key = config.get('DEEPSEEK_API_KEY', '')
-        self.model = config.get('DEEPSEEK_MODEL', 'deepseek-flash')
+        endpoint = provider_configuration()
+        self.model, self.provider, self.provider_endpoint = endpoint['model'], endpoint['provider'], endpoint['provider_endpoint']
+        self.opener = urllib.request.build_opener(NoProviderRedirects())
         self.configured = bool(self.key)
 
     def complete(self, system, payload, directory, stage):
         if not self.configured:
             raise ValueError('尚未配置 DeepSeek API；请在服务器本地配置 DEEPSEEK_API_KEY。')
         body = {'model': self.model, 'messages': [
-            {'role': 'system', 'content': system},
+            {'role': 'system', 'content': system + '\nReturn only a strict JSON object.'},
             {'role': 'user', 'content': json.dumps(payload, ensure_ascii=False)}],
             'response_format': {'type': 'json_object'}, 'thinking': {'type': 'disabled'},
             'temperature': 0, 'max_tokens': 10000, 'stream': False}
         body = redact_value(body, (self.key,))
         directory = Path(directory)
         save_json(directory / (stage + '.request.json'), body)
-        request = urllib.request.Request('https://api.deepseek.com/chat/completions',
+        request = urllib.request.Request(self.provider_endpoint,
             data=json.dumps(body, ensure_ascii=False).encode(),
             headers={'Authorization': 'Bearer ' + self.key, 'Content-Type': 'application/json'})
         try:
-            with urllib.request.urlopen(request, timeout=180) as response:
-                value = redact_value(json.load(response), (self.key,))
+            with self.opener.open(request, timeout=PROVIDER_TIMEOUT_SECONDS) as response:
+                raw = response.read(1024 * 1024 + 1)
         except urllib.error.HTTPError as exc:
-            save_json(directory / (stage + '.error.json'), {'http_status': exc.code, 'provider': 'DeepSeek'})
-            labels = {401: 'DeepSeek 认证失败', 402: 'DeepSeek 余额不足', 429: 'DeepSeek 请求限流'}
-            raise ValueError(labels.get(exc.code, 'DeepSeek 请求失败') + '（HTTP ' + str(exc.code) + '）') from None
+            save_json(directory / (stage + '.error.json'), {'http_status': exc.code, 'provider': self.provider,
+                'provider_endpoint': self.provider_endpoint})
+            labels = {401: '认证失败', 402: '余额不足', 429: '请求限流'}
+            raise ValueError(self.provider + ' ' + labels.get(exc.code, '请求失败') + '（HTTP ' + str(exc.code) + '）') from None
         except (urllib.error.URLError, TimeoutError, OSError):
             save_json(directory / (stage + '.error.json'), {'error': 'network_or_timeout'})
-            raise ValueError('DeepSeek 网络连接失败或超时；本次没有生成通过结论。') from None
-        save_json(directory / (stage + '.response.json'), value)
+            raise ValueError(self.provider + ' 网络连接失败或超时；本次没有生成通过结论。') from None
+        save_json(directory / (stage + '.provider-response.json'), {
+            'raw_text': raw[:1024 * 1024].decode('utf-8', errors='replace'),
+            'received_sha256': 'sha256:' + hashlib.sha256(raw).hexdigest(),
+            'captured_bytes': min(len(raw), 1024 * 1024), 'truncated': len(raw) > 1024 * 1024})
         try:
+            if len(raw) > 1024 * 1024:
+                raise ModelOutputError('模型响应超过大小上限；保留脱敏原响应，不采用。')
+            value = decode_json(raw)
+            save_json(directory / (stage + '.response.json'), value)
             choice = value['choices'][0]
             if choice.get('finish_reason') != 'stop':
                 raise ModelOutputError('模型输出未完整结束；保留响应，不采用截断结论。',
                                        truncated=choice.get('finish_reason') == 'length')
-            result = json.loads(choice['message']['content'])
+            result = decode_json(choice['message']['content'].encode('utf-8'))
             if not isinstance(result, dict):
                 raise ModelOutputError('模型输出不是JSON对象。')
-            return result
-        except (KeyError, IndexError, TypeError, json.JSONDecodeError):
+            return redact_value(result, (self.key,))
+        except ModelOutputError:
+            raise
+        except (KeyError, IndexError, AttributeError, TypeError, ValueError, UnicodeError, RecursionError):
             raise ModelOutputError('模型未返回有效JSON；请严格返回单个JSON对象，顶层字段不能嵌套在tasks内；脱敏响应已保留。') from None
 
 

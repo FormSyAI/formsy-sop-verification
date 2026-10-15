@@ -1,0 +1,19 @@
+{
+  "fixture_version": 1,
+  "origin": {
+    "audit_id": "653c0615-d8e2-4b82-9ecc-4d9106b2d97f",
+    "first_call": "sop-condition-3247db253fe5-1-rows-1-1.call-008",
+    "first_response_sha256": "37c0f8c5dbd75eeda8c5ea9e77bbee88c0496096d8174c224893625d752dc0cf",
+    "retry_call": "sop-condition-3247db253fe5-1-rows-2-1.call-009",
+    "retry_response_sha256": "4df964a8a5bf2233752a264e684cea5d935b902166e33df0e8ee3f5166191cba",
+    "description": "Public error-log excerpt only; both real calls inserted two JSON boundary characters into the same quote."
+  },
+  "excerpt_start_line": 16,
+  "excerpt_lines": [
+    "E   AssertionError: {'error': 'AttributeError', 'message': \"'str' object has no attribute 'get'\", 'stdout': '', 'traceback': 'Traceback (m...li.py\", line 27, in <listcomp>",
+    "E         row.get(\\'id\\', \\'\\'),",
+    "E     AttributeError: \\'str\\' object has no attribute \\'get\\'"
+  ],
+  "first_quote": "E   AssertionError: {'error': 'AttributeError', 'message': \"'str' object has no attribute 'get'\", 'stdout': '', 'traceback': 'Traceback (m...li.py\", line 27, in <listcomp>\",\nE         row.get(\\'id\\', \\'\\'),\nE     AttributeError: \\'str\\' object has no attribute \\'get\\'",
+  "retry_quote": "E   AssertionError: {'error': 'AttributeError', 'message': \"'str' object has no attribute 'get'\", 'stdout': '', 'traceback': 'Traceback (m...li.py\", line 27, in <listcomp>\",\nE         row.get(\\'id\\', \\'\\'),\nE     AttributeError: \\'str\\' object has no attribute \\'get\\'"
+}

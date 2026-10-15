@@ -1,0 +1,92 @@
+{
+  "examples": [
+    {
+      "id": "Melevir__cognitive_complexity-15",
+      "title": "Melevir/cognitive_complexity · 递归复杂度",
+      "repository": "Melevir/cognitive_complexity",
+      "input_file": "Melevir__cognitive_complexity-15/input.json",
+      "input_sha256": "630ec4ddcc9e3d84404db557796185c45f5617c2570ad3b9d8ba6c1eeb31f09e",
+      "source_url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories",
+      "license_files": [
+        "licenses/CC-BY-4.0.txt",
+        "licenses/SWE-agent-trajectories-card.md",
+        "licenses/SWE-bench-extra-card.md",
+        "licenses/LLAMA-3.1-LICENSE.txt",
+        "licenses/LLAMA-3.1-USE-POLICY.md",
+        "licenses/NOTICE-LLAMA-3.1.txt",
+        "licenses/Melevir-cognitive_complexity-MIT.txt"
+      ],
+      "message_count": 30,
+      "material_count": 22,
+      "commit_shas": [
+        "c0efa913c24c2ad3b44a08acfeffb3c3d2f0f8d3"
+      ]
+    },
+    {
+      "id": "akolar__ogn-lib-18",
+      "title": "akolar/ogn-lib · 解析器注册",
+      "repository": "akolar/ogn-lib",
+      "input_file": "akolar__ogn-lib-18/input.json",
+      "input_sha256": "0ca26ff8591f48e355d0bf4633de4f9ed672c7c47a8e9df88b5fd772a884b08e",
+      "source_url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories",
+      "license_files": [
+        "licenses/CC-BY-4.0.txt",
+        "licenses/SWE-agent-trajectories-card.md",
+        "licenses/SWE-bench-extra-card.md",
+        "licenses/LLAMA-3.1-LICENSE.txt",
+        "licenses/LLAMA-3.1-USE-POLICY.md",
+        "licenses/NOTICE-LLAMA-3.1.txt",
+        "licenses/akolar-ogn-lib-MIT.txt"
+      ],
+      "message_count": 22,
+      "material_count": 25,
+      "commit_shas": [
+        "a9199fb354defa8a0530fe0fa2750f46911471a5"
+      ]
+    },
+    {
+      "id": "DCC-Lab__RayTracing-273",
+      "title": "DCC-Lab/RayTracing · 折射率边界",
+      "repository": "DCC-Lab/RayTracing",
+      "input_file": "DCC-Lab__RayTracing-273/input.json",
+      "input_sha256": "85a2f2a985d78765688b90efc23f3ce4bdf9ae67ddd66b9dfc5a2e8fe544f10a",
+      "source_url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories",
+      "license_files": [
+        "licenses/CC-BY-4.0.txt",
+        "licenses/SWE-agent-trajectories-card.md",
+        "licenses/SWE-bench-extra-card.md",
+        "licenses/LLAMA-3.1-LICENSE.txt",
+        "licenses/LLAMA-3.1-USE-POLICY.md",
+        "licenses/NOTICE-LLAMA-3.1.txt",
+        "licenses/DCC-Lab-RayTracing-MIT.txt"
+      ],
+      "message_count": 40,
+      "material_count": 13,
+      "commit_shas": [
+        "de862419ad05cb501f6d4edd2d7974171aac7ada"
+      ]
+    },
+    {
+      "id": "tobymao__sqlglot-2063",
+      "title": "tobymao/sqlglot · SQL MAP 转换",
+      "repository": "tobymao/sqlglot",
+      "input_file": "tobymao__sqlglot-2063/input.json",
+      "input_sha256": "ba6da935a82f7e54e6c594b14f5a095c930ea8c73ae9322e7a635d64b77f0c79",
+      "source_url": "https://huggingface.co/datasets/nebius/SWE-agent-trajectories",
+      "license_files": [
+        "licenses/CC-BY-4.0.txt",
+        "licenses/SWE-agent-trajectories-card.md",
+        "licenses/SWE-bench-extra-card.md",
+        "licenses/LLAMA-3.1-LICENSE.txt",
+        "licenses/LLAMA-3.1-USE-POLICY.md",
+        "licenses/NOTICE-LLAMA-3.1.txt",
+        "licenses/tobymao-sqlglot-MIT.txt"
+      ],
+      "message_count": 16,
+      "material_count": 17,
+      "commit_shas": [
+        "bf57fda6501ec8fb956ad4cdfc8422ed56e33c81"
+      ]
+    }
+  ]
+}

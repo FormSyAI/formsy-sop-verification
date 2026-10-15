@@ -101,6 +101,33 @@ class EngineQuoteRetryTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '不能改写已冻结'):
             self.analyze(ScriptedClient(mutate))
 
+    def test_assertion_retry_identifies_valid_quote_from_wrong_source(self):
+        original = synthetic_payload()
+        original['materials'].append({'name': 'tests/test_limit.py', 'kind': 'source',
+            'version_id': self.tasks[0]['target_commit_ids'][0], 'content': 'assert resolve_limit(0) == 0'})
+        self.package = engine.normalize(original, RULES)
+        historical = next(e for e in self.package['evidence'] if e['kind'] == 'assistant')
+        def mutate(value, payload, stage):
+            if stage == 'analysis-1':
+                value['acceptance_checks'][0]['assertion_refs'].append(qid(payload, historical['id']))
+            elif stage == 'analysis-2':
+                feedback = [f for f in payload['reference_feedback']
+                            if f.get('problem') == 'assertion_source_mismatch']
+                self.assertEqual(len(feedback), 1)
+                self.assertTrue(feedback[0]['path'].startswith('$.acceptance_checks[0].assertion_refs['))
+                self.assertEqual(feedback[0]['rejected_reference']['evidence_id'], historical['id'])
+                self.assertTrue(feedback[0]['target_evidence'])
+                by_id = {e['id']: e for e in self.package['evidence']}
+                for choice in feedback[0]['target_evidence']:
+                    self.assertEqual(by_id[choice['evidence_id']]['kind'], 'source')
+                    self.assertIn(choice['version_id'], self.tasks[0]['target_commit_ids'])
+                value = select_refs(value, payload, frozen_tasks=True)
+            return value
+        client = ScriptedClient(mutate)
+        result = self.analyze(client)
+        self.assertEqual(result['tasks'], self.tasks)
+        self.assertEqual([c['stage'] for c in client.calls], ['analysis-1', 'analysis-2', 'counter-review-1'])
+
     def test_counter_review_uses_same_retry_and_can_rejudge_unknown_with_no_refs(self):
         def mutate(value, payload, stage):
             if stage == 'counter-review-1':

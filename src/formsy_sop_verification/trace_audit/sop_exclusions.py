@@ -2,12 +2,15 @@
 import ast
 import copy
 import re
+from pathlib import Path
 
+from .model_client import save_json
 from .reference_repair import CITATION_SYSTEM_PROMPT, attach_quote_ids, resolve_quote_ids
 from .sop_contracts import VERSION
+from .sop_scope import REUSE_SCOPE_PROMPT, CREDENTIAL_SCOPE_PROMPT
 from .sop_judgments import FAIL, NA, PASS, UNKNOWN, aggregate, gate, set_judgment
 
-MAX_ITEMS = 6
+MAX_ITEMS = 3
 NATIVE_DOCUMENTS = {'technical-0.2', 'security-0.1', 'code-fix-0.1'}
 PARENT_BLOCKERS = {'target_code_proof', 'condition_specific_execution_mapping',
                    'human_condition_unsupported', 'parent_atomic_conflict',
@@ -23,6 +26,7 @@ EXCLUSION_SYSTEM = '''你是独立SOP适用性排除复核器，只输出JSON。
 只复核candidates中原“不适用”候选，不新增义务、不重新评判实现通过或失败。原排除理由与原引用仅是待核候选，不是真值。
 从原条款trigger/rule_context、冻结任务范围和完整目标源码/必要调用、数据、权限上下文判断。
 affected_paths不是审计边界的全部：须一并检查source_context_inventory列出的依赖源码，不能仅看diff新增加了什么。
+source_context_inventory中的测试、fixture和辅助包装不自动定义目标产品入口：分别定位实际入口签名、调用实参与正文中的操作，不把测试预处理计入产品能力。测试helper把字符串转换成AST，不证明产品API本身接收字符串或解析源码；未证明实际串接或边界时返回unknown，reason也须限定已定位的产品行为。
 单进程、函数内调用不等于没有跨模块/文件接口。既有调用链仍可能具有返回类型、调用契约。
 diff未新增副作用，不等于既有调用链无持久化、删除、远端服务、凭据或敏感数据。
 外部API返回经过内部模块仍是外部输入；正常返回、已认证服务和业务结果通过均不自动证明输入可信。输入解析/格式/显示、指令权限、模型策略必须按各子项实际义务分别判断。
@@ -34,10 +38,13 @@ explicit_user_boundary须引用用户明确限定被审对象的范围指令；�
 contradicted表示排除理由被完整上下文反驳，只转适用性未知，绝不自动判原条款通过或失败。材料不足/范围不明用unknown，不以缺证据排除。
 reviewed_source_ids须恰好覆盖source_context_inventory的全部ID，保留未修改但受影响的依赖上下文；此清单本身不是能力不存在的证据。
 每项固定格式{id,task_id,target_commit_ids,relation,reason,excluded_scope,evidence_quote_ids:[原文Q-ID],scope_analysis:{audit_object,judgment_dimension,trigger_state,basis,observations}}；ID、对象和维度照本子项输入，不得改写义务。
+excluded_scope必须是字符串，不是数组或对象。relation=unknown或contradicted时可用空字符串""，不要为了填字段编造排除范围；justified须给具体非空范围及原文证明。
 scope_analysis.trigger_state=present|absent|unknown；basis=direct_capability|explicit_user_boundary|bounded_source|unknown。
-observations逐项固定{kind,state,relevance,note,evidence_quote_ids:[Q-ID],acceptance_ids:[本任务ID]}。
+observations逐项固定{kind,state,relevance,note,evidence_quote_ids:[Q-ID],acceptance_ids:[本任务验收点ID]}。
+acceptance_ids只能从acceptance_id_choices选择，不是task_id；不关联具体必验点时用空数组，不能把任务T-ID当作验收点R-ID。
 kind=scope_boundary|external_input|side_effect|skipped_scope|behavior_result|implementation_absence|execution_style；state=present|absent|unknown，relevance=direct|unrelated|unknown。note解释此原文事实与当前原子义务的关系，不能合并相邻条款触发条件。
 external_input/side_effect标记真实输入与副作用是否存在；不能因无防护实现而标absent。存在的外部输入对解析/显示有直接关系，但不自动触发不存在的模型或授权能力。
+原子对象为task_delivery时，external_input也可指该任务实际收到的需求、规范或来源材料，用户原话/上下文可直接定位这种输入；这不证明目标产品拥有相同能力。target_product的真实外部输入与所有side_effect仍须目标源码，skipped_scope仍须受信运行及必验范围。
 contradicted必须present+direct_capability及直接相关的external_input/side_effect/skipped_scope事实；behavior_result、同步调用、缺少机制都不能代替触发事实。skip_substitution仅由直接相关的skipped_scope触发，外部输入/副作用不是跳过事实。
 justified必须absent和明确scope_boundary；basis=explicit_user_boundary只用于用户明确限制被审对象，用户没提某能力不等于排除既有依赖；basis=bounded_source须以scope_boundary原文覆盖完整目标source库存，不能只挑局部源码。无完整边界则unknown。
 skipped_scope的present须有跳过记录及与必验acceptance_ids直接交集，absent须有跳过记录和需求/测试源码范围对照。其它kind可关联本任务acceptance_ids作为元数据，但不能证明skip交集或替代跳过记录。
@@ -48,6 +55,7 @@ justified须给非空excluded_scope及范围原文引用；只能由当前目标
 ''' + '\n' + CITATION_SYSTEM_PROMPT + '''
 本阶段每处evidence_quote_ids仅输出Q-ID字符串数组；不输出quote_id对象、evidence_refs或任何手写坐标。没有有效范围原文时返回unknown及空数组，不任意选择原文凑排除。
 '''
+EXCLUSION_SYSTEM += '\n' + REUSE_SCOPE_PROMPT + '\n' + CREDENTIAL_SCOPE_PROMPT
 
 
 def _native(row, task):
@@ -175,19 +183,24 @@ def _explicit_user_boundary(refs, evidence):
 def review_input(task, package):
     from .sop_audit import _task_user_ids
     targets, users = set(task.get('target_commit_ids', [])), _task_user_ids(task)
-    evidence = []
+    evidence, excluded = [], []
     for item in package.get('evidence', []):
+        why = None
         if item.get('target_ids') and task['id'] not in item['target_ids']:
-            continue
-        if item['kind'] in {'assistant', 'tool'}:
-            continue
-        if item['kind'] == 'user_requirement':
+            why = 'other_task'
+        elif item['kind'] in {'assistant', 'tool'}:
+            why = 'not_independent_scope_proof'
+        elif item['kind'] == 'user_requirement':
             if item['id'] not in users:
-                continue
+                why = 'outside_frozen_user_requirements'
         elif item['kind'] in {'source', 'commit_diff', 'run_record', 'test_log'}:
             if item.get('version_id') not in targets:
-                continue
+                why = 'not_current_target_version'
         elif item.get('version_id') and item['version_id'] not in targets:
+            why = 'not_current_target_version'
+        if why:
+            excluded.append({'id': item['id'], 'kind': item['kind'],
+                             'name': item.get('name', item.get('path', '')), 'why': why})
             continue
         evidence.append(copy.deepcopy(item))
     related = targets | set(task.get('commit_ids', []))
@@ -198,12 +211,14 @@ def review_input(task, package):
         'evidence_id', 'log_evidence_id', 'commit_sha', 'skipped', 'test_paths',
         'test_evidence_ids', 'test_origin') if key in run} for run in _verified_runs(task, scoped)]
     payload = {'fixed_task': copy.deepcopy(task), 'changes': changes,
+               'acceptance_id_choices': [point['id'] for point in task.get('acceptance_points', [])],
                'verified_execution_inventory': runtime,
                'skipped_test_source_inventory': _skipped_test_sources(task, scoped),
                'affected_paths': sorted({change['path'] for change in changes if change.get('path')}),
                'source_context_inventory': [{'id': item['id'], 'path': item.get('path', item.get('name', '')),
                                              'version_id': item['version_id']}
                                             for item in evidence if item['kind'] == 'source'],
+               'excluded_evidence_inventory': excluded,
                'evidence': evidence}
     return attach_quote_ids(payload, package), scoped
 
@@ -231,7 +246,7 @@ def _scope_analysis(value, item, task, package):
     evidence = {e['id']: e for e in package['evidence']}
     acceptance_ids = {point['id'] for point in task.get('acceptance_points', [])}
     result = copy.deepcopy(value)
-    for fact in result['observations']:
+    for index, fact in enumerate(result['observations']):
         if (not isinstance(fact, dict) or set(fact) != OBSERVATION_FIELDS
                 or fact['kind'] not in OBSERVATION_KINDS
                 or fact['state'] not in {'present', 'absent', 'unknown'}
@@ -239,9 +254,11 @@ def _scope_analysis(value, item, task, package):
                 or not isinstance(fact['note'], str) or not fact['note'].strip()
                 or not isinstance(fact['acceptance_ids'], list)
                 or any(not isinstance(oid, str) for oid in fact['acceptance_ids'])
-                or len(fact['acceptance_ids']) != len(set(fact['acceptance_ids']))
-                or not set(fact['acceptance_ids']) <= acceptance_ids):
+                or len(fact['acceptance_ids']) != len(set(fact['acceptance_ids']))):
             raise ValueError('适用性观察必须逐项声明事实、相关范围及本任务必验ID。')
+        if not set(fact['acceptance_ids']) <= acceptance_ids:
+            raise ValueError(f"{item['id']}.scope_analysis.observations[{index}].acceptance_ids 含非本任务验收点ID；"
+                             f"只能选择 {sorted(acceptance_ids)} 或空数组，不能使用task_id。")
         refs = resolve_quote_ids(fact['evidence_quote_ids'], package, available_evidence_ids=set(evidence))
         _scoped_refs(refs, task, package, definite=fact['state'] != 'unknown')
         fact['evidence_refs'] = refs
@@ -296,7 +313,10 @@ def _scope_block_reason(analysis, relation, task, package):
                     or not kinds(fact) & {'source', 'user_requirement'}):
                 return '跳过触发事实缺少实际跳过记录、原始范围对照或本任务必验交集；业务失败不能代替。'
         elif 'source' not in kinds(fact):
-            return '实际输入/副作用触发事实须定位目标源码，不能只凭执行结果或助手判断。'
+            if (fact['kind'] == 'external_input' and analysis['audit_object'] == 'task_delivery'
+                    and kinds(fact) & {'user_requirement', 'context'}):
+                continue
+            return '实际产品输入/副作用触发事实须定位目标源码，不能只凭执行结果或助手判断。'
     # Associated acceptance IDs do not turn another capability into a skipped test.
     triggering = ([fact for fact in positive if fact['kind'] == 'skipped_scope']
                   if analysis['judgment_dimension'] == 'skip_substitution' else positive)
@@ -342,9 +362,10 @@ def validate_review(answer, entry, task, package):
         raise ValueError('排除复核不能绑定其它任务或目标版本。')
     relation = answer['relation']
     if (relation not in {'justified', 'contradicted', 'unknown'}
-            or not isinstance(answer['reason'], str) or not answer['reason'].strip()
-            or not isinstance(answer['excluded_scope'], str)):
+            or not isinstance(answer['reason'], str) or not answer['reason'].strip()):
         raise ValueError('排除复核缺少有效关系、排除范围及具体理由。')
+    if not isinstance(answer['excluded_scope'], str):
+        raise ValueError('excluded_scope必须是字符串，不能用数组或对象；unknown/contradicted可用空字符串""，justified须明确范围。')
     refs = (resolve_quote_ids(answer['evidence_quote_ids'], package,
                               available_evidence_ids={e['id'] for e in package['evidence']})
             if 'evidence_quote_ids' in answer else copy.deepcopy(answer['evidence_refs']))
@@ -426,7 +447,7 @@ def _refresh_row(row, task, package, prior):
             proof.update(result=atomic_status, met=atomic_status == PASS)
 
 
-def review_exclusions(rows, task, package, request, call, stage, failures):
+def review_exclusions(rows, task, package, request, call, stage, failures, *, directory=None):
     """Mutate native NA items only; the supplied call owns the shared global budget."""
     entries = candidates(rows, task)
     if not entries:
@@ -452,9 +473,13 @@ def review_exclusions(rows, task, package, request, call, stage, failures):
         return
     payload, scoped_package = review_input(task, package)
     stage = stage if stage.startswith('sop-failure-review-') else 'sop-failure-review-' + stage
-    for offset in range(0, len(entries), MAX_ITEMS):
-        batch = entries[offset:offset + MAX_ITEMS]
-        batch_payload = {**payload, 'candidates': []}
+    batches = [(stage + '-' + str(offset // MAX_ITEMS + 1), entries[offset:offset + MAX_ITEMS], 0, {})
+               for offset in range(0, len(entries), MAX_ITEMS)]
+    while batches:
+        batch_stage, batch, retry, feedback = batches.pop(0)
+        batch_ids = {item['id'] for _, _, item in batch}
+        batch_payload = {**payload, 'candidates': [], 'item_validation_feedback': {
+            iid: message for iid, message in feedback.items() if iid in batch_ids}}
         for row, check, item in batch:
             original = check.setdefault('exclusion_candidate', {
                 'result': NA, 'reason': check['reason'],
@@ -473,12 +498,22 @@ def review_exclusions(rows, task, package, request, call, stage, failures):
             expected = {item['id'] for _, _, item in batch}
             source_ids = {item['id'] for item in payload['source_context_inventory']}
             if (not isinstance(value, dict) or set(value) != {'reviews', 'reviewed_source_ids'}
-                    or not isinstance(answers, list) or len(answers) != len(batch)
+                    or not isinstance(answers, list)
                     or any(not isinstance(answer, dict) or not isinstance(answer.get('id'), str) for answer in answers)
-                    or {answer['id'] for answer in answers} != expected
-                    or not isinstance(sources, list) or any(not isinstance(eid, str) for eid in sources)
-                    or len(sources) != len(set(sources)) or set(sources) != source_ids):
+                    or not isinstance(sources, list) or any(not isinstance(eid, str) for eid in sources)):
                 raise ValueError('排除复核须完整唯一覆盖本批ID及全部目标源码上下文，不能省略依赖。')
+            returned = {answer['id'] for answer in answers}
+            if (set(sources) != source_ids or len(sources) != len(set(sources))
+                    or returned != expected or len(answers) != len(expected)):
+                reason = ('排除复核清单不合格；只可使用对应清单ID，不能混入context/diff。'
+                          f'reviewed_source_ids: missing={sorted(source_ids - set(sources))}；'
+                          f'extra={sorted(set(sources) - source_ids)}；'
+                          f'duplicates={len(sources) != len(set(sources))}。'
+                          f'reviews: missing={sorted(expected - returned)}；'
+                          f'extra={sorted(returned - expected)}；'
+                          f'duplicates={len(answers) != len(returned)}。')
+                # Reject every row; let the existing one-shot invalid-item recovery fix the envelope.
+                return {}, {iid: reason for iid in expected}
             by_id, valid, invalid = {answer['id']: answer for answer in answers}, {}, {}
             for entry in batch:
                 iid = entry[2]['id']
@@ -488,18 +523,40 @@ def review_exclusions(rows, task, package, request, call, stage, failures):
                     invalid[iid] = str(exc)
             return valid, invalid
 
-        checked, error, _ = call(stage + '-' + str(offset // MAX_ITEMS + 1), EXCLUSION_SYSTEM,
-                                 batch_payload, validate, attempts=1, final_failure=False)
+        checked, error, truncated = call(batch_stage, EXCLUSION_SYSTEM,
+                                         batch_payload, validate, attempts=1, final_failure=False)
+        if directory is not None:
+            save_json(Path(directory) / (batch_stage + '.rows-validation.json'), {
+                'retained_item_ids': sorted(checked[0]) if checked is not None else [],
+                'errors': checked[1] if checked is not None else {'batch': error},
+                'truncated': truncated})
+        if truncated and len(batch) > 1:
+            # Preserve complete context; shrink output obligations under the shared call budget.
+            middle = len(batch) // 2
+            for row, check, item in batch:
+                check.setdefault('exclusion_recovery', []).append({
+                    'stage': batch_stage, 'reason': error, 'action': 'split_truncated_batch',
+                    'batch_item_ids': [entry[2]['id'] for entry in batch]})
+            batches[:0] = [(batch_stage + '-split-1', batch[:middle], retry, feedback),
+                           (batch_stage + '-split-2', batch[middle:], retry, feedback)]
+            continue
         valid, invalid = checked if checked is not None else ({}, {
             item['id']: error or '无有效排除复核响应。' for _, _, item in batch})
+        pending = [entry for entry in batch if entry[2]['id'] in invalid] if checked is not None and retry == 0 else []
+        if pending:
+            batches.insert(0, (batch_stage + '-retry', pending, 1, invalid))
         for row, check, item in batch:
             answer = valid.get(item['id'])
             if answer is None:
+                if pending:
+                    check.setdefault('exclusion_recovery', []).append({
+                        'stage': batch_stage, 'reason': invalid[item['id']], 'action': 'retry_invalid_item'})
+                    continue
                 reason = '不适用复核未完成：' + invalid.get(item['id'], '无有效响应。')
                 check['exclusion_review'] = {'status': 'failed', 'reason': reason}
                 set_judgment(check, UNKNOWN, reason, 'analysis_failed')
                 row['analysis_status'] = 'failed'
-                failures.append({'stage': stage, 'condition_id': row['condition_id'],
+                failures.append({'stage': batch_stage, 'condition_id': row['condition_id'],
                                  'atomic_item_id': item['id'], 'reason': reason,
                                  'kind': 'exclusion_review_failure'})
             else:

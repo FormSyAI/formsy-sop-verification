@@ -1,5 +1,6 @@
 """Fixed atomic obligations and same-scope gates for SOP candidates."""
 import copy
+import hashlib
 import re
 
 PASS, FAIL, UNKNOWN, NA = '满足', '不满足', '未核查', '不适用'
@@ -8,6 +9,67 @@ SEMANTIC_REF_FIELDS = ('evidence_refs', 'mapping_refs', 'control_refs', 'stateme
 CLAIM_TYPES = {'fact', 'diagnosis', 'prediction', 'plan', 'actual_state'}
 DESIGN_BASES = {'user_expectation', 'plan_expectation', 'delivered_assertion', 'missing_delivery', 'unknown'}
 PURPOSE_KINDS = {'diagnostic_attempt', 'implementation', 'delivery_support', 'unrelated'}
+
+
+def own_version_matches(kind, value, proof, evidence, code_versions):
+    if not isinstance(value, str) or not value.strip() or not proof:
+        return False
+    if kind == 'external':
+        return value not in code_versions and any(value in ref['quote'] for ref in proof)
+    return any(value in {evidence[ref['evidence_id']].get('version_id'),
+                         hashlib.sha256(evidence[ref['evidence_id']]['content'].encode()).hexdigest(),
+                         'sha256:' + hashlib.sha256(evidence[ref['evidence_id']]['content'].encode()).hexdigest()}
+               for ref in proof)
+
+
+def _native_baseline(condition):
+    contract = condition.get('contract', {})
+    return (condition.get('condition_id', condition.get('id')) == 'TC01.C01'
+            and contract.get('origin') == 'library_interpretation'
+            and contract.get('version') == '1.9' and contract.get('audit_object') == 'task_delivery'
+            and contract.get('rule_context', {}).get('id') == 'TC01')
+
+
+def _baseline_version_gate(check, condition, task, package, evidence):
+    if not _native_baseline(condition) or check['result'] != PASS:
+        return
+    from .sop_audit import _task_user_ids
+    baseline = check.get('semantic_basis', {}).get('rule_baseline', {})
+    own = evidence.get(baseline.get('evidence_id'), {})
+    proof = baseline.get('evidence_refs', [])
+    selection = baseline.get('selection_refs', [])
+    kind, version = baseline.get('kind'), baseline.get('version', '')
+    identity = baseline.get('identity', '')
+    code_versions = {value for commit in package.get('commits', [])
+                     for value in (commit.get('sha'), commit.get('parent')) if value}
+    users = _task_user_ids(task)
+    eligible = (own.get('kind') == 'user_requirement' and own.get('id') in users if kind == 'direct_requirement'
+                else own.get('kind') == 'context' and bool(selection)
+                and all(ref['evidence_id'] in users and evidence[ref['evidence_id']]['kind'] == 'user_requirement'
+                        for ref in selection)
+                and any(identity and identity in ref['quote'] for ref in selection))
+    met = (kind in {'direct_requirement', 'local', 'external'} and eligible and bool(proof)
+           and bool(identity.strip()) and bool(version)
+           and all(ref['evidence_id'] == own.get('id') for ref in proof)
+           and (identity in {own.get('id'), own.get('name'), own.get('path')}
+                or any(identity in ref['quote'] for ref in proof))
+           and own_version_matches(kind, version, proof, evidence, code_versions))
+    check.setdefault('rule_baseline_candidate', {key: copy.deepcopy(check.get(key))
+                     for key in ('result', 'reason', 'evidence_refs', 'semantic_basis')})
+    identity_version_met = bool(met)
+    met = identity_version_met and kind == 'direct_requirement'
+    reason = ('已定位模型声明的原用户规则基准及其自身版本；不认证外部规范或项目历史生效。' if met else
+              '已定位候选规则身份与自身版本，但选择引用的有效采用含义未独立核实；不能由规则名子串判满足。'
+              if identity_version_met else
+              '对象代码版本不能代替规则基准版本；尚无明确同一规则基准及其自身版本的有效引用。')
+    gate(check, {'id': 'task_rule_baseline_version', 'met': bool(met),
+                 'identity_version_met': identity_version_met,
+                 'selection_semantics': 'original_user_requirement' if kind == 'direct_requirement' else 'unverified',
+                 'reason': reason})
+    if met:
+        set_judgment(check, PASS, reason)
+    else:
+        set_judgment(check, UNKNOWN, reason, 'evidence_missing')
 
 
 def _expanded_semantics(item):
@@ -94,8 +156,29 @@ def aggregate(values):
     return PASS if actual and all(value == PASS for value in actual) else UNKNOWN
 
 
+
+def _original_trigger_parent_refs(condition, item, task, package, refs):
+    # Only the original-error obligation describes the direct parent, not target behavior.
+    contract = condition.get('contract', {})
+    if (condition.get('id', condition.get('condition_id')) != 'FIX03.C03'
+            or contract.get('origin') != 'library_interpretation'
+            or contract.get('version') != '1.9'
+            or contract.get('rule_context', {}).get('id') != 'FIX03'
+            or item.get('id') != 'FIX03.C03.I01' or item.get('text') != '原错误触发'
+            or item.get('judgment_dimension') != 'implementation'):
+        return False
+    targets = set(task.get('target_commit_ids', []))
+    parents = {c['parent'] for c in package.get('commits', [])
+               if c.get('sha') in targets and c.get('parent')}
+    evidence = {e['id']: e for e in package['evidence']}
+    code = [evidence.get(ref.get('evidence_id'), {}) for ref in refs if isinstance(ref, dict)
+            and evidence.get(ref.get('evidence_id'), {}).get('kind') in {'source', 'commit_diff'}]
+    return (bool(parents) and any(e.get('version_id') in parents for e in code)
+            and all(e.get('version_id') in parents | targets for e in code))
+
+
 def atomic_response(row, condition, task, package, *, strict_basis=False):
-    from .sop_audit import _validate_refs, GAPS, HISTORY
+    from .sop_audit import _validate_refs, InsufficientEvidence, GAPS, HISTORY
     items = condition.get('contract', {}).get('items', [])
     if not items:
         return []
@@ -119,8 +202,15 @@ def atomic_response(row, condition, task, package, *, strict_basis=False):
         if (not isinstance(ids, list) or any(not isinstance(pid, str) for pid in ids) or
                 len(ids) != len(set(ids)) or not set(ids) <= point_ids):
             raise ValueError('原子子项验收点不属于当前固定任务。')
-        historical_comparison = item.get('semantic_gate') == 'claim_scope' and _expanded_semantics(item)
-        _validate_refs(refs, task, package, definite=status != UNKNOWN and not historical_comparison)
+        historical_comparison = (item.get('semantic_gate') == 'claim_scope' and _expanded_semantics(item)
+                                 or _original_trigger_parent_refs(condition, item, task, package, refs))
+        insufficient = None
+        try:
+            _validate_refs(refs, task, package, definite=status != UNKNOWN and not historical_comparison)
+        except InsufficientEvidence as exc:
+            if condition.get('contract', {}).get('origin') != 'library_interpretation':
+                raise
+            insufficient = str(exc)
         gap = check.get('gap_type', '')
         if status == UNKNOWN and gap not in GAPS - {'analysis_failed'}:
             raise ValueError('原子子项未核查须说明具体原因。')
@@ -129,6 +219,10 @@ def atomic_response(row, condition, task, package, *, strict_basis=False):
         by_id[check['id']] = {'id': check['id'], 'result': status, 'reason': reason,
                               'gap_type': gap, 'evidence_refs': copy.deepcopy(refs),
                               'acceptance_ids': list(ids), 'program_gates': []}
+        if insufficient:
+            by_id[check['id']].update(result=UNKNOWN, reason=insufficient, gap_type='evidence_missing',
+                                    model_candidate={'result': status, 'reason': reason})
+            status = UNKNOWN
         basis = check.get('semantic_basis')
         if strict_basis:
             missing = _basis_schema_missing(item, status, basis)
@@ -142,6 +236,17 @@ def atomic_response(row, condition, task, package, *, strict_basis=False):
         if basis is not None:
             if not isinstance(basis, dict):
                 raise ValueError('semantic_basis必须为对象，不能用自然语言替代结构化判断依据。')
+            if _native_baseline(condition) and 'rule_baseline' in basis:
+                baseline = basis['rule_baseline']
+                if (not isinstance(baseline, dict) or set(baseline) -
+                        {'kind', 'identity', 'version', 'evidence_id', 'evidence_refs', 'selection_refs'}
+                        or any(key in baseline and not isinstance(baseline[key], str)
+                               for key in ('kind', 'identity', 'version', 'evidence_id'))):
+                    raise ValueError('TC01.C01规则基准须声明kind、identity、自身version、evidence_id及evidence_refs；缺证据请未核查。')
+                if 'evidence_refs' in baseline:
+                    _validate_refs(baseline['evidence_refs'], task, package, definite=False)
+                if 'selection_refs' in baseline:
+                    _validate_refs(baseline['selection_refs'], task, package, definite=False)
             if 'alignment' in basis and (not isinstance(basis['alignment'], str)
                                         or basis['alignment'] not in {'supported', 'contradicts', 'unknown'}):
                 raise ValueError('design_alignment.alignment必须为supported、contradicts或unknown。')
@@ -494,6 +599,7 @@ def apply_atomic_gates(row, task, package):
             continue
         if check['result'] not in {PASS, FAIL}:
             continue
+        _baseline_version_gate(check, row, task, package, evidence)
         _semantic_gate(check, item, task, evidence, package.get('commits', []))
         if check['result'] not in {PASS, FAIL}:
             continue
@@ -528,6 +634,53 @@ def apply_atomic_gates(row, task, package):
             set_judgment(row, status, '；'.join(details), gap)
 
 
+def _change_purpose_consistency(row, task, result):
+    from .sop_contracts import SPECIAL, ensure_contracts
+    contract = row.get('contract', {})
+    target = set(task.get('target_commit_ids', []))
+    if (row.get('condition_id') != 'FIX02.C01' or row.get('rule_id') != 'FIX02'
+            or row.get('document_id') != 'code-fix-0.1'
+            or contract.get('origin') != 'library_interpretation'
+            or row.get('text') != SPECIAL['FIX02.C01'][1]
+            or row.get('task_id') != task['id'] or not target
+            or set(row.get('target_commit_ids', [])) != target):
+        return
+    native = ensure_contracts({'rules': [rule for rule in result.get('sop_rules', [])
+        if rule.get('id') == 'FIX02' and rule.get('document_id') == 'code-fix-0.1'
+        and rule.get('version') == '0.1' and rule.get('source_kind') != 'uploaded_rule']})
+    conditions = [condition for rule in native['rules'] for condition in rule.get('conditions', [])
+                  if condition.get('id') == 'FIX02.C01']
+    if (len(conditions) != 1 or row.get('source_ref') != conditions[0].get('source_ref')
+            or contract != conditions[0].get('contract')):
+        return
+    unresolved = sorted({change['id'] for change in result.get('change_coverage', [])
+        if change.get('commit_id') in target
+        and (not change.get('task_ids') or task['id'] in change['task_ids'])
+        and (change.get('purpose_covered') is False or change.get('unparsed') is True)})
+    check = next((check for check in row.get('atomic_checks', [])
+                  if check['id'] == 'FIX02.C01.I02'), None)
+    if (not unresolved or not check or check['result'] != PASS
+            and not (check['result'] == UNKNOWN and any(proof['id'] == 'same_target_change_purpose_consistency'
+                                                       for proof in check.get('program_gates', [])))):
+        return
+    reason = '目标版本实质变更的任务依据尚未全部核定：' + '、'.join(unresolved) + '；未关联或未解析不能证明越界，也不能判全部有依据。'
+    if check['result'] == PASS:
+        check.setdefault('model_candidate', {'result': check['result'], 'reason': check['reason']})
+    gate(check, {'id': 'same_target_change_purpose_consistency', 'met': False, 'result': UNKNOWN,
+                 'change_ids': unresolved, 'target_commit_ids': sorted(target), 'reason': reason})
+    set_judgment(check, UNKNOWN, reason, 'evidence_missing')
+    checks = row['atomic_checks']
+    atomic_status = aggregate([check['result'] for check in checks])
+    gate(row, {'id': 'all_required_atomic_checks', 'met': atomic_status == PASS,
+               'result': atomic_status, 'item_ids': [check['id'] for check in checks],
+               'reason': '全部固定子项按四态汇总；反向依据未核定不抹去已确认失败。'})
+    status = aggregate([row['result'], atomic_status])
+    if status != row['result']:
+        details = '；'.join(check['text'] + '：' + check['reason'] for check in checks
+                          if check['result'] == status)
+        set_judgment(row, status, details, 'evidence_missing')
+
+
 def acceptance_consistency(row, task, result):
     contract = row.get('contract', {})
     dimension = contract.get('acceptance_dimension')
@@ -559,6 +712,7 @@ def acceptance_consistency(row, task, result):
                      '；记录缺口或其它验收通过不能豁免该项。')
     elif status == UNKNOWN and row['result'] in {PASS, NA}:
         set_judgment(row, UNKNOWN, '同范围必要验收尚未全部证实，不能判本条件满足。', 'evidence_missing')
+    _change_purpose_consistency(row, task, result)
 
 
 def closure_prerequisites(row, task, result):

@@ -4,7 +4,7 @@ FormSy 的任务级 SOP 核查工具：独立本地页面与 Python 内核读取
 
 本项目由三部分协作：本仓库负责核查内核；`formsy-server` 负责项目权限、取证和不可变报告；`formsy-web` 在任务的“验证”阶段提供核查入口。既有 TaskCheck 与 Finish Gate 承接人工检查，候选报告不会自动完成任务。
 
-当前独立页面统一提供 **完整条件审计**，复用 TraceAuditWeb r11 的需求提取、适用性选择、逐条件及原子义务核查、反证和引用复核；默认规则由 `FormSyAI/formsy-sop` 统一维护。原 4 项 worker/API 保留兼容，页面不再提供快速核查入口。
+当前独立页面统一提供 **完整条件审计**，复用 TraceAuditWeb r11 衍生内核的需求提取、适用性选择、逐条件及原子义务核查、反证和引用复核；默认采用 `FormSyAI/formsy-sop/audit/traceaudit-r12`，固定 commit `8a57dcf33658844f6852fb144c3943ab4a3fed4d`，判定口径 1.9.1、机器契约 1.9。原 4 项 worker/API 保留兼容，页面不再提供快速核查入口。
 
 原 4 项 Server/Web 集成已合并到各自 `main`，并保留[对应补丁与合并版本](integration/README.md)；本轮完整审计和自定义 SOP 接口运行在本仓库本地服务，共享 FormSy 服务尚未部署。
 
@@ -26,7 +26,7 @@ python3 -I scripts/serve.py
 
 默认库含 33 条规则、144 个条件、184 个原子义务；每轮冻结规则源版本、内容摘要及原文。自定义规则沿用原工具的 JSON 格式，可上传数组或含 `rules` 的对象，最多 8 条；逐条保留版本、判定条件、所需证据、复检和关闭要求。自定义规则数独立计算，不套用默认库的 144 条数量。完整入口与来源配置见[完整审计说明](docs/full-audit.md)。
 
-合成示例只提供请求材料，不自动运行模型或业务代码。完整入口接受原生请求，不直接导入旧 4 项 worker 请求。模型模式需要启动进程已有 `DEEPSEEK_API_KEY`，且点击前页面会说明材料发送至 DeepSeek。工具不读取任何 `.env` 文件。每轮新结果保存在被忽略的 `reports/local/`，请勿提交真实材料。
+合成示例及四份公开完整 Trace 只提供请求材料，选择时不调用模型或运行业务代码。公开输入的原始摘要、出处和各部分许可见 [公开示例说明](examples/public-traces/README.md)。完整入口接受原生请求，不直接导入旧 4 项 worker 请求。模型模式需要启动进程已有 `DEEPSEEK_API_KEY`，且点击前页面会说明材料发送至配置的服务商。工具不读取任何 `.env` 文件。每轮新结果保存在被忽略的 `reports/local/`，请勿提交私有材料或生成报告。
 
 本地上传材料由使用者提供；独立页面不证明其已经 FormSy 权限系统认证或由可信采集器冻结。完整平台取证需部署已合并的集成。
 
@@ -76,7 +76,11 @@ python3 -I scripts/verify.py < examples/offline-request.json
 
 沿用 TraceAuditWeb 的 DeepSeek 适配，默认模型为 `deepseek-flash`。只有 `mode=model` 才尝试模型请求；`mode=offline` 仅验证显式提供的测试候选。API 格式参考 [DeepSeek 官方文档](https://api-docs.deepseek.com/api/create-chat-completion/)。
 
-worker 从进程环境读取 `DEEPSEEK_API_KEY` 和可选的 `DEEPSEEK_MODEL`。不要提交密钥、复制既有 `.env.local`、上传私人审计历史或把真实 Trace 放进测试样例。
+worker 从进程环境读取 `DEEPSEEK_API_KEY`、可选的 `DEEPSEEK_MODEL` 和 `DEEPSEEK_BASE_URL`。
+默认直连 DeepSeek；设置 `DEEPSEEK_BASE_URL=https://tokenhub.tencentmaas.com/v1` 可通过腾讯云
+TokenHub 调用，默认模型为 `deepseek/deepseek-flash`。页面发送说明及报告记录实际服务商和端点。
+只接受上述腾讯云及官方 DeepSeek 的 HTTPS 基址，禁止重定向，三个客户端超时均为 180 秒。
+不要提交密钥、复制既有 `.env.local`、上传私人审计历史或把真实 Trace 放进测试样例。
 
 Server 部署时显式设置以下字段；路径必须指向部署机器上的可信文件：
 
@@ -89,7 +93,7 @@ FORMSY_SOP_VERIFICATION_MODEL=deepseek-flash
 
 密钥由部署环境提供。worker 不自动读取当前工作目录或其他仓库的配置。Server 使用固定解释器和脚本启动隔离子进程，不执行来源或模型返回的命令。
 
-快速 worker 采用有界的单次请求。完整审计使用本地异步作业，SOP 阶段最多 64 次、全流程最多 80 次模型请求（含有界恢复）；模型失败保留明确失败状态，不自动重跑整轮，不推断业务通过。停止查看进度不会取消后台作业，进程重启后需要导入磁盘上保留的报告回放。接入正式 FormSy 任务页需部署匹配的 Server/Web 变更；独立本地页面可以单独运行。
+快速 worker 采用有界的单次请求。完整审计使用本地异步作业，SOP 阶段最多 64 次、全流程最多 80 次模型请求（含有界恢复）；模型失败保留明确失败状态，不自动重跑整轮，不推断业务通过。新提交成功接收后自动请求停止旧任务，保留旧记录，等旧调用退出后开始新任务；阻塞读取可能仍等待 180 秒 socket 超时。停止查看进度不会取消后台作业，进程重启后需要导入磁盘上保留的报告回放。接入正式 FormSy 任务页需部署匹配的 Server/Web 变更；独立本地页面可以单独运行。
 
 HTTP 响应读取中断会保存固定错误码；若有部分响应，另存有界、脱敏且标记 `transport_incomplete` 的原始记录，不作为完整候选解析。已知 HTTP 错误状态仍保留，不因错误响应正文中断而误标。此处理不重试请求，也不能还原修复前未记录的异常原因。
 

@@ -1127,6 +1127,20 @@ pre.json {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.audit-object {
+  font-size: 12px;
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+.audit-object h4 {
+  margin: 10px 0 3px;
+}
+.audit-object pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 16rem;
+  overflow: auto;
+}
 @media (max-width: 780px) {
   .sop-source-controls {
     align-items: stretch;

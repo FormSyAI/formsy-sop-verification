@@ -16,8 +16,9 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
-from formsy_sop_verification.core import MAX_INPUT_BYTES, decode_json, verify  # noqa: E402
-from formsy_sop_verification.local_full_audit import FullAuditJobs, private_json  # noqa: E402
+from formsy_sop_verification.core import MAX_INPUT_BYTES, _redact_input, _redact_report, decode_json, verify  # noqa: E402
+from formsy_sop_verification.local_full_audit import FullAuditJobs, FullAuditStartError, private_json  # noqa: E402
+from formsy_sop_verification.model_client import ProviderError, THINKING_MODES, provider_configuration  # noqa: E402
 
 
 def encoded(value):
@@ -30,19 +31,29 @@ def sha256(raw):
 
 
 def configuration():
-    return {"model_configured": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip()),
-            "model": os.environ.get("DEEPSEEK_MODEL", "deepseek-flash")}
+    result = {"model_configured": bool(os.environ.get("DEEPSEEK_API_KEY", "").strip())}
+    try:
+        return {**result, **provider_configuration()}
+    except ProviderError:
+        return {**result, "model_configured": False, "provider": None, "provider_endpoint": None, "model": None,
+                "configuration_error": "provider_invalid_configuration"}
 
 
 def full_configuration():
+    mode = os.environ.get("DEEPSEEK_THINKING", "disabled")
+    if mode not in THINKING_MODES:
+        return {"thinking_mode": "invalid", "model_configured": False, "provider": None,
+                "provider_endpoint": None, "model": None, "available": False, "default_available": False,
+                "configuration_error": "provider_invalid_configuration", "max_sop_calls": 64, "max_total_calls": 80}
+    execution = {"thinking_mode": mode}
     try:
         from formsy_sop_verification.full_audit import catalog_summary
     except ImportError:
-        return {**configuration(), "available": False, "max_sop_calls": 64}
+        return {**configuration(), **execution, "available": False, "max_sop_calls": 64}
     try:
-        return {**configuration(), **catalog_summary(), "available": True, "default_available": True}
+        return {**configuration(), **execution, **catalog_summary(), "available": True, "default_available": True}
     except (ValueError, OSError):
-        return {**configuration(), "available": True, "default_available": False,
+        return {**configuration(), **execution, "available": True, "default_available": False,
                 "max_sop_calls": 64, "max_total_calls": 80, "max_upload_rules": 8,
                 "default_error": "默认 FormSy SOP 规则尚未安装或未通过版本校验；可上传自定义规则。"}
 
@@ -62,6 +73,51 @@ def full_demo():
                          "diff": "diff --git a/demo.py b/demo.py\n--- a/demo.py\n+++ b/demo.py\n@@ -1,2 +1,2 @@\n def remove_prefix(value, prefix):\n-    return value.replace(prefix, '')\n+    return value[len(prefix):] if value.startswith(prefix) else value\n"}],
             "materials": [{"kind": "source", "name": "demo.py", "path": "demo.py", "version_id": "a" * 40,
                            "content": "def remove_prefix(value, prefix):\n    return value[len(prefix):] if value.startswith(prefix) else value\n"}]}
+
+
+PUBLIC_DEMO_IDS = {"Melevir__cognitive_complexity-15", "akolar__ogn-lib-18",
+                   "DCC-Lab__RayTracing-273", "tobymao__sqlglot-2063"}
+
+
+def public_full_demos(root):
+    """Read only allowlisted, hash-checked public fixtures; never scan saved audits."""
+    directory = root / "examples/public-traces"
+    catalog_path = directory / "catalog.json"
+    if directory.resolve() != directory or catalog_path.is_symlink() or catalog_path.stat().st_size > 65536:
+        raise ValueError("invalid_public_demo_catalog")
+    catalog_raw = catalog_path.read_bytes()
+    if len(catalog_raw) > 65536:
+        raise ValueError("invalid_public_demo_catalog")
+    catalog = decode_json(catalog_raw)
+    if not isinstance(catalog, dict) or set(catalog) != {"examples"} or not isinstance(catalog["examples"], list):
+        raise ValueError("invalid_public_demo_catalog")
+    demos = {}
+    for entry in catalog["examples"]:
+        if not isinstance(entry, dict) or entry.get("id") not in PUBLIC_DEMO_IDS or entry["id"] in demos:
+            raise ValueError("invalid_public_demo_catalog")
+        demo_id = entry["id"]
+        if entry.get("input_file") != demo_id + "/input.json":
+            raise ValueError("invalid_public_demo_path")
+        path = directory / entry["input_file"]
+        if path.parent.is_symlink() or path.is_symlink() or path.stat().st_size > MAX_INPUT_BYTES:
+            raise ValueError("invalid_public_demo_file")
+        raw = path.read_bytes()
+        if len(raw) > MAX_INPUT_BYTES or hashlib.sha256(raw).hexdigest() != entry.get("input_sha256"):
+            raise ValueError("public_demo_hash_mismatch")
+        metadata = {key: entry[key] for key in ("id", "title", "repository", "input_sha256", "source_url",
+                    "license_files", "message_count", "material_count", "commit_shas") if key in entry}
+        if not all(isinstance(metadata.get(key), str) and metadata[key] for key in
+                   ("title", "repository", "source_url")):
+            raise ValueError("invalid_public_demo_metadata")
+        licenses = metadata.get("license_files")
+        if not isinstance(licenses, list) or not licenses or any(not isinstance(name, str) or
+                Path(name).is_absolute() or ".." in Path(name).parts for name in licenses):
+            raise ValueError("invalid_public_demo_license")
+        request = decode_json(raw)
+        if not isinstance(request, dict):
+            raise ValueError("invalid_public_demo_input")
+        demos[demo_id] = {"demo": metadata, "request": request}
+    return demos
 
 
 def load_demo(root, demo_report=None):
@@ -91,14 +147,21 @@ def load_demo(root, demo_report=None):
 
 def save_record(directory, request, report):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+    input_sha256, report_sha256 = sha256(encoded(request)), sha256(encoded(report))
+    secrets = (os.environ.get("DEEPSEEK_API_KEY", ""),)
+    stored_request, stored_report = _redact_input(request, secrets), _redact_report(report, secrets)
     record = {"id": str(uuid.uuid4()), "created_at": datetime.now(timezone.utc).isoformat(),
-              "input_sha256": sha256(encoded(request)), "report_sha256": sha256(encoded(report))}
+              "input_sha256": input_sha256, "report_sha256": report_sha256,
+              "stored_input_sha256": sha256(encoded(stored_request)),
+              "stored_report_sha256": sha256(encoded(stored_report)),
+              "input_storage_redacted": stored_request != request,
+              "report_storage_redacted": stored_report != report}
     path = directory / (record["id"] + ".json")
     # Exclusive creation keeps local rounds append-only, with private file permissions.
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
         with os.fdopen(descriptor, "wb") as output:
-            output.write(encoded({"record": record, "request": request, "report": report,
+            output.write(encoded({"record": record, "request": stored_request, "report": stored_report,
                                   "mode": request["mode"]}) + b"\n")
     except BaseException:
         path.unlink(missing_ok=True)
@@ -198,8 +261,28 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_j
             if path == "/api/full-audit-config":
                 self.reply(200, encoded(full_configuration()))
                 return
-            if path == "/api/full-audit-demo":
+            if path in {"/api/full-audit-demo", "/api/full-demo"}:
                 self.reply(200, encoded(full_demo()))
+                return
+            if path == "/api/full-demo-catalog" or path.startswith("/api/full-demo/"):
+                demo_id = path.removeprefix("/api/full-demo/")
+                if path != "/api/full-demo-catalog" and demo_id not in PUBLIC_DEMO_IDS:
+                    self.error(404, "full_demo_not_found", "This public demo is not available.")
+                    return
+                try:
+                    demos = public_full_demos(root)
+                except (OSError, ValueError, TypeError, KeyError):
+                    self.error(503, "full_demo_unavailable", "The public demo catalog failed local integrity checks.")
+                    return
+                if path == "/api/full-demo-catalog":
+                    self.reply(200, encoded({"demos": [value["demo"] for value in demos.values()]}))
+                elif demo_id in demos:
+                    self.reply(200, encoded(demos[demo_id]))
+                else:
+                    self.error(404, "full_demo_not_found", "This public demo is not available.")
+                return
+            if path == "/api/full-audits/active":
+                self.reply(200, encoded({"job": full_jobs.active()}))
                 return
             if path == "/api/sop-template":
                 self.reply(200, encoded(sop_template()))
@@ -290,6 +373,9 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_j
                     if not isinstance(body, dict) or set(body) != {"request", "mode"} or body["mode"] != "model":
                         raise ValueError("explicit_full_model_request_required")
                     config = full_configuration()
+                    if config.get("configuration_error"):
+                        self.error(503, "provider_invalid_configuration", "The full audit model configuration is invalid.")
+                        return
                     if not config["available"]:
                         self.error(503, "full_engine_unavailable", "The full audit engine is unavailable.")
                         return
@@ -298,8 +384,9 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_j
                         return
                     try:
                         job = full_jobs.submit(body["request"])
-                    except RuntimeError:
-                        self.error(429, "full_audit_busy", "One full audit is already running; do not resubmit.")
+                    except FullAuditStartError as exc:
+                        self.reply(503 if exc.error.get("error_category") == "start" else 500,
+                                   encoded({"error": exc.error}))
                         return
                     self.reply(202, encoded(job))
                     return
@@ -317,10 +404,15 @@ def make_server(root=ROOT, port=8769, demo_report=None, reports_dir=None, full_j
                     self.error(502, "report_too_large", "The candidate report exceeds 1 MiB.")
                     return
                 record = save_record(records, request, report)
-                self.reply(201, encoded({"request": request, "report": report,
+                secrets = (os.environ.get("DEEPSEEK_API_KEY", ""),)
+                self.reply(201, encoded({"request": _redact_input(request, secrets),
+                                         "report": _redact_report(report, secrets),
                                          "mode": request["mode"], "record": record}))
-            except (ValueError, TypeError, KeyError, AttributeError, UnicodeError, RecursionError, TimeoutError):
-                self.error(422, "invalid_request", "Invalid, incomplete or oversized verification request.")
+            except (ValueError, TypeError, KeyError, AttributeError, UnicodeError, RecursionError, TimeoutError) as exc:
+                if isinstance(exc, ValueError) and str(exc) == "credential_in_evidence_identity":
+                    self.error(422, "credential_in_evidence_identity", "Remove credentials from project, SOP or source identity fields.")
+                else:
+                    self.error(422, "invalid_request", "Invalid, incomplete or oversized verification request.")
             except OSError:
                 self.error(500, "local_storage_failed", "Could not save the local round; do not retry automatically.")
             except Exception:

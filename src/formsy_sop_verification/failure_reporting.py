@@ -8,6 +8,7 @@ import urllib.error
 PROVIDER_TIMEOUT_SECONDS = 180
 PROVIDER_CATEGORIES = {
     "provider_not_configured": "configuration",
+    "provider_invalid_configuration": "configuration",
     "provider_authentication_failed": "authentication",
     "provider_quota_exhausted": "quota",
     "provider_rate_limited": "rate_limit",
@@ -44,6 +45,9 @@ MODEL_STAGE = re.compile(
     r"(?:model:)?(?:"
     r"(?:task-extraction(?:-recheck)?|requirement-review(?:-recheck(?:-filtered)?)?|analysis|counter-review)-[0-9]+|"
     r"execution-mapping-(?:[0-9]+|T[0-9]+)-[0-9]+|"
+    r"sop-source-review-[a-f0-9]{12}-TC14-C01(?:-[12])?|"
+    r"sop-credential-review-[a-f0-9]{12}-SEC06-C02(?:-[12])?|"
+    r"sop-failure-review-local-[a-f0-9]{12}(?:-1-[12]-1)?|"
     r"sop-(?:(?:condition(?:-scope)?|select|failure-review(?:-exclusions)?)-(?:[a-f0-9]{12}|T[0-9]+)|T[0-9]+)"
     r"(?:-(?:rows|extract|compare|retry|split|scope|user|design|resolution|exclusions|[0-9]+))*"
     r")(?:\.call-[0-9]{3})?\Z"

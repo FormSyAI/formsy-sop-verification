@@ -8,7 +8,8 @@ import unittest
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from formsy_sop_verification.local_full_audit import FullAuditJobs
+from formsy_sop_verification.local_full_audit import FullAuditJobs, FullAuditStartError
+from formsy_sop_verification.cancellation import check_cancelled
 from formsy_sop_verification import local_full_audit
 from formsy_sop_verification.failure_reporting import AuditFailure
 
@@ -18,7 +19,7 @@ class LocalFullAuditTests(unittest.TestCase):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             result = jobs.get(job_id)
-            if result["status"] in ("completed", "failed"):
+            if result["status"] in ("completed", "failed", "cancelled"):
                 return result
             time.sleep(0.01)
         self.fail("Local fake job did not finish")
@@ -40,8 +41,6 @@ class LocalFullAuditTests(unittest.TestCase):
             first = jobs.submit(request)
             self.assertTrue(started.wait(5))
             self.assertEqual(jobs.get(first["id"])["progress"], "SOP")
-            with self.assertRaisesRegex(RuntimeError, "full_audit_busy"):
-                jobs.submit(request)
             release.set()
             result = self.terminal(jobs, first["id"])
             self.assertEqual(result["status"], "completed")
@@ -248,6 +247,160 @@ class LocalFullAuditTests(unittest.TestCase):
             self.assertTrue((Path(root) / failed["id"] / "failure.json").is_file())
             following = jobs.submit({"title": "next fixture"})
             self.assertEqual(self.terminal(jobs, following["id"])["status"], "completed")
+
+    def test_latest_submission_cancels_old_and_queued_jobs_without_parallel_dispatch(self):
+        started, release = threading.Event(), threading.Event()
+        calls, concurrent = [], []
+        active = 0
+        guard = threading.Lock()
+
+        def run(request, *, directory, cancellation_event, **_):
+            nonlocal active
+            with guard:
+                active += 1
+                concurrent.append(active)
+                calls.append(request["title"])
+            try:
+                directory.mkdir()
+                (directory / "old-provider-response.json").write_text('{"fixture":"preserved"}')
+                if request["title"] == "first private title":
+                    started.set()
+                    self.assertTrue(release.wait(5))
+                    check_cancelled(cancellation_event, "analysis-1.call-001")
+                return {"candidate": request["title"]}
+            finally:
+                with guard:
+                    active -= 1
+
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            first = jobs.submit({"title": "first private title", "trace": "private body"})
+            self.assertEqual(first["status"], "queued")
+            self.assertTrue(started.wait(5))
+            second = jobs.submit({"title": "second"})
+            third = jobs.submit({"title": "third"})
+            self.assertEqual(second["supersedes"], [first["id"]])
+            self.assertEqual(third["supersedes"], [first["id"], second["id"]])
+            self.assertEqual(jobs.get(first["id"])["status"], "cancelling")
+            self.assertEqual(jobs.get(second["id"])["status"], "cancelling")
+            self.assertEqual(calls, ["first private title"])
+            restored = jobs.active()
+            self.assertEqual(restored["id"], third["id"])
+            self.assertNotIn("private", json.dumps(restored))
+            self.assertNotIn("request", restored)
+            self.assertNotIn("report", restored)
+            release.set()
+            self.assertEqual(self.terminal(jobs, first["id"])["status"], "cancelled")
+            self.assertEqual(self.terminal(jobs, second["id"])["status"], "cancelled")
+            self.assertEqual(self.terminal(jobs, third["id"])["status"], "completed")
+            self.assertEqual(calls, ["first private title", "third"])
+            self.assertEqual(max(concurrent), 1)
+            self.assertIsNone(jobs.active())
+            old = Path(root) / first["id"]
+            self.assertEqual(len(list(old.glob("stop-requested-*.json"))), 2)
+            self.assertTrue((old / "engine/old-provider-response.json").is_file())
+            stop = json.loads((old / "stop.json").read_text())
+            self.assertEqual(stop["superseded_by"], third["id"])
+            self.assertEqual(stop["stage"], "analysis-1.call-001")
+            self.assertEqual(stop, jobs.get(first["id"])["stop"])
+            self.assertEqual((old / "stop.json").stat().st_mode & 0o777, 0o600)
+
+    def test_invalid_storage_or_thread_start_failure_never_cancels_running_job(self):
+        for problem in ("prepare", "store", "thread"):
+            with self.subTest(problem=problem), tempfile.TemporaryDirectory() as root:
+                started, release = threading.Event(), threading.Event()
+
+                def run(*_, **__):
+                    started.set()
+                    self.assertTrue(release.wait(5))
+                    return {"old": "preserved"}
+
+                def prepare(request):
+                    if request.get("title") == "invalid":
+                        raise ValueError("invalid input")
+
+                jobs = FullAuditJobs(root, runner=run, prepare=prepare)
+                first = jobs.submit({"title": "first"})
+                self.assertTrue(started.wait(5))
+                original = local_full_audit.private_json
+
+                def save(path, value):
+                    if path.name == "request.json":
+                        raise PermissionError("private new input path")
+                    return original(path, value)
+
+                if problem == "prepare":
+                    with self.assertRaises(ValueError):
+                        jobs.submit({"title": "invalid"})
+                elif problem == "store":
+                    with patch.object(local_full_audit, "private_json", side_effect=save), self.assertRaises(FullAuditStartError) as exc:
+                        jobs.submit({"title": "new"})
+                    self.assertEqual(exc.exception.error["error_category"], "storage")
+                else:
+                    with patch("threading.Thread.start", side_effect=RuntimeError("private thread failure")), self.assertRaises(FullAuditStartError) as exc:
+                        jobs.submit({"title": "new"})
+                    self.assertEqual(exc.exception.error["error_category"], "start")
+                self.assertEqual(jobs.get(first["id"])["status"], "running")
+                self.assertFalse(jobs.events[first["id"]].is_set())
+                self.assertEqual(jobs.active()["id"], first["id"])
+                self.assertEqual(list((Path(root) / first["id"]).glob("stop*.json")), [])
+                release.set()
+                self.assertEqual(self.terminal(jobs, first["id"])["status"], "completed")
+
+    def test_stop_recording_failure_is_explicit_and_never_claims_cancelled_success(self):
+        for failed_name in ("stop.json", "stop-requested-"):
+            with self.subTest(failed_name=failed_name), tempfile.TemporaryDirectory() as root:
+                started, release = threading.Event(), threading.Event()
+
+                def run(request, *, cancellation_event, **_):
+                    if request["title"] == "first":
+                        started.set()
+                        self.assertTrue(release.wait(5))
+                        check_cancelled(cancellation_event, "analysis-1.call-001")
+                    return {"candidate": True}
+
+                jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+                first = jobs.submit({"title": "first"})
+                self.assertTrue(started.wait(5))
+                original = local_full_audit.private_json
+
+                def save(path, value):
+                    if path.name == failed_name or path.name.startswith(failed_name):
+                        raise PermissionError("private stop path")
+                    original(path, value)
+
+                with patch.object(local_full_audit, "private_json", side_effect=save):
+                    second = jobs.submit({"title": "second"})
+                    release.set()
+                    result = self.terminal(jobs, first["id"])
+                    self.assertEqual(result["status"], "failed")
+                    self.assertEqual(result["error"]["code"], "full_audit_storage_failed")
+                    self.assertEqual(result["stop"]["recording_error"]["error_category"], "storage")
+                    self.assertNotIn("private stop", json.dumps(result))
+                    self.assertEqual(self.terminal(jobs, second["id"])["status"], "completed")
+
+    def test_legacy_injected_runner_finishes_before_slot_release_and_keeps_returned_candidate(self):
+        started, release = threading.Event(), threading.Event()
+        calls = []
+
+        def run(request, *, directory, max_sop_calls, stage_callback):
+            calls.append(request["title"])
+            if request["title"] == "first":
+                started.set()
+                self.assertTrue(release.wait(5))
+            return {"candidate": request["title"]}
+
+        with tempfile.TemporaryDirectory() as root:
+            jobs = FullAuditJobs(root, runner=run, prepare=lambda _: None)
+            first = jobs.submit({"title": "first"})
+            self.assertTrue(started.wait(5))
+            second = jobs.submit({"title": "second"})
+            self.assertEqual(calls, ["first"])
+            release.set()
+            self.assertEqual(self.terminal(jobs, first["id"])["status"], "cancelled")
+            self.assertEqual(self.terminal(jobs, second["id"])["status"], "completed")
+            self.assertEqual(json.loads((Path(root) / first["id"] / "report.json").read_text()), {"candidate": "first"})
+
 
 
 if __name__ == "__main__":
