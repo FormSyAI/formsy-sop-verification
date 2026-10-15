@@ -1887,6 +1887,103 @@ class WholeFileCoverageTests(unittest.TestCase):
         self.assertEqual(complete['relation'], 'supported')
         self.assertEqual(complete['source_coverage_check']['complete_evidence_ids'], ['OBS'])
 
+    def test_imported_source_display_preserves_inner_file_extent(self):
+        full = next(e for e in self.package['evidence'] if e['id'] == 'FULL')
+        original = full['content']
+        for count, relation in [(2, 'uncertain'), (349, 'supported')]:
+            with self.subTest(visible_inner_lines=count):
+                full['content'] = '[File: /pkg/config.py (349 lines total)]\n' + '\n'.join(
+                    str(n) + ':' + line for n, line in enumerate(original.splitlines()[:count], 1))
+                checked = self.checked(self.row('FULL', [[1, len(full['content'].splitlines())]]))
+                self.assertEqual(checked['relation'], relation)
+                self.assertEqual(checked['source_coverage_check']['status'],
+                                 'complete' if count == 349 else 'incomplete')
+
+    def test_source_display_cannot_ignore_hidden_multiple_or_other_path_headers(self):
+        full = next(e for e in self.package['evidence'] if e['id'] == 'FULL')
+        display = '[File: /pkg/config.py (2 lines total)]\n1:class ConfigResolver:\n2:    pass'
+        for mode in ('hidden_header', 'multiple_headers', 'other_path'):
+            with self.subTest(mode=mode):
+                full.pop('numbered_lines', None)
+                full['content'] = display
+                if mode == 'hidden_header':
+                    full['numbered_lines'] = [{'line': n, 'text': line}
+                        for n, line in enumerate(display.splitlines(), 1) if n > 1]
+                elif mode == 'multiple_headers':
+                    full['content'] += '\n' + display
+                else:
+                    full['content'] = display.replace('/pkg/config.py', '/pkg/helper.py')
+                self.assertEqual(self.checked(self.row('FULL', [[1, len(full['content'].splitlines())]]))[
+                    'relation'], 'uncertain')
+
+    def test_untrusted_tool_line_total_never_drives_range_allocation(self):
+        from .. import sop_claim_review
+        source = {'id': 'OBS', 'kind': 'tool', 'path': 'config.py', 'version_id': SHA,
+                  'content': '[File: /pkg/config.py (1000000000 lines total)]\n1:pass'}
+        self.package['evidence'].append(source)
+        real_range = range
+
+        def bounded_range(*args):
+            self.assertLessEqual(max(args), 10000, 'Declared total must not allocate its full line range')
+            return real_range(*args)
+
+        for kind in ('tool', 'source'):
+            with self.subTest(kind=kind), patch.object(sop_claim_review, 'range', bounded_range, create=True):
+                source['kind'] = kind
+                row = self.row(coverage=[[1, 2]])
+                row['observation_commit_ids'] = [SHA]
+                checked = self.checked(row)
+                self.assertEqual(checked['relation'], 'uncertain')
+                self.assertEqual(checked['source_coverage_check']['status'], 'incomplete')
+
+    def test_complete_cardinality_still_requires_unique_in_bounds_inner_lines(self):
+        source = {'id': 'OBS', 'kind': 'tool', 'path': 'config.py', 'version_id': SHA, 'content': ''}
+        self.package['evidence'].append(source)
+        for kind in ('source', 'tool'):
+            for numbers, relation in [([1, 2, 3], 'supported'), ([1, 1, 3], 'uncertain'),
+                                      ([0, 2, 3], 'uncertain'), ([1, 2, 4], 'uncertain')]:
+                with self.subTest(kind=kind, numbers=numbers):
+                    source.update(kind=kind, content='[File: /pkg/config.py (3 lines total)]\n'
+                                  + '\n'.join(str(n) + ':pass' for n in numbers))
+                    row = self.row(coverage=[[1, 4]])
+                    row['observation_commit_ids'] = [SHA]
+                    self.assertEqual(self.checked(row)['relation'], relation)
+
+    def test_claim_stage_keeps_partial_imported_source_unknown_after_scope_vote(self):
+        self.package['evidence'] = [e for e in self.package['evidence']
+                                    if e['kind'] != 'assistant' or e['id'] == 'A']
+        full = next(e for e in self.package['evidence'] if e['id'] == 'FULL')
+        full['content'] = '[File: /pkg/config.py (349 lines total)]\n1:class ConfigResolver:\n2:    pass'
+        condition = next(c for rule in load_catalog(Path(__file__).resolve().parents[1])['rules']
+                         for c in rule['conditions'] if c['id'] == 'TC14.C02')
+        before = copy.deepcopy(self.package)
+        calls = []
+
+        def call(stage, system, payload, validator, **kwargs):
+            calls.append(stage)
+            if 'source_inventory' in payload:
+                choice = next(c for c in payload['statement_choices'] if c['evidence_id'] == 'A')
+                answer = {'sources': [{'evidence_id': 'A', 'classification': 'claims',
+                    'reason': 'Explicit file inventory claim', 'claims': [{
+                        'statement_id': choice['statement_id'], 'claim_type': 'fact',
+                        'claim_target': copy.deepcopy(self.claim['claim_target'])}]}]}
+            else:
+                row = {**self.row('FULL', [[1, 3]]), 'claim_id': payload['frozen_claims'][0]['id']}
+                answer = ({'scope_reviews': [{**row, 'scope_consistency': 'same_scope'}]}
+                          if 'scope_candidates' in payload else {'comparisons': [row]})
+            return validator(answer), None, False
+
+        with tempfile.TemporaryDirectory() as directory:
+            row = review_claim_scope(self.task, self.package, condition, model_input(self.package, [self.task]),
+                                     call, 'partial-source', Path(directory), lambda _: None)
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(row['result'], UNKNOWN)
+        claim = row['atomic_checks'][0]['semantic_basis']['claims'][0]
+        self.assertEqual(claim['relation'], 'uncertain')
+        self.assertEqual(claim['source_coverage_check']['status'], 'incomplete')
+        self.assertEqual(row['analysis_stage_errors'], [])
+        self.assertEqual(self.package, before)
+
     def test_complete_same_version_source_needs_whole_review_not_one_cited_definition(self):
         self.assertEqual(self.checked(self.row('FULL', [[1, 100]]))['relation'], 'uncertain')
         self.assertEqual(self.checked(self.row('FULL', [[1, 100], [101, 349]]))['relation'], 'supported')

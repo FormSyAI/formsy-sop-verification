@@ -912,6 +912,107 @@ test("refresh restores only active task metadata and association links read reco
   assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
 });
 
+function delayedAssociation(ui, otherResponse) {
+  let resolve, reject;
+  ui.setResponse((path, options) => {
+    if (path === "/api/full-audits/old") return new Promise((done, fail) => { resolve = done; reject = fail; });
+    if (otherResponse) return otherResponse(path, options);
+    throw new Error(path);
+  });
+  const button = new Element("button", ui.registry);
+  button.setAttribute("data-full-job", "old");
+  const pending = ui.registry.get("full-report").listeners.click[0]({ target: { closest: () => button } });
+  return { pending, resolve: (value) => resolve(ok(value)), reject: (error) => reject(error) };
+}
+
+test("delayed association success preserves a later history choice and retains the old record", async () => {
+  const ui = setup();
+  configure(ui);
+  ui.run("fullState.rounds=[{id:'current',status:'cancelled',supersedes:['old']},{id:'old',status:'cancelling'}];fullState.active=0;renderFull();fullControls()");
+  const request = ui.run("JSON.stringify(fullState.request)"), pollVersion = ui.run("fullState.pollVersion");
+  const lookup = delayedAssociation(ui);
+  ui.registry.get("full-report").listeners.change[0]({ target: { id: "full-history", value: "0" } });
+  lookup.resolve({ id: "old", status: "cancelled", stop: { stage: "old-stop" } });
+  await lookup.pending;
+  assert.equal(ui.run("fullState.rounds[fullState.active].id"), "current");
+  assert.equal(ui.run("fullState.rounds.find((round)=>round.id==='old').stop.stage"), "old-stop");
+  assert.equal(ui.run("JSON.stringify(fullState.request)"), request);
+  assert.equal(ui.run("fullState.pollVersion"), pollVersion);
+  assert.equal(ui.registry.get("full-active-status").hidden, true);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("delayed association success cannot replace the view selected by a new submission", async () => {
+  const ui = setup();
+  enableFullSubmit(ui);
+  ui.run("fullState.rounds=[{id:'current',status:'running',supersedes:['old']},{id:'old',status:'cancelling'}];fullState.active=0;renderFull()");
+  const request = ui.run("JSON.stringify(fullState.request)");
+  const lookup = delayedAssociation(ui, (path, options) => {
+    if (options?.method === "POST") return ok({ id: "new", status: "queued", supersedes: ["current"] });
+    if (path.endsWith("/new")) return ok({ id: "new", status: "queued", supersedes: ["current"] });
+    if (path.endsWith("/current")) return ok({ id: "current", status: "cancelled" });
+    throw new Error(path);
+  });
+  await ui.registry.get("full-verify").listeners.click[0]();
+  assert.equal(ui.run("fullState.rounds[fullState.active].id"), "new");
+  const pollVersion = ui.run("fullState.pollVersion");
+  lookup.resolve({ id: "old", status: "cancelled", stop: { stage: "old-stop" } });
+  await lookup.pending;
+  assert.equal(ui.run("fullState.rounds[fullState.active].id"), "new");
+  assert.equal(ui.run("JSON.stringify(fullState.request)"), request);
+  assert.equal(ui.run("fullState.pollVersion"), pollVersion);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 1);
+});
+
+test("delayed association failure cannot overwrite feedback after a later history choice", async () => {
+  const ui = setup();
+  configure(ui);
+  ui.run("fullState.rounds=[{id:'current',status:'running',supersedes:['old']}];fullState.active=0;renderFull()");
+  const lookup = delayedAssociation(ui);
+  ui.registry.get("full-report").listeners.change[0]({ target: { id: "full-history", value: "0" } });
+  ui.run("setFullError('最新操作提示')");
+  lookup.reject(new Error("old lookup failed"));
+  await lookup.pending;
+  assert.equal(ui.registry.get("full-error").textContent, "最新操作提示");
+  assert.equal(ui.run("fullState.rounds[fullState.active].id"), "current");
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
+test("delayed association replies cannot replace feedback from a failed new submission", async () => {
+  for (const outcome of ["success", "failure"]) {
+    const ui = setup();
+    enableFullSubmit(ui);
+    ui.run("fullState.rounds=[{id:'current',status:'running',supersedes:['old']}];fullState.active=0;renderFull()");
+    const lookup = delayedAssociation(ui, (_path, options) => {
+      assert.equal(options?.method, "POST");
+      return { ok: false, status: 503, json: async () => ({ error: {
+        code: "full_audit_start_failed", message: "new submission rejected",
+      } }) };
+    });
+    await ui.registry.get("full-verify").listeners.click[0]();
+    const feedback = ui.registry.get("full-error").textContent;
+    assert.match(feedback, /未确认审计作业已创建.*new submission rejected/);
+    if (outcome === "success") lookup.resolve({ id: "old", status: "cancelled" });
+    else lookup.reject(new Error("old lookup failed"));
+    await lookup.pending;
+    assert.equal(ui.registry.get("full-error").textContent, feedback);
+    assert.equal(ui.run("fullState.rounds[fullState.active].id"), "current");
+    assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 1);
+  }
+});
+
+test("delayed association still opens the requested old task when no newer view was chosen", async () => {
+  const ui = setup();
+  configure(ui);
+  ui.run("fullState.rounds=[{id:'current',status:'running',supersedes:['old']}];fullState.active=0;renderFull()");
+  const lookup = delayedAssociation(ui);
+  lookup.resolve({ id: "old", status: "cancelled", stop: { stage: "old-stop" } });
+  await lookup.pending;
+  assert.equal(ui.run("fullState.rounds[fullState.active].id"), "old");
+  assert.match(ui.registry.get("full-report").innerHTML, /停止阶段：old-stop/);
+  assert.equal(ui.calls.filter((call) => call.options?.method === "POST").length, 0);
+});
+
 test("public demo selection loads only catalogued material and clears consent without model submission", async () => {
   const ids = ["Melevir__cognitive_complexity-15", "akolar__ogn-lib-18", "DCC-Lab__RayTracing-273", "tobymao__sqlglot-2063"],
     demos = ids.map((id, index) => ({ id, title: index ? id : '<img src=x onerror="catalog-marker">',

@@ -137,7 +137,7 @@
     {
       "path": "sop_claim_review.py",
       "upstream_sha256": "1fc0fac86b6df3139fc9ee3789858a06b2b9e9e848696d747e86da3aa7bfea29",
-      "packaged_sha256": "e4249c09ff79f3acc222f733d4d4735f92b7b28d628ca0e49384b3b01f685208",
+      "packaged_sha256": "51eca4c902ddd923e5aadbc11671275ae30e0d80cecdb57085f1bc885b4f1841",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
         "local bounded per-source recovery, explicit module scope, and concise mutually exclusive claim extraction",
@@ -149,7 +149,8 @@
         "r12 interpretation 1.9.1 single-task reuse guidance in claim comparison and scope review",
         "split only truncated multi-claim scope output using unchanged full propositions/evidence and shared budgets; preserve historical failures and successful siblings, never resend HTTP failures",
         "isolated next-repair candidate: initial multi-item length splits output obligations under unchanged shared budget/full context; current no-review inference guidance is not certified extraction",
-        "isolated guidance distinguishes historical traceback error location from causal mechanisms without weakening causal evidence gates"
+        "isolated guidance distinguishes historical traceback error location from causal mechanisms without weakening causal evidence gates",
+        "imported source file displays retain inner file coordinates; complete coverage uses unique bounded line counts without allocating the declared total"
       ]
     },
     {
@@ -375,7 +376,7 @@
     {
       "path": "tests/test_sop_claim_review.py",
       "upstream_sha256": "7fd3f16e4e5725f72d48ea2bc2a19ff248f957d2461b58b094ea9562c024890f",
-      "packaged_sha256": "4b212fe186ba5507e033161d5f714bc4cacc21f997bd9e085195d74cdd4ade84",
+      "packaged_sha256": "1cd03437257326e444e0efc15342c9534059f910cd3ee242f6ec0dae06d21393",
       "adaptations": [
         "package-relative imports and qualified test mock targets",
         "local module-scope regression and extraction callback compatibility",
@@ -383,7 +384,8 @@
         "local original-observation version feedback and strict recovery regressions",
         "local same-outer-line and later-line intent-isolation regressions with same-proposition positive cases and null observed-event retention",
         "verify ordinary fact and mixed inference scope review, frozen candidates, failure and cap retention",
-        "isolated regression: initial length splitting full context; no late/singleton/nonlength split"
+        "isolated regression: initial length splitting full context; no late/singleton/nonlength split",
+        "regress partial and complete imported source displays, hidden or multiple headers, large declared extents, duplicate or out-of-bounds lines, and final claim-scope UNKNOWN preservation"
       ]
     },
     {

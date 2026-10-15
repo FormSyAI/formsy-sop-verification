@@ -305,16 +305,17 @@ def _file_extent(item):
                and 1 <= row['line'] <= len(lines) and row.get('text') == lines[row['line'] - 1]}
     if 'numbered_lines' not in item:
         visible = set(range(1, len(lines) + 1))
-    if item['kind'] == 'source' and item.get('path'):
+    headers = [(n, re.fullmatch(r'\[File: (.+) \((\d+) lines total\)\]', text))
+               for n, text in enumerate(lines, 1)]
+    headers = [(n, match) for n, match in headers if match]
+    # Imported file displays retain inner coordinates; their outer text is not a complete source file.
+    if item['kind'] == 'source' and item.get('path') and not headers:
         return {'path': item['path'], 'total_lines': len(lines),
                 'line_map': {n: n for n in visible}}
-    if item['kind'] != 'tool':
+    if item['kind'] not in {'source', 'tool'}:
         return None
-    headers = [(n, re.fullmatch(r'\[File: (.+) \((\d+) lines total\)\]', text))
-               for n, text in enumerate(lines, 1) if n in visible]
-    headers = [(n, match) for n, match in headers if match]
     # Proposed/original displays in one output are different snapshots, never stitch them.
-    if len(headers) != 1:
+    if len(headers) != 1 or headers[0][0] not in visible:
         return None
     header, match = headers[0]
     displayed = [(n, re.fullmatch(r'(\d+):(.*)', text)) for n, text in enumerate(lines, 1)
@@ -458,7 +459,8 @@ def _source_extent_support(row, claim, package):
         if not (extent['path'].lstrip('/') == path or extent['path'].endswith('/' + path)):
             continue
         covered = {inner for outer, inner in extent['line_map'].items() if outer in reviewed}
-        if extent['total_lines'] and covered == set(range(1, extent['total_lines'] + 1)):
+        # _file_extent already bounds unique inner lines; never allocate an untrusted declared total.
+        if extent['total_lines'] and len(covered) == extent['total_lines']:
             complete.append(eid)
     row['source_coverage_check'] = {'path': required['path'], 'complete_evidence_ids': complete,
                                     'status': 'complete' if complete else 'incomplete'}

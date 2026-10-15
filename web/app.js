@@ -119,6 +119,7 @@ const fullState = {
   fileName: "",
   rounds: [],
   active: 0,
+  viewVersion: 0,
   submitting: false,
   polling: false,
   pollVersion: 0,
@@ -2270,6 +2271,7 @@ $("full-request-file").addEventListener("change", async (event) => {
         imported: true,
       });
       fullState.active = 0;
+      fullState.viewVersion++;
       renderFull();
     } else {
       assertFullRequest(value);
@@ -2303,6 +2305,7 @@ $("full-verify").addEventListener("click", async () => {
     return setFullError(error.message);
   }
   if ($("full-mode").value === "offline") {
+    fullState.viewVersion++;
     setFullError();
     const request = preparedRequest;
     $("full-report").innerHTML =
@@ -2317,6 +2320,7 @@ $("full-verify").addEventListener("click", async () => {
   )
     return setFullError("未确认模型发送或本地模型不可用，未发送材料。");
   const request = preparedRequest;
+  fullState.viewVersion++;
   fullState.submitting = true;
   $("full-consent").checked = false;
   fullControls();
@@ -2337,6 +2341,7 @@ $("full-verify").addEventListener("click", async () => {
       if (old && activeFullStatuses.includes(old.status)) Object.assign(old, { status: "cancelling", superseded_by: round.id });
     }
     fullState.active = 0;
+    fullState.viewVersion++;
     fullState.query = "";
     fullState.filter = "";
     await pollFull(round);
@@ -2364,6 +2369,7 @@ $("full-report").addEventListener("change", (event) => {
   }
   if (event.target.id === "full-history") {
     fullState.active = Number(event.target.value);
+    fullState.viewVersion++;
     fullState.query = "";
     fullState.filter = "";
     renderFull();
@@ -2372,15 +2378,25 @@ $("full-report").addEventListener("change", (event) => {
 $("full-report").addEventListener("click", async (event) => {
   const button = event.target.closest("button");
   if (!button) return;
-  if (button.hasAttribute("data-full-return")) return renderFull();
+  if (button.hasAttribute("data-full-return")) {
+    fullState.viewVersion++;
+    return renderFull();
+  }
   if (button.hasAttribute("data-full-job")) {
     const id = button.getAttribute("data-full-job");
+    const version = ++fullState.viewVersion;
     try {
       retainFullJob(await api(`/api/full-audits/${encodeURIComponent(id)}`), id);
+      if (version !== fullState.viewVersion) {
+        fullControls();
+        return;
+      }
       fullState.active = fullState.rounds.findIndex((entry) => !entry.imported && entry.id === id);
       renderFull();
       fullControls();
-    } catch (error) { setFullError(`关联任务未读取：${error.message} 旧轮记录保留。`); }
+    } catch (error) {
+      if (version === fullState.viewVersion) setFullError(`关联任务未读取：${error.message} 旧轮记录保留。`);
+    }
     return;
   }
   const round = fullState.rounds[fullState.active];
@@ -2415,7 +2431,10 @@ async function startFull() {
       const metadata = results[3].value.job;
       if (!activeFullStatuses.includes(metadata.status)) throw new Error("活动任务状态无效。");
       restored = retainFullJob(metadata);
-      if (fullState.rounds.length === 1) fullState.active = 0;
+      if (fullState.rounds.length === 1) {
+        fullState.active = 0;
+        fullState.viewVersion++;
+      }
       renderFull();
     } catch (error) { setFullError(`活动任务未恢复：${error.message} 未自动提交材料。`); }
   }
