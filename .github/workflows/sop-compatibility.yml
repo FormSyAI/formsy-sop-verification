@@ -54,8 +54,17 @@ jobs:
           fi
           cd sop
           python -B scripts/check_verification_pair.py --verification-root ../verification --output ../verification-pair-results
+      - name: Preserve public summary in CI log
+        if: always()
+        run: |
+          if [ -f sop/scripts/archive_pair_evidence.py ]; then
+            python -B sop/scripts/archive_pair_evidence.py --root verification-pair-results --summary-only
+          else
+            cat verification-pair-results/summary.json
+          fi
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
+        continue-on-error: true
         with:
           name: verification-pair-results
           path: verification-pair-results/summary.json
