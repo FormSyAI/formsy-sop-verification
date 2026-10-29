@@ -1,0 +1,62 @@
+# Install as .github/workflows/sop-compatibility.yml in formsy-sop-verification.
+name: SOP compatibility
+on:
+  pull_request:
+    paths:
+      - 'src/formsy_sop_verification/legacy_evidence.py'
+      - '.github/workflows/sop-compatibility.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'src/formsy_sop_verification/legacy_evidence.py'
+      - '.github/workflows/sop-compatibility.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verification-pair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          path: verification
+          persist-credentials: false
+      - name: Create repository-scoped read-only SOP token
+        id: sop-app
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ vars.SOP_READ_APP_CLIENT_ID }}
+          private-key: ${{ secrets.SOP_READ_APP_PRIVATE_KEY }}
+          owner: FormSyAI
+          repositories: formsy-sop
+          permission-contents: read
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: FormSyAI/formsy-sop
+          token: ${{ steps.sop-app.outputs.token }}
+          path: sop
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.12'
+      - name: Install SOP test dependencies
+        working-directory: sop
+        run: python -m pip install '.[mcp-workbench]' PyYAML
+      - name: Test candidate against SOP policy
+        if: ${{ !cancelled() }}
+        run: |
+          if [ ! -f sop/scripts/check_verification_pair.py ]; then
+            mkdir -p verification-pair-results
+            python -c 'import json; from pathlib import Path; Path("verification-pair-results/summary.json").write_text(json.dumps({"status":"blocked","phase":"preflight","executed_commands":0,"error":"SOP checkout or compatibility controller unavailable"}, indent=2))'
+            exit 1
+          fi
+          cd sop
+          python -B scripts/check_verification_pair.py --verification-root ../verification --output ../verification-pair-results
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: verification-pair-results
+          path: verification-pair-results/summary.json
+          if-no-files-found: warn
